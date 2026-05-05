@@ -27,11 +27,14 @@ def cli() -> None:
 @click.option("--no-deep-scan", is_flag=True)
 @click.option("--no-test-trace", is_flag=True)
 def init(**kwargs) -> None:
-    """Run the install wizard."""
-    # BLOCKER: full Python wizard parity with the TS one. The TS wizard
-    # works with --ci + --api-key + --project today; the Python equivalent
-    # currently only does a subset (config file generation + manifest hook).
-    # See gravel-cloud/docs/blockers.md §wizard for the rest.
+    """Run the install wizard.
+
+    Walks the user through OAuth (against ``gravel.artanis.ai``), writes
+    ``.env`` + ``gravel_config.py``, mounts the dashboard route, runs the
+    schema bootstrap, and installs the manifest pre-commit hook. Pass
+    ``--ci`` for non-interactive mode (skips OAuth, writes dev-mode
+    placeholder credentials).
+    """
     from .wizard import run_wizard
     run_wizard(**kwargs)
 

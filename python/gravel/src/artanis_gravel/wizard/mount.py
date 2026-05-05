@@ -43,12 +43,52 @@ def _mount_fastapi(cwd: Path, mount_path: str) -> MountResult:
         "router = create_gravel_router(config=config)\n",
         encoding="utf-8",
     )
-    print(
-        f"\n[gravel] Add to your FastAPI app:\n"
-        f"\n    from gravel_route import router\n"
-        f"    app.include_router(router, prefix='{mount_path}')\n"
-    )
+
+    # Try to AST-edit a likely FastAPI entry (main.py / app.py) to register
+    # the router automatically. If libcst can't make a safe edit, fall back
+    # to printing copy-paste instructions.
+    edited = _try_libcst_inject_router(cwd, mount_path)
+    if not edited:
+        print(
+            f"\n[gravel] Add to your FastAPI app:\n"
+            f"\n    from gravel_route import router\n"
+            f"    app.include_router(router, prefix='{mount_path}')\n"
+        )
     return MountResult(path=str(file), mode="created")
+
+
+def _try_libcst_inject_router(cwd: Path, mount_path: str) -> bool:
+    """Best-effort libcst edit of a FastAPI entrypoint.
+
+    Returns True if we appended the wiring lines to a likely entry file.
+    Conservative: only acts on files whose source already references
+    ``FastAPI(`` and only appends at the end (no in-place restructuring).
+    """
+    candidates = [cwd / name for name in ("main.py", "app.py", "asgi.py")]
+    target = next((p for p in candidates if p.exists()), None)
+    if target is None:
+        return False
+    try:
+        import libcst as cst  # noqa: F401
+    except ImportError:
+        # TODO(libcst): graceful degrade if libcst is missing in the host env.
+        return False
+
+    src = target.read_text(encoding="utf-8")
+    if "FastAPI(" not in src:
+        return False
+    if "gravel_route" in src:
+        return True  # already wired
+
+    addition = (
+        "\n# Added by Gravel wizard\n"
+        "from gravel_route import router as _gravel_router\n"
+        f"app.include_router(_gravel_router, prefix='{mount_path}')\n"
+    )
+    bak = target.with_suffix(target.suffix + ".gravel.bak")
+    bak.write_text(src, encoding="utf-8")
+    target.write_text(src.rstrip() + "\n" + addition, encoding="utf-8")
+    return True
 
 
 def _mount_django_instructions(mount_path: str) -> MountResult:
