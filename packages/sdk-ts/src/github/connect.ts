@@ -13,7 +13,7 @@
  */
 import { createHmac, timingSafeEqual } from 'node:crypto'
 
-const CONTROL_PLANE_DEFAULT = 'https://app.gravel.artanis.ai'
+const CONTROL_PLANE_DEFAULT = 'https://gravel.artanis.ai'
 
 export interface ConnectStartResult {
   /** Where to redirect the user's browser to begin the GitHub OAuth flow. */

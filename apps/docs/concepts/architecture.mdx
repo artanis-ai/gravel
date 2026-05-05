@@ -13,8 +13,8 @@ Gravel splits cleanly into two zones with a hard trust boundary.
 
 ## Control plane — Artanis-hosted
 
-- **`app.gravel.artanis.ai`** — project management, install-wizard OAuth, billing UI, judge dispatch.
-- **`judge.gravel.artanis.ai`** — closed-source scoring service for paid evals.
+- **`gravel.artanis.ai`** — project management, install-wizard OAuth, billing UI, judge dispatch.
+- **`gravel-judge.artanis-ai.workers.dev`** — closed-source scoring service for paid evals.
 - **`mallet-api.artanis.workers.dev`** — static prompt analysis (free with rate-limit, unlimited paid).
 
 ## What crosses the boundary
@@ -33,8 +33,8 @@ Everything else stays in your DB.
 ```
 ┌─ Your infrastructure ────────────────────────────────┐    ┌─ Artanis ──────────────────────┐
 │                                                      │    │                                │
-│  Your app + Gravel SDK                               │    │  app.gravel.artanis.ai         │
-│  Your Postgres / SQLite (gravel_* tables)            │◄──►│  judge.gravel.artanis.ai       │
+│  Your app + Gravel SDK                               │    │  gravel.artanis.ai         │
+│  Your Postgres / SQLite (gravel_* tables)            │◄──►│  gravel-judge.artanis-ai.workers.dev       │
 │  Embedded React dashboard at /admin/ai (same-origin) │    │  mallet-api.artanis.workers.dev│
 │                                                      │    │                                │
 │  Stays here: traces, prompts, feedback, datasets     │    │  Sees: per-row judge calls,    │

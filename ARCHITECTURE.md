@@ -10,8 +10,8 @@ Gravel splits cleanly into two zones:
 ┌──────────────────────────────────────────┐    ┌──────────────────────────┐
 │ DATA PLANE — your infrastructure         │    │ CONTROL PLANE — Artanis  │
 │                                          │    │                          │
-│ Your app + Gravel SDK                    │◄──►│ app.gravel.artanis.ai    │
-│ Your database (gravel_* tables)          │    │ judge.gravel.artanis.ai  │
+│ Your app + Gravel SDK                    │◄──►│ gravel.artanis.ai    │
+│ Your database (gravel_* tables)          │    │ gravel-judge.artanis-ai.workers.dev  │
 │ Embedded React dashboard at /admin/ai    │    │                          │
 │                                          │    │ - project mgmt           │
 │ Holds: traces, prompts, feedback,        │    │ - judge dispatch         │

@@ -1,5 +1,5 @@
 /**
- * Browser-OAuth handshake against `app.gravel.artanis.ai`.
+ * Browser-OAuth handshake against `gravel.artanis.ai`.
  *
  * STATUS: stubbed. Control plane not yet provisioned. Wizard accepts
  * --api-key / --project as a temporary substitute. This file currently only
@@ -7,9 +7,9 @@
  * point at a localhost stub).
  *
  * BLOCKER (gravel-cloud/docs/blockers.md §control-plane): real handshake
- * implementation lands when app.gravel.artanis.ai is up.
+ * implementation lands when gravel.artanis.ai is up.
  */
-const DEFAULT_CONTROL_PLANE = 'https://app.gravel.artanis.ai'
+const DEFAULT_CONTROL_PLANE = 'https://gravel.artanis.ai'
 
 export function resolveControlPlaneUrl(): string {
   return process.env.GRAVEL_CONTROL_PLANE_URL ?? DEFAULT_CONTROL_PLANE
