@@ -1,0 +1,40 @@
+---
+title: Data residency
+description: "Why your prompts and traces never leave your database."
+---
+
+Gravel is designed so that **data stays where it was generated**. For an AI engineering team selling into regulated verticals — clinical, legal, financial — this is non-negotiable.
+
+## What's in your database
+
+Gravel creates tables prefixed `gravel_` in *your* Postgres or SQLite:
+
+- `gravel_traces` — every traced LLM call.
+- `gravel_observations` — per-step input / output / state.
+- `gravel_feedback` — DE labels and corrections.
+- `gravel_datasets` / `gravel_dataset_traces` — labeled groupings for evals.
+- `gravel_prompts` — the working manifest of every prompt in your repo.
+- `gravel_eval_runs` / `gravel_eval_results` — eval state and verdicts.
+- Plus auxiliary: `gravel_users`, `gravel_environments`, `gravel_projects`, `gravel_prompt_drafts`, `gravel_labels`.
+
+You own these. We never touch them. You can drop them and Gravel is gone.
+
+## What leaves the boundary
+
+Per-call audit:
+
+- **Wizard OAuth** — browser-mediated; we mint a project ID + API key.
+- **Judge calls** — for each row in a paid eval, we receive `{input, output, expected_correction, prompt_context, criteria}`. We do not log the payloads — only verdicts + token counts. See the internal spec for the full data-handling commitment.
+- **Mallet analysis** — the prompt being analyzed.
+- **Billing** — Polar webhooks. No customer payload.
+
+## What does NOT leave
+
+- Trace data (continuous mirroring would defeat the residency story).
+- Source code (deep scan uses *your* LLM key on your dev machine — Mallet's API never sees your code).
+- User information from your `getUser` callback.
+- Database credentials.
+
+## What about open-source?
+
+The library is Apache 2.0. You can audit every line. The judge service that paid evals hit is closed source — that's the moat. Without the lib being open-source, the data-residency claim would be unverifiable.

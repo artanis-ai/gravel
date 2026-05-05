@@ -1,0 +1,50 @@
+---
+title: Configuration
+description: "gravel.config.ts / gravel_config.py options."
+---
+
+## TypeScript
+
+```ts
+import { defineConfig } from '@artanis/gravel'
+
+export const config = defineConfig({
+  mountPath: '/admin/ai',          // default '/admin/ai'
+  productName: 'Acme Studio',      // default 'Gravel'
+  database: {
+    url: process.env.DATABASE_URL!,
+    tablePrefix: 'gravel_',        // don't change after first migration
+  },
+  auth: {
+    getUser: async (req) => { /* ... */ },
+    // OR — exclusive
+    // defaultPassword: process.env.GRAVEL_ADMIN_PASSWORD!,
+  },
+  runPipeline: async (input) => { /* ... */ },  // for live evals
+  environments: ['prod', 'staging'],
+  hideArtanisBranding: false,
+  evals: {
+    concurrency: { trace: 5, live: 2 },
+    judgeVersion: 'auto',
+  },
+})
+```
+
+## Python
+
+```py
+from artanis_gravel import GravelConfig
+
+config = GravelConfig(
+    mount_path='/admin/ai',
+    product_name='Acme Studio',
+    database={'url': os.environ['DATABASE_URL']},
+    auth={'get_user': get_user},   # or {'default_password': '...'}
+    run_pipeline=run_pipeline,
+    environments=['prod', 'staging'],
+)
+```
+
+## Auth modes are exclusive
+
+If `auth.getUser` is set, it is the only auth path. A `null` return means *not authed* — Gravel will not fall back to default-password. Configure one or the other.

@@ -1,0 +1,41 @@
+---
+title: Express
+description: "Generic Node integration."
+---
+
+The wizard prints copy-paste instructions for Express (no AST edit yet — landing in v0). Add to your app entry:
+
+```ts
+import express from 'express'
+import { gravelHandler } from '@artanis/gravel/node'
+import { config } from './gravel.config.js'
+
+const app = express()
+app.use(config.mountPath ?? '/admin/ai', gravelHandler({ config }))
+app.listen(3000)
+```
+
+Tracing import goes at the top of the same file:
+
+```ts
+import '@artanis/gravel/auto'
+```
+
+## Auth callback shape
+
+```ts
+auth: {
+  async getUser(req) {
+    // Your session middleware probably set req.user. Use whatever you have.
+    const user = (req.raw as any).user
+    if (!user) return null
+    return {
+      id: user.id,
+      firstName: user.firstName,
+      role: user.isAdmin ? 'admin' : 'user',
+    }
+  },
+}
+```
+
+The `req` object passed to `getUser` is a normalized [GravelRequest](/reference/auth#getuser-callback). Reach the underlying Express `req` via `req.raw`.

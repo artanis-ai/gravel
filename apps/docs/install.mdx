@@ -1,0 +1,71 @@
+---
+title: Install
+description: "One command. Wizard does the rest."
+---
+
+<Note>
+  Gravel is in pre-v0. The wizard runs locally and sets up your database + dashboard route, but the OAuth handshake against `app.gravel.artanis.ai` is stubbed until the control plane is provisioned. Pass `--api-key` and `--project` for now.
+</Note>
+
+## TypeScript
+
+```bash
+npx @artanis/gravel init
+```
+
+The wizard:
+
+1. Detects your framework (Next.js, Express, FastAPI fallback, generic Node).
+2. Opens a browser to authenticate against Artanis. *(Currently stubbed — pass `--api-key` and `--project`.)*
+3. Installs `@artanis/gravel` with your detected package manager.
+4. Writes `gravel.config.ts` with auth wiring matched to your existing provider (Clerk, NextAuth, Better Auth, …).
+5. Mounts the dashboard route — `app/admin/ai/[[...slug]]/route.ts` for App Router, `pages/admin/ai/[[...slug]].ts` for Pages, generic adapter for Express.
+6. Runs idempotent CREATE TABLE migrations against your `DATABASE_URL`.
+7. Generates a random `GRAVEL_ADMIN_PASSWORD` and writes it to `.env.local`.
+8. Installs a pre-commit hook to keep your prompt manifest in sync.
+9. Sends a test trace through the lib and waits until it shows up.
+
+## Python
+
+```bash
+python -m artanis_gravel init
+```
+
+Same flow, adapted for FastAPI / Django / generic ASGI / WSGI.
+
+## Non-interactive (CI)
+
+```bash
+npx @artanis/gravel init --ci --api-key $GRAVEL_API_KEY --project $GRAVEL_PROJECT_ID
+```
+
+All prompts have flags:
+
+| Flag                  | Effect                                        |
+| --------------------- | --------------------------------------------- |
+| `--ci`                | Master switch, fail on missing required flags |
+| `--api-key <key>`     | Skip OAuth                                    |
+| `--project <id>`      | Specify project                               |
+| `--mount-path <path>` | Override default `/admin/ai`                  |
+| `--no-migrate`        | Skip migrations                               |
+| `--no-hook`           | Skip pre-commit hook                          |
+| `--no-deep-scan`      | Skip the optional deep prompt scan            |
+| `--no-test-trace`     | Skip end-to-end test trace                    |
+
+## What you'll see after install
+
+```bash
+$ npx @artanis/gravel init
+Detected ts, next-app-router, pkg=pnpm, db=postgres, auth=clerk
+✓ Wrote gravel.config.ts
+✓ Created app/admin/ai/[[...slug]]/route.ts
+✓ Ran schema bootstrap
+✓ Generated GRAVEL_ADMIN_PASSWORD: A1B2c3D4...
+✓ Installed pre-commit hook (husky)
+
+Gravel skeleton installed. Next:
+  1. Visit /admin/ai in your app and log in.
+  2. Edit your getUser callback in gravel.config.ts to match your auth.
+  3. Connect GitHub from the Settings page (when available).
+  4. Read https://gravel.artanis.ai/docs
+```

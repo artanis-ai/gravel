@@ -1,0 +1,14 @@
+[project]
+name = "gravel-example-fastapi"
+version = "0.0.0"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn>=0.30",
+    "openai>=1.40",
+    "psycopg[binary]>=3.1",
+    "artanis-gravel",
+]
+
+[tool.uv.sources]
+artanis-gravel = { path = "../../python/gravel", editable = true }

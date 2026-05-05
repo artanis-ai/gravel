@@ -1,0 +1,55 @@
+name: Schema drift
+
+# Verifies that the TS Drizzle schema and the Python SQLAlchemy schema
+# describe the same logical data plane. Spec: data-model.md §3.3.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "packages/sdk-ts/src/schema/**"
+      - "packages/sdk-ts/src/db/bootstrap.ts"
+      - "python/gravel/src/artanis_gravel/schema.py"
+      - "python/gravel/src/artanis_gravel/db/bootstrap.py"
+      - ".github/workflows/schema-drift.yml"
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Dump TS schema
+        run: pnpm --filter @artanis/gravel schema:dump > /tmp/ts-schema.txt
+
+      - name: Install Python deps
+        working-directory: python/gravel
+        run: |
+          pip install uv
+          uv sync
+
+      - name: Dump Python schema
+        working-directory: python/gravel
+        run: uv run python -m artanis_gravel.schema_dump > /tmp/py-schema.txt
+
+      - name: Diff
+        run: |
+          diff -u /tmp/ts-schema.txt /tmp/py-schema.txt && echo "Schemas match." || {
+            echo "::error::Schema drift detected between TS Drizzle and Python SQLAlchemy."
+            exit 1
+          }

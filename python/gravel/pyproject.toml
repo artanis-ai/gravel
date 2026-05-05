@@ -1,0 +1,59 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "artanis-gravel"
+version = "0.0.1"
+description = "Embedded prompt management, tracing, and evals for AI engineering teams."
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+authors = [{ name = "Artanis", email = "team@artanis.ai" }]
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Development Status :: 2 - Pre-Alpha",
+]
+dependencies = [
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "click>=8.1",
+    "httpx>=0.27",
+    "libcst>=1.4",
+]
+
+[project.optional-dependencies]
+postgres = ["psycopg[binary]>=3.1"]
+sqlite = []
+fastapi = ["fastapi>=0.100"]
+django = ["django>=4.2"]
+asgi = ["starlette>=0.30"]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+    "mypy>=1.10",
+]
+
+[project.scripts]
+gravel = "artanis_gravel.cli:main"
+
+[project.urls]
+Homepage = "https://gravel.artanis.ai"
+Repository = "https://github.com/artanis-ai/gravel"
+Issues = "https://github.com/artanis-ai/gravel/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/artanis_gravel"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

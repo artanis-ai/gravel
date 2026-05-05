@@ -1,0 +1,47 @@
+---
+title: Architecture
+description: "Data plane in your infra, control plane in ours."
+---
+
+Gravel splits cleanly into two zones with a hard trust boundary.
+
+## Data plane — your infrastructure
+
+- **Your application**, with the Gravel SDK installed.
+- **Your database**: Gravel adds `gravel_*` tables (Postgres or SQLite). Trace data, prompts, feedback, datasets, eval run state all live here.
+- **The embedded React dashboard**, served at `/admin/ai` (configurable). All API calls go to same-origin under your domain.
+
+## Control plane — Artanis-hosted
+
+- **`app.gravel.artanis.ai`** — project management, install-wizard OAuth, billing UI, judge dispatch.
+- **`judge.gravel.artanis.ai`** — closed-source scoring service for paid evals.
+- **`mallet-api.artanis.workers.dev`** — static prompt analysis (free with rate-limit, unlimited paid).
+
+## What crosses the boundary
+
+Only:
+
+1. **Wizard OAuth handshake** — once at install. Browser-mediated.
+2. **Judge calls** — per row, per paid eval run.
+3. **Mallet analysis calls** — per prompt analyzed in the dashboard.
+4. **Billing / upgrade** — admin clicks "Upgrade" → redirected to control plane → Polar checkout → webhook updates project tier.
+
+Everything else stays in your DB.
+
+## What it looks like
+
+```
+┌─ Your infrastructure ────────────────────────────────┐    ┌─ Artanis ──────────────────────┐
+│                                                      │    │                                │
+│  Your app + Gravel SDK                               │    │  app.gravel.artanis.ai         │
+│  Your Postgres / SQLite (gravel_* tables)            │◄──►│  judge.gravel.artanis.ai       │
+│  Embedded React dashboard at /admin/ai (same-origin) │    │  mallet-api.artanis.workers.dev│
+│                                                      │    │                                │
+│  Stays here: traces, prompts, feedback, datasets     │    │  Sees: per-row judge calls,    │
+│                                                      │    │  per-analysis Mallet calls     │
+└──────────────────────────────────────────────────────┘    └────────────────────────────────┘
+```
+
+<Note>
+  This is the mental model. The full systems diagram + per-flow request paths are in the internal architecture spec (Artanis-internal repo).
+</Note>

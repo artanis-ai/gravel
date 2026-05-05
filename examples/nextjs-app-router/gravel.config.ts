@@ -1,0 +1,12 @@
+import { defineConfig } from '@artanis/gravel'
+
+export const config = defineConfig({
+  mountPath: '/admin/ai',
+  database: {
+    url: process.env.DATABASE_URL!,
+  },
+  auth: {
+    // Replace with `getUser` once your auth is wired up. See gravel.artanis.ai/docs/auth.
+    defaultPassword: process.env.GRAVEL_ADMIN_PASSWORD!,
+  },
+})

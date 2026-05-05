@@ -1,0 +1,49 @@
+---
+title: Django
+description: "Mount Gravel on a path inside your Django project."
+---
+
+`urls.py`:
+
+```py urls.py
+from django.urls import path, include
+from artanis_gravel.django import gravel_urls
+
+urlpatterns = [
+    # ... your existing routes ...
+    path('admin/ai/', include(gravel_urls)),
+]
+```
+
+`gravel_config.py`:
+
+```py gravel_config.py
+import os
+from artanis_gravel import GravelConfig, GravelUser
+
+async def get_user(req):
+    django_user = req.scope.get('user')
+    if not django_user or not getattr(django_user, 'is_authenticated', False):
+        return None
+    return GravelUser(
+        id=str(django_user.id),
+        first_name=django_user.first_name or 'User',
+        role='admin' if django_user.groups.filter(name='gravel_admin').exists() else 'user',
+    )
+
+config = GravelConfig(
+    mount_path='/admin/ai',
+    database={'url': os.environ['DATABASE_URL']},
+    auth={'get_user': get_user},
+)
+```
+
+## Tracing
+
+In `settings.py` or your apps' `apps.py`:
+
+```py
+import artanis_gravel.auto  # noqa: F401
+```
+
+Disable with `GRAVEL_TRACING_DISABLED=1` in production if needed.

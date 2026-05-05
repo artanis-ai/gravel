@@ -1,0 +1,74 @@
+---
+title: Tracing
+description: "Auto-patches for OpenAI, Anthropic, Langchain, Vercel AI SDK."
+---
+
+<Note>
+  Pre-v1. Auto-patches are scaffolded but not yet emitting traces. Tracking in [STATUS.md](https://github.com/artanis-ai/gravel/blob/main/STATUS.md).
+</Note>
+
+## Activation
+
+Single import at the top of your server entry:
+
+```ts
+import '@artanis/gravel/auto'
+```
+
+```py
+import artanis_gravel.auto  # noqa: F401
+```
+
+The wizard places this. Default = enabled. Disable with `GRAVEL_TRACING_DISABLED=1` if you want a black box.
+
+## Coverage (planned for v1)
+
+| Provider              | TS package                   | Py package      |
+| --------------------- | ---------------------------- | --------------- |
+| OpenAI                | `openai`                     | `openai`        |
+| Anthropic             | `@anthropic-ai/sdk`          | `anthropic`     |
+| Langchain             | `langchain` / `@langchain/*` | `langchain`     |
+| Vercel AI SDK         | `ai`                         | (TS only)       |
+
+## Custom metadata
+
+```ts
+import { withGravelMetadata } from '@artanis/gravel'
+
+await withGravelMetadata(
+  { userId: req.user.id, plan: 'pro', sessionId: 'sess_abc' },
+  async () => openai.chat.completions.create({ /* ... */ }),
+)
+```
+
+Metadata lands on `gravel_traces.metadata` and shows up as filterable columns in the dashboard.
+
+## Async-context propagation
+
+For request-scoped metadata that flows through every traced call:
+
+```ts
+// Express
+app.use((req, res, next) => {
+  gravelContext.run({ userId: req.user.id, route: req.path }, next)
+})
+```
+
+```py
+# FastAPI
+@app.middleware('http')
+async def gravel_metadata(request, call_next):
+    with gravel_context({'user_id': request.state.user.id}):
+        return await call_next(request)
+```
+
+## Disable per-call
+
+```ts
+import { withTracingDisabled } from '@artanis/gravel'
+
+await withTracingDisabled(async () => {
+  // not traced — useful for internal evals you don't want recursively traced
+  await openai.chat.completions.create({ /* ... */ })
+})
+```

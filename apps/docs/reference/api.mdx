@@ -1,0 +1,79 @@
+---
+title: SDK API
+description: "Public API surface."
+---
+
+<Note>
+  Pre-v0. The shape is locked; the implementations are landing piece by piece. See [STATUS.md](https://github.com/artanis-ai/gravel/blob/main/STATUS.md).
+</Note>
+
+## TypeScript
+
+```ts
+// Define + activate config
+import { defineConfig } from '@artanis/gravel'
+export const config = defineConfig({ /* ... */ })
+
+// Boot tracing
+import '@artanis/gravel/auto'
+
+// Mount the dashboard handler (Next App Router)
+import { createGravelHandler } from '@artanis/gravel/next'
+const handler = createGravelHandler({ config })
+
+// Generic Node (Express, etc.)
+import { gravelHandler } from '@artanis/gravel/node'
+app.use(config.mountPath, gravelHandler({ config }))
+
+// Tracing context
+import { withGravelMetadata, withTracingDisabled, gravelContext } from '@artanis/gravel'
+```
+
+## Python
+
+```py
+import artanis_gravel.auto  # boot tracing
+
+# FastAPI
+from artanis_gravel.fastapi import create_gravel_router
+router = create_gravel_router(config=config)
+app.include_router(router, prefix=config.mount_path)
+
+# Django
+from artanis_gravel.django import gravel_urls
+urlpatterns = [ path('admin/ai/', include(gravel_urls)) ]
+
+# Generic ASGI
+from artanis_gravel.asgi import GravelAsgiApp
+gravel_app = GravelAsgiApp(config=config)
+```
+
+## Internal HTTP API
+
+The dashboard talks to the lib via these routes (mounted under `mountPath`):
+
+| Method | Path                              | Purpose                                    |
+| ------ | --------------------------------- | ------------------------------------------ |
+| GET    | `/api/auth/me`                    | Current user                               |
+| POST   | `/api/auth/login`                 | Default-password login                     |
+| POST   | `/api/auth/view-as`               | Toggle view-as for admins                  |
+| GET    | `/api/prompts`                    | List prompts                               |
+| GET    | `/api/prompts/:id`                | Single prompt                              |
+| PUT    | `/api/prompts/:id`                | Save edit to draft                         |
+| POST   | `/api/prompts/submit`             | Create PR from draft branch               |
+| GET    | `/api/traces`                     | Paginated trace list                       |
+| GET    | `/api/traces/:id`                 | Trace + observations + feedback            |
+| POST   | `/api/traces/:id/feedback`        | Leave feedback                             |
+| GET    | `/api/datasets`                   | List datasets                              |
+| POST   | `/api/datasets`                   | Create dataset                             |
+| POST   | `/api/datasets/:id/traces`        | Add trace                                  |
+| GET    | `/api/evals/runs`                 | Eval run list                              |
+| POST   | `/api/evals/runs`                 | Trigger an eval                            |
+| GET    | `/api/evals/runs/:id`             | Run state                                  |
+| POST   | `/api/evals/runs/:id/cancel`      | Cancel run                                 |
+| GET    | `/api/billing/credits`            | Credits + tier                             |
+| POST   | `/api/billing/refresh`            | Refresh from control plane                 |
+| GET    | `/api/github/status`              | Is GH App connected?                       |
+| GET    | `/api/github/connect`             | Start OAuth                                |
+
+This API is **not** stable across versions — the dashboard ships in lockstep with the SDK.

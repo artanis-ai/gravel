@@ -1,0 +1,45 @@
+---
+title: Quickstart
+description: "From `npx init` to your first prompt PR."
+---
+
+This walks through end-to-end. **Some steps are not fully wired yet** during pre-v0 — they're flagged inline.
+
+## 1. Install
+
+```bash
+cd your-existing-app
+npx @artanis/gravel init
+```
+
+(See [Install](/install) for what the wizard does.)
+
+## 2. Open the dashboard
+
+Start your app, navigate to `/admin/ai`. You'll see the login screen if you're using default-password mode, or the dashboard immediately if you've configured `getUser`.
+
+Default password is in your `.env.local` as `GRAVEL_ADMIN_PASSWORD`.
+
+## 3. See your prompts
+
+The Prompts tab lists every prompt the lib found in your repo. By default that's `*.md` / `*.txt` files in conventional directories (`prompts/`, `templates/`, `assistants/`).
+
+To detect prompts embedded in code (`SYSTEM_PROMPT = "..."` etc.), run:
+
+```bash
+npx @artanis/gravel scan --deep
+```
+
+<Warning>Deep scan isn't implemented yet (pre-v0). It will run locally on your machine using your own LLM key — code never leaves your device.</Warning>
+
+## 4. Edit and submit
+
+Click a prompt → edit it inline → click **Submit changes**. Gravel creates a GitHub PR via the shared App.
+
+<Warning>The GitHub App PR flow lands alongside v0 build. For pre-v0 testing the dashboard works but submission is stubbed.</Warning>
+
+## 5. Get a trace
+
+Once tracing auto-patches land in v1, any `openai.chat.completions.create` (or Anthropic, Langchain, Vercel AI SDK) call in your app will appear in the Traces tab.
+
+For now, the Traces / Datasets / Evals tabs render placeholder empty states pointing at the relevant version.

@@ -1,0 +1,24 @@
+---
+title: The loop
+description: "Tracing → feedback → PR → eval. The thing your domain experts do."
+---
+
+## The cycle
+
+```
+Auto-traced LLM call  →  DE labels output  →  Edit a prompt  →  Submit PR  →  Run eval  →  Repeat
+```
+
+1. **Auto-traced LLM call.** Your existing `openai.chat.completions.create` (or Anthropic, Langchain, Vercel AI SDK) call lands as a row in `gravel_traces`. No instrumentation needed.
+2. **DE labels output.** A domain expert opens the trace, leaves a thumbs-up/down + the correct version of the output. That correction becomes ground truth.
+3. **Edit a prompt.** When the labelled outputs reveal a recurring issue, the DE edits the relevant prompt directly in the dashboard. Edits accumulate on a draft branch.
+4. **Submit PR.** One click creates a real GitHub PR via the shared GitHub App. The DE who submitted is credited in the body. Engineers review and merge.
+5. **Run eval.** After the merge ships, the DE clicks "Run trace eval" against a labelled dataset. Gravel's judge scores the stored outputs against the corrections. Regressions surface in plain English.
+6. **Repeat.** The DE iterates without ever touching code; engineers stop being prompt-tweakers.
+
+## Two eval flavours
+
+- **Trace eval (cheap):** replays *stored* output against your labelled correction. Good for catching judge-perceived regressions after a prompt change.
+- **Live eval (accurate):** calls your `runPipeline` callback to produce *new* output, then judges that. Tests the actual current pipeline end-to-end. You pay for the inference; we charge for the judge call.
+
+Both ship in v2 / v3. See [/reference/api](/reference/api).
