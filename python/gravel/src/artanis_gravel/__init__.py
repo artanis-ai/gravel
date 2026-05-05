@@ -7,6 +7,7 @@ Public API surface:
 
 Spec: gravel-cloud/docs/spec/api-surface.md
 """
+from .analyze import AnalyzeError, AnalyzeIssue, AnalyzeResponse, AnalyzeUsage, analyze_prompt
 from .evals import Result, Row, RunResult, run_eval
 from .judge import CriterionVerdict, JudgeError, JudgeResponse, Verdict, judge_call
 from .types import (
@@ -44,6 +45,11 @@ __all__ = [
     "Row",
     "Result",
     "RunResult",
+    "analyze_prompt",
+    "AnalyzeError",
+    "AnalyzeIssue",
+    "AnalyzeResponse",
+    "AnalyzeUsage",
 ]
 
 __version__ = "0.0.1"
