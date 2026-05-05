@@ -13,7 +13,7 @@ export async function readManifest(repoRoot: string): Promise<Manifest> {
     if (parsed.version !== MANIFEST_VERSION) {
       throw new Error(
         `[gravel] Manifest version ${parsed.version} not supported by this SDK ` +
-          `(expected ${MANIFEST_VERSION}). Update @artanis/gravel.`,
+          `(expected ${MANIFEST_VERSION}). Update @artanis-ai/gravel.`,
       )
     }
     return parsed

@@ -3,7 +3,7 @@
  *
  * Usage:
  *   import express from 'express'
- *   import { gravelHandler } from '@artanis/gravel/node'
+ *   import { gravelHandler } from '@artanis-ai/gravel/node'
  *   import { config } from './gravel.config.js'
  *
  *   const app = express()

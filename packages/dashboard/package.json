@@ -1,9 +1,9 @@
 {
-  "name": "@artanis/gravel-dashboard",
+  "name": "@artanis-ai/gravel-dashboard",
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "React app shipped inside @artanis/gravel and artanis-gravel.",
+  "description": "React app shipped inside @artanis-ai/gravel and artanis-gravel.",
   "license": "Apache-2.0",
   "scripts": {
     "dev": "vite",

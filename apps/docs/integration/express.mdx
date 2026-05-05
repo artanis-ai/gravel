@@ -7,7 +7,7 @@ The wizard prints copy-paste instructions for Express (no AST edit yet — landi
 
 ```ts
 import express from 'express'
-import { gravelHandler } from '@artanis/gravel/node'
+import { gravelHandler } from '@artanis-ai/gravel/node'
 import { config } from './gravel.config.js'
 
 const app = express()
@@ -18,7 +18,7 @@ app.listen(3000)
 Tracing import goes at the top of the same file:
 
 ```ts
-import '@artanis/gravel/auto'
+import '@artanis-ai/gravel/auto'
 ```
 
 ## Auth callback shape

@@ -57,7 +57,7 @@ async function mountNextAppRouter(cwd: string, mountPath: string): Promise<Mount
   await fs.mkdir(dir, { recursive: true })
   await fs.writeFile(
     file,
-    `import { createGravelHandler } from '@artanis/gravel/next'
+    `import { createGravelHandler } from '@artanis-ai/gravel/next'
 import { config } from '@/gravel.config'
 
 const handler = createGravelHandler({ config })
@@ -79,7 +79,7 @@ async function mountNextPagesRouter(cwd: string, mountPath: string): Promise<Mou
   await fs.mkdir(dir, { recursive: true })
   await fs.writeFile(
     file,
-    `import { createGravelHandler } from '@artanis/gravel/next-pages'
+    `import { createGravelHandler } from '@artanis-ai/gravel/next-pages'
 import { config } from '@/gravel.config'
 
 export default createGravelHandler({ config })
@@ -127,7 +127,7 @@ function printExpressInstructions(mountPath: string): MountResult {
   console.log(`
 [gravel] Add the following to your Express app entry:
 
-    import { gravelHandler } from '@artanis/gravel/node'
+    import { gravelHandler } from '@artanis-ai/gravel/node'
     import { config } from './gravel.config.js'
 
     app.use('${mountPath}', gravelHandler({ config }))
@@ -139,7 +139,7 @@ function printGenericInstructions(mountPath: string): MountResult {
   // eslint-disable-next-line no-console
   console.log(`
 [gravel] No automatic mounting available for this framework. Mount the handler
-at ${mountPath} using the @artanis/gravel/node adapter. See
+at ${mountPath} using the @artanis-ai/gravel/node adapter. See
 https://gravel.artanis.ai/docs/install for examples.
 `)
   return { path: '<your app entry>', mode: 'manual-instructions' }

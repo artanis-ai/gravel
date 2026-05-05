@@ -1,0 +1,54 @@
+name: Publish TypeScript to npm
+
+# Mirrors the pattern in artanis-ai/sdk: OIDC trusted publishing on tag.
+# No tokens stored anywhere — npm validates the GitHub Actions identity.
+#
+# Setup checklist (one-time, on npm.com):
+#   Account → Trusted Publishers → Add → GitHub Actions
+#     Repository:        artanis-ai/gravel
+#     Workflow filename: publish-npm.yml
+#     Environment:       (blank)
+#     Package:           @artanis-ai/gravel
+#
+# Triggered by: pushing a git tag matching v* (e.g. `git tag v0.0.1 && git push --tags`).
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  publish-npm:
+    name: Publish @artanis-ai/gravel
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # Required for OIDC trusted publishing.
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build dashboard (used by SDK)
+        working-directory: packages/dashboard
+        run: pnpm build
+
+      - name: Build SDK
+        working-directory: packages/sdk-ts
+        run: pnpm build
+
+      - name: Publish
+        working-directory: packages/sdk-ts
+        run: npm publish --access public --provenance

@@ -11,22 +11,22 @@ description: "Public API surface."
 
 ```ts
 // Define + activate config
-import { defineConfig } from '@artanis/gravel'
+import { defineConfig } from '@artanis-ai/gravel'
 export const config = defineConfig({ /* ... */ })
 
 // Boot tracing
-import '@artanis/gravel/auto'
+import '@artanis-ai/gravel/auto'
 
 // Mount the dashboard handler (Next App Router)
-import { createGravelHandler } from '@artanis/gravel/next'
+import { createGravelHandler } from '@artanis-ai/gravel/next'
 const handler = createGravelHandler({ config })
 
 // Generic Node (Express, etc.)
-import { gravelHandler } from '@artanis/gravel/node'
+import { gravelHandler } from '@artanis-ai/gravel/node'
 app.use(config.mountPath, gravelHandler({ config }))
 
 // Tracing context
-import { withGravelMetadata, withTracingDisabled, gravelContext } from '@artanis/gravel'
+import { withGravelMetadata, withTracingDisabled, gravelContext } from '@artanis-ai/gravel'
 ```
 
 ## Python

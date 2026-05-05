@@ -96,7 +96,7 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
       await runBootstrap(cwd)
       ranBootstrap = true
     } catch (e) {
-      blockers.push(`Schema bootstrap failed: ${(e as Error).message}. Re-run \`npx @artanis/gravel migrate\`.`)
+      blockers.push(`Schema bootstrap failed: ${(e as Error).message}. Re-run \`npx @artanis-ai/gravel migrate\`.`)
     }
   }
 
@@ -110,7 +110,7 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
   // Step 8 — BLOCKER
   if (!opts.noDeepScan) {
     blockers.push(
-      'Deep prompt scan not implemented yet. Run `npx @artanis/gravel scan --deep` later when available.',
+      'Deep prompt scan not implemented yet. Run `npx @artanis-ai/gravel scan --deep` later when available.',
     )
   }
 

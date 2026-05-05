@@ -4,7 +4,7 @@
  *
  * Usage (placed by the wizard at `pages/admin/ai/[[...slug]].ts`):
  *
- *   import { createGravelHandler } from '@artanis/gravel/next-pages'
+ *   import { createGravelHandler } from '@artanis-ai/gravel/next-pages'
  *   import { config } from '@/gravel.config'
  *   export default createGravelHandler({ config })
  */

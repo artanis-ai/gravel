@@ -39,7 +39,7 @@ function tsConfigContent(detection: DetectionResult, opts: ConfigFileOptions): s
       ? nextAuthBlock()
       : passwordOnlyAuthBlock()
 
-  return `import { defineConfig } from '@artanis/gravel'
+  return `import { defineConfig } from '@artanis-ai/gravel'
 ${authImport(detection.auth)}
 
 export const config = defineConfig({

@@ -20,4 +20,4 @@ Open http://localhost:3000/admin/ai and log in with the password from `.env.loca
 
 ## Status
 
-This example uses the unpublished `@artanis/gravel` from the workspace; it won't run end-to-end until the lib reaches usable v0. The `gravel.config.ts` and `route.ts` files are real and reflect the eventual API.
+This example uses the unpublished `@artanis-ai/gravel` from the workspace; it won't run end-to-end until the lib reaches usable v0. The `gravel.config.ts` and `route.ts` files are real and reflect the eventual API.

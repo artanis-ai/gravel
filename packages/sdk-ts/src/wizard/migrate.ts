@@ -11,7 +11,7 @@ export async function runBootstrap(cwd: string): Promise<void> {
   const url = env.DATABASE_URL ?? env.POSTGRES_URL ?? env.NEON_DATABASE_URL
   if (!url) {
     throw new Error(
-      '[gravel] No DATABASE_URL detected. Set it in .env.local and re-run `npx @artanis/gravel migrate`.',
+      '[gravel] No DATABASE_URL detected. Set it in .env.local and re-run `npx @artanis-ai/gravel migrate`.',
     )
   }
   const db = await openDatabase({ url })

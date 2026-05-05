@@ -23,14 +23,14 @@ The trust boundary is hard. Trace data and prompts stay in your DB. Only rows be
 
 ## Components in this repo
 
-### `@artanis/gravel` (TypeScript SDK)
+### `@artanis-ai/gravel` (TypeScript SDK)
 
 Source: `packages/sdk-ts/`. Published to npm.
 
 - Auto-patches OpenAI / Anthropic / Langchain / Vercel AI SDK on import.
 - Mounts the dashboard route (Next.js, Express, generic Node).
 - Manages `gravel_*` tables in the user's Postgres or SQLite via Drizzle.
-- Provides `npx @artanis/gravel init` (the install wizard).
+- Provides `npx @artanis-ai/gravel init` (the install wizard).
 - Bundles the React dashboard as static assets.
 
 ### `artanis-gravel` (Python SDK)
@@ -51,7 +51,7 @@ Source: `apps/docs/`. Hosted at `gravel.artanis.ai`.
 
 1. **Data residency.** Prompts and traces stay in the user's database. Only rows being actively judged are POSTed to Artanis.
 2. **Git is the prompt store.** Prompts live where they live in the user's repo (files or embedded strings). Edits become PRs. No hot-reload, no Gravel-served prompt CDN.
-3. **Lowest-friction install.** `npx @artanis/gravel init` is the only command a user ever has to run. Sentry-style: framework detection, browser OAuth, AST edits, test trace before exit.
+3. **Lowest-friction install.** `npx @artanis-ai/gravel init` is the only command a user ever has to run. Sentry-style: framework detection, browser OAuth, AST edits, test trace before exit.
 4. **Framework agnostic.** Both Node (Next.js, Express, generic) and Python (FastAPI, Django, generic ASGI/WSGI) first-class from day one.
 5. **No phone-home.** The library makes no outbound HTTP except: wizard OAuth (once at install), test trace (once at install), judge calls (per paid eval), Mallet analysis (per analysis), credit balance refresh.
 

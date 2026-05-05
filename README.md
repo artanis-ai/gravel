@@ -6,7 +6,7 @@
 
 ```bash
 # What this will do once v0 ships:
-npx @artanis/gravel init
+npx @artanis-ai/gravel init
 ```
 
 ## What it is
@@ -29,7 +29,7 @@ The judge service it talks to for paid evals is closed-source and lives elsewher
 
 ```
 gravel/
-├── packages/sdk-ts/        # @artanis/gravel — TypeScript SDK + bundled dashboard + wizard
+├── packages/sdk-ts/        # @artanis-ai/gravel — TypeScript SDK + bundled dashboard + wizard
 ├── packages/dashboard/     # React app shipped inside the SDKs
 ├── python/gravel/          # artanis-gravel — Python SDK + bundled dashboard + wizard
 ├── apps/docs/              # Mintlify docs → gravel.artanis.ai

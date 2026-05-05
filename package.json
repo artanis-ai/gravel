@@ -14,7 +14,7 @@
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
-    "schema-drift": "pnpm --filter @artanis/gravel schema:dump > /tmp/gravel-ts-schema.sql && cd python/gravel && uv run python -m artanis_gravel.schema_dump > /tmp/gravel-py-schema.sql && diff /tmp/gravel-ts-schema.sql /tmp/gravel-py-schema.sql"
+    "schema-drift": "pnpm --filter @artanis-ai/gravel schema:dump > /tmp/gravel-ts-schema.sql && cd python/gravel && uv run python -m artanis_gravel.schema_dump > /tmp/gravel-py-schema.sql && diff /tmp/gravel-ts-schema.sql /tmp/gravel-py-schema.sql"
   },
   "devDependencies": {
     "typescript": "^5.6.0"

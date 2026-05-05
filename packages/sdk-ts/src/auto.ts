@@ -1,5 +1,5 @@
 /**
- * Import-side-effect entry point: `import '@artanis/gravel/auto'`.
+ * Import-side-effect entry point: `import '@artanis-ai/gravel/auto'`.
  *
  * Boots tracing by detecting installed LLM provider clients and patching them.
  * Honours GRAVEL_TRACING_DISABLED=1.

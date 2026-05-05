@@ -1,7 +1,7 @@
 import OpenAI from 'openai'
 // Boots Gravel's tracing on import. Once v1 ships, this OpenAI call below
 // will produce a trace in your /admin/ai dashboard.
-import '@artanis/gravel/auto'
+import '@artanis-ai/gravel/auto'
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 

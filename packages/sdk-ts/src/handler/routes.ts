@@ -65,9 +65,43 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
   'PUT /api/prompts/:id': async () => json({ error: 'not-implemented' }, 501),
   'POST /api/prompts/submit': async () => json({ error: 'not-implemented' }, 501),
 
-  // GitHub App connection (v0 surface)
-  'GET /api/github/status': async () => json({ connected: false }),
-  'GET /api/github/connect': async () => json({ error: 'not-implemented' }, 501),
+  // GitHub OAuth connection. Spec: gravel-cloud/docs/spec/prompts.md §6.
+  'GET /api/github/status': async ({ db }) => {
+    void db
+    // BLOCKER: query gravel_users.extra for the calling user once the
+    // connect-finalize handler stores the gh_token there.
+    return json({ connected: false })
+  },
+  'GET /api/github/connect': async ({ request, config }) => {
+    const apiKey = process.env.GRAVEL_API_KEY
+    const projectId = process.env.GRAVEL_PROJECT_ID
+    if (!apiKey || !projectId) {
+      return json({ error: 'GRAVEL_API_KEY / GRAVEL_PROJECT_ID not set in .env' }, 500)
+    }
+    const { startConnectFlow } = await import('../github/index.js')
+    const callbackUrl = new URL(`${config.mountPath}/api/github/callback`, request.url).toString()
+    const { redirectUrl } = startConnectFlow({ apiKey, projectId, callbackUrl })
+    return json({ redirectUrl })
+  },
+  'GET /api/github/callback': async ({ request }) => {
+    const apiKey = process.env.GRAVEL_API_KEY
+    if (!apiKey) return json({ error: 'GRAVEL_API_KEY not set' }, 500)
+    const url = new URL(request.url)
+    const jwt = url.searchParams.get('session')
+    if (!jwt) return json({ error: 'missing session parameter' }, 400)
+    try {
+      const { finalizeConnectCallback } = await import('../github/index.js')
+      const result = finalizeConnectCallback({ apiKey, jwt })
+      // BLOCKER: persist result.ghAccessToken into gravel_users.extra for the
+      // current user. Needs the auth-resolved user from the request + a
+      // small schema slot. Lands alongside the dashboard-side prompt-submit
+      // wiring.
+      void result
+      return json({ ok: true, blocker: 'gh_token persistence pending' })
+    } catch (err) {
+      return json({ error: (err as Error).message }, 400)
+    }
+  },
 
   // Traces (v1)
   'GET /api/traces': async () => json({ traces: [] }),

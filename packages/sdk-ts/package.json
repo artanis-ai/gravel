@@ -1,5 +1,5 @@
 {
-  "name": "@artanis/gravel",
+  "name": "@artanis-ai/gravel",
   "version": "0.0.1",
   "description": "Embedded prompt management, tracing, and evals for AI engineering teams.",
   "license": "Apache-2.0",
@@ -48,6 +48,7 @@
   },
   "files": [
     "dist",
+    "migrations",
     "README.md",
     "LICENSE"
   ],
@@ -58,7 +59,8 @@
     "test:watch": "vitest",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
-    "schema:dump": "tsx src/schema/dump.ts"
+    "schema:dump": "tsx src/schema/dump.ts",
+    "migrations:generate": "drizzle-kit generate --config=drizzle.config.postgres.ts && drizzle-kit generate --config=drizzle.config.sqlite.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.36.0",

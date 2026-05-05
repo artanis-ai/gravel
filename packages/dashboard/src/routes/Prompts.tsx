@@ -12,7 +12,7 @@ export function PromptsPage(_: { promptId?: string } = {}) {
         body={
           <>
             We didn't find any prompts in your repo. Try{' '}
-            <code className="bg-cream px-1 py-0.5 rounded font-mono text-xs">npx @artanis/gravel scan --deep</code>{' '}
+            <code className="bg-cream px-1 py-0.5 rounded font-mono text-xs">npx @artanis-ai/gravel scan --deep</code>{' '}
             to look for embedded prompts, or check that your manifest is up to date.
           </>
         }

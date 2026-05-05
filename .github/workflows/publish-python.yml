@@ -1,0 +1,48 @@
+name: Publish Python to PyPI
+
+# Mirrors the pattern in artanis-ai/sdk: OIDC trusted publishing on tag.
+# No PyPI token stored — PyPI validates the GitHub Actions identity.
+#
+# Setup checklist (one-time, on pypi.org):
+#   Account → Publishing → Add a new pending publisher
+#     PyPI Project Name: artanis-gravel
+#     Owner:             artanis-ai
+#     Repository name:   gravel
+#     Workflow name:     publish-python.yml
+#     Environment:       (blank)
+#
+# Triggered by: pushing a git tag matching v* (same as the npm workflow).
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  publish-python:
+    name: Publish artanis-gravel
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build deps
+        run: pip install build
+
+      - name: Build wheel + sdist
+        working-directory: python/gravel
+        run: python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: python/gravel/dist/

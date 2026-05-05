@@ -15,10 +15,10 @@ import { constants as fsConstants } from 'node:fs'
 const NATIVE_HOOK_BODY = `#!/usr/bin/env sh
 # Added by Gravel — keep .artanis/manifest.json in sync with prompts in your code.
 # Polite-blocking: bypass with \`git commit --no-verify\`.
-npx --no-install @artanis/gravel manifest --check || {
+npx --no-install @artanis-ai/gravel manifest --check || {
   echo ""
   echo "Gravel: Your prompt manifest is out of date."
-  echo "Run:    npx @artanis/gravel manifest --update"
+  echo "Run:    npx @artanis-ai/gravel manifest --update"
   echo "Then:   git add .artanis/manifest.json && git commit"
   echo ""
   echo "(To bypass: git commit --no-verify)"
@@ -26,13 +26,13 @@ npx --no-install @artanis/gravel manifest --check || {
 }
 `
 
-const HUSKY_LINE = `npx --no-install @artanis/gravel manifest --check\n`
+const HUSKY_LINE = `npx --no-install @artanis-ai/gravel manifest --check\n`
 
 const PRECOMMIT_YAML_LOCAL = `  - repo: local
     hooks:
       - id: gravel-manifest
         name: Gravel manifest check
-        entry: npx --no-install @artanis/gravel manifest --check
+        entry: npx --no-install @artanis-ai/gravel manifest --check
         language: system
         pass_filenames: false
 `
@@ -50,7 +50,7 @@ export async function installHook(repoRoot: string): Promise<HookInstallResult> 
   const huskyPath = join(repoRoot, '.husky', 'pre-commit')
   if (await exists(huskyPath)) {
     const content = await fs.readFile(huskyPath, 'utf8')
-    if (content.includes('@artanis/gravel manifest')) {
+    if (content.includes('@artanis-ai/gravel manifest')) {
       return { mode: 'husky', path: huskyPath, alreadyInstalled: true }
     }
     await fs.writeFile(huskyPath, content + (content.endsWith('\n') ? '' : '\n') + HUSKY_LINE)
@@ -80,7 +80,7 @@ export async function installHook(repoRoot: string): Promise<HookInstallResult> 
   const hookPath = join(gitHookDir, 'pre-commit')
   if (await exists(hookPath)) {
     const content = await fs.readFile(hookPath, 'utf8')
-    if (content.includes('@artanis/gravel manifest')) {
+    if (content.includes('@artanis-ai/gravel manifest')) {
       return { mode: 'native', path: hookPath, alreadyInstalled: true }
     }
     await fs.writeFile(hookPath, content + (content.endsWith('\n') ? '' : '\n') + HUSKY_LINE)

@@ -1,5 +1,5 @@
 /**
- * Public API surface for @artanis/gravel.
+ * Public API surface for @artanis-ai/gravel.
  *
  * Stable across minor versions. Spec: gravel-cloud/docs/spec/api-surface.md
  */

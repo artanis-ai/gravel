@@ -10,14 +10,14 @@ description: "One command. Wizard does the rest."
 ## TypeScript
 
 ```bash
-npx @artanis/gravel init
+npx @artanis-ai/gravel init
 ```
 
 The wizard:
 
 1. Detects your framework (Next.js, Express, FastAPI fallback, generic Node).
 2. Opens a browser to authenticate against Artanis. *(Currently stubbed — pass `--api-key` and `--project`.)*
-3. Installs `@artanis/gravel` with your detected package manager.
+3. Installs `@artanis-ai/gravel` with your detected package manager.
 4. Writes `gravel.config.ts` with auth wiring matched to your existing provider (Clerk, NextAuth, Better Auth, …).
 5. Mounts the dashboard route — `app/admin/ai/[[...slug]]/route.ts` for App Router, `pages/admin/ai/[[...slug]].ts` for Pages, generic adapter for Express.
 6. Runs idempotent CREATE TABLE migrations against your `DATABASE_URL`.
@@ -36,7 +36,7 @@ Same flow, adapted for FastAPI / Django / generic ASGI / WSGI.
 ## Non-interactive (CI)
 
 ```bash
-npx @artanis/gravel init --ci --api-key $GRAVEL_API_KEY --project $GRAVEL_PROJECT_ID
+npx @artanis-ai/gravel init --ci --api-key $GRAVEL_API_KEY --project $GRAVEL_PROJECT_ID
 ```
 
 All prompts have flags:
@@ -55,7 +55,7 @@ All prompts have flags:
 ## What you'll see after install
 
 ```bash
-$ npx @artanis/gravel init
+$ npx @artanis-ai/gravel init
 Detected ts, next-app-router, pkg=pnpm, db=postgres, auth=clerk
 ✓ Wrote gravel.config.ts
 ✓ Created app/admin/ai/[[...slug]]/route.ts

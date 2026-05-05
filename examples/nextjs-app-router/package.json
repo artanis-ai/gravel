@@ -8,7 +8,7 @@
     "start": "next start"
   },
   "dependencies": {
-    "@artanis/gravel": "workspace:*",
+    "@artanis-ai/gravel": "workspace:*",
     "next": "^15.0.0",
     "openai": "^4.70.0",
     "pg": "^8.13.0",

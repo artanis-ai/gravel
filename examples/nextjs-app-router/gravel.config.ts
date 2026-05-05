@@ -1,4 +1,4 @@
-import { defineConfig } from '@artanis/gravel'
+import { defineConfig } from '@artanis-ai/gravel'
 
 export const config = defineConfig({
   mountPath: '/admin/ai',

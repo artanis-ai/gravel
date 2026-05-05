@@ -35,7 +35,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Dump TS schema
-        run: pnpm --filter @artanis/gravel schema:dump > /tmp/ts-schema.txt
+        run: pnpm --filter @artanis-ai/gravel schema:dump > /tmp/ts-schema.txt
 
       - name: Install Python deps
         working-directory: python/gravel

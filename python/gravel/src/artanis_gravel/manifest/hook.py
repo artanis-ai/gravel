@@ -47,7 +47,7 @@ def install_hook(repo_root: str | Path) -> HookInstallResult:
     husky = root / ".husky" / "pre-commit"
     if husky.exists():
         content = husky.read_text(encoding="utf-8")
-        if "artanis_gravel manifest" in content or "@artanis/gravel manifest" in content:
+        if "artanis_gravel manifest" in content or "@artanis-ai/gravel manifest" in content:
             return HookInstallResult(mode="husky", path=str(husky), already_installed=True)
         sep = "" if content.endswith("\n") else "\n"
         husky.write_text(content + sep + "python -m artanis_gravel manifest --check\n")
@@ -72,7 +72,7 @@ def install_hook(repo_root: str | Path) -> HookInstallResult:
     hook = git_hooks / "pre-commit"
     if hook.exists():
         content = hook.read_text(encoding="utf-8")
-        if "artanis_gravel manifest" in content or "@artanis/gravel manifest" in content:
+        if "artanis_gravel manifest" in content or "@artanis-ai/gravel manifest" in content:
             return HookInstallResult(mode="native", path=str(hook), already_installed=True)
         sep = "" if content.endswith("\n") else "\n"
         hook.write_text(content + sep + "python -m artanis_gravel manifest --check\n")

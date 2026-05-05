@@ -1,4 +1,4 @@
-import { createGravelHandler } from '@artanis/gravel/next'
+import { createGravelHandler } from '@artanis-ai/gravel/next'
 import { config } from '@/gravel.config'
 
 const handler = createGravelHandler({ config })

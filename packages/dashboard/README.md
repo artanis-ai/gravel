@@ -1,4 +1,4 @@
-# @artanis/gravel-dashboard
+# @artanis-ai/gravel-dashboard
 
 The React app shipped inside both the TypeScript and Python SDKs.
 

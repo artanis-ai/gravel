@@ -12,7 +12,7 @@ description: "Auto-patches for OpenAI, Anthropic, Langchain, Vercel AI SDK."
 Single import at the top of your server entry:
 
 ```ts
-import '@artanis/gravel/auto'
+import '@artanis-ai/gravel/auto'
 ```
 
 ```py
@@ -33,7 +33,7 @@ The wizard places this. Default = enabled. Disable with `GRAVEL_TRACING_DISABLED
 ## Custom metadata
 
 ```ts
-import { withGravelMetadata } from '@artanis/gravel'
+import { withGravelMetadata } from '@artanis-ai/gravel'
 
 await withGravelMetadata(
   { userId: req.user.id, plan: 'pro', sessionId: 'sess_abc' },
@@ -65,7 +65,7 @@ async def gravel_metadata(request, call_next):
 ## Disable per-call
 
 ```ts
-import { withTracingDisabled } from '@artanis/gravel'
+import { withTracingDisabled } from '@artanis-ai/gravel'
 
 await withTracingDisabled(async () => {
   // not traced — useful for internal evals you don't want recursively traced

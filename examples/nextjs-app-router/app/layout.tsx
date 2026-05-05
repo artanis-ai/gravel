@@ -8,5 +8,5 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
 export const metadata = {
   title: 'Gravel Next.js example',
-  description: 'Demonstrates @artanis/gravel inside a Next.js App Router app.',
+  description: 'Demonstrates @artanis-ai/gravel inside a Next.js App Router app.',
 }
