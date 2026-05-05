@@ -4,7 +4,7 @@
  *
  * v0 implementation status:
  *   - Step 1 (detect):           ✓ implemented (./detect.ts)
- *   - Step 2 (browser OAuth):    ⚠ stubbed against placeholder control plane
+ *   - Step 2 (browser OAuth):    ✓ implemented (./oauth.ts) against gravel.artanis.ai
  *   - Step 3 (install SDK):      ✓ shells out to detected pkg manager
  *   - Step 4 (write .env):       ✓ implemented
  *   - Step 5 (AST mount edits):  ⚠ partial — emits files for Next.js/FastAPI/Django;
@@ -23,9 +23,7 @@ import { mountDashboardRoute } from './mount.js'
 import { writeEnvAdditions, generatePassword } from './env.js'
 import { runBootstrap } from './migrate.js'
 import { installHook } from '../manifest/hook.js'
-import { resolveControlPlaneUrl } from './oauth.js'
-import { promises as fs } from 'node:fs'
-import { join } from 'node:path'
+import { resolveControlPlaneUrl, browserOAuthHandshake } from './oauth.js'
 
 export interface WizardOptions {
   cwd?: string
@@ -38,6 +36,12 @@ export interface WizardOptions {
   noDeepScan?: boolean
   noTestTrace?: boolean
   framework?: string
+  /** Skip browser launch during OAuth (CI / tests). */
+  noBrowser?: boolean
+  /** Override OAuth poll interval in ms (test injection). */
+  oauthPollIntervalMs?: number
+  /** Override OAuth total timeout in ms (test injection). */
+  oauthTimeoutMs?: number
 }
 
 export interface WizardSummary {
@@ -50,6 +54,10 @@ export interface WizardSummary {
   passwordGenerated: string | null
   controlPlane: string
   blockers: string[]
+  projectId: string
+  apiKey: string
+  projectName?: string
+  organizationName?: string
 }
 
 export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary> {
@@ -60,16 +68,44 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
   const detection = await detect(cwd)
   log(`Detected ${detection.language}, ${detection.framework}, pkg=${detection.packageManager}, db=${detection.database.driver}, auth=${detection.auth}`)
 
-  // Step 2 (OAuth) — STUBBED
-  // BLOCKER: real handshake needs the control plane online. For now, accept
-  // --api-key + --project from CLI flags or env. If neither, emit a mock pair.
+  // Step 2 (OAuth) — browser handshake against the live control plane.
+  // Shortcut: if --api-key + --project (or env equivalents) are provided, skip
+  // the browser dance entirely (non-interactive mode per spec/wizard.md).
   const controlPlane = resolveControlPlaneUrl()
-  const apiKey = opts.apiKey ?? process.env.GRAVEL_API_KEY ?? `grk_dev_${randomToken(20)}`
-  const projectId = opts.project ?? process.env.GRAVEL_PROJECT_ID ?? `proj_dev_${randomToken(12)}`
-  if (!opts.apiKey && !process.env.GRAVEL_API_KEY) {
+  const flagApiKey = opts.apiKey ?? process.env.GRAVEL_API_KEY
+  const flagProject = opts.project ?? process.env.GRAVEL_PROJECT_ID
+  let apiKey: string
+  let projectId: string
+  let projectName: string | undefined
+  let organizationName: string | undefined
+
+  if (flagApiKey && flagProject) {
+    apiKey = flagApiKey
+    projectId = flagProject
+  } else if (opts.ci) {
+    // CI without explicit creds → dev placeholder, surface a blocker.
+    apiKey = flagApiKey ?? `ak_dev_${randomToken(28)}`
+    projectId = flagProject ?? `proj_dev_${randomToken(12)}`
     blockers.push(
-      `Wizard OAuth not available: control plane at ${controlPlane} is not provisioned. ` +
-        `Using a dev-mode mock API key. Re-run init with --api-key from your project's settings page once the control plane is live.`,
+      'Running in --ci without --api-key + --project: emitted dev placeholder credentials. ' +
+        'Set GRAVEL_API_KEY and GRAVEL_PROJECT_ID (from your project settings page) before deploying.',
+    )
+  } else {
+    log(`Opening ${controlPlane}/cli/auth in your browser to sign in…`)
+    const claim = await browserOAuthHandshake({
+      baseUrl: controlPlane,
+      openBrowser: !opts.noBrowser,
+      ...(opts.oauthPollIntervalMs !== undefined ? { pollIntervalMs: opts.oauthPollIntervalMs } : {}),
+      ...(opts.oauthTimeoutMs !== undefined ? { timeoutMs: opts.oauthTimeoutMs } : {}),
+      onAuthUrl: (u) => log(`If your browser didn't open, visit: ${u}`),
+    })
+    apiKey = claim.apiKey
+    projectId = claim.projectId
+    projectName = claim.projectName
+    organizationName = claim.organizationName
+    log(
+      `Authorized ${claim.projectName ?? projectId}` +
+        (claim.organizationName ? ` (${claim.organizationName})` : ''),
     )
   }
 
@@ -124,16 +160,14 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
   // Step 10
   log('')
   log('Gravel skeleton installed. Next:')
-  log(`  1. Visit ${opts.mountPath ?? '/admin/ai'} in your app and log in.`)
+  log(`  1. Visit ${opts.mountPath ?? '/admin/ai'} in your app and log in (admin password is in your .env).`)
   log(`  2. Edit your getUser callback in gravel.config.ts to match your auth.`)
-  log(`  3. Connect GitHub from the Settings page (when available).`)
+  log(`  3. Send a test trace:`)
+  log(`       curl -X POST ${controlPlane}/api/traces \\`)
+  log(`         -H "Authorization: Bearer ${apiKey}" \\`)
+  log(`         -H "Content-Type: application/json" \\`)
+  log(`         -d '{"project_id":"${projectId}","prompt":"hello","completion":"world"}'`)
   log(`  4. Read https://gravel.artanis.ai/docs`)
-
-  await fs.writeFile(join(cwd, '.artanis', 'install-summary.json'), JSON.stringify(
-    { detection, blockers, controlPlane, mountedRoute, installedHook, ranBootstrap },
-    null, 2,
-  ).then ? '' : '')
-  // (not awaiting filesystem mkdir intentionally — manifest dir created later)
 
   return {
     detection,
@@ -145,6 +179,10 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
     passwordGenerated: password,
     controlPlane,
     blockers,
+    projectId,
+    apiKey,
+    ...(projectName !== undefined ? { projectName } : {}),
+    ...(organizationName !== undefined ? { organizationName } : {}),
   }
 }
 

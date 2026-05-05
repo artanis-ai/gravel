@@ -33,6 +33,7 @@ Init flags:
   --no-hook                  Skip pre-commit hook installation.
   --no-deep-scan             Skip deep scan (also skipped while not implemented).
   --no-test-trace            Skip test trace.
+  --no-browser               Don't auto-open the browser during OAuth.
 
 Docs: https://gravel.artanis.ai/docs
 Issues: https://github.com/artanis-ai/gravel/issues
@@ -76,6 +77,7 @@ async function main(): Promise<void> {
         noHook: !!flags['no-hook'],
         noDeepScan: !!flags['no-deep-scan'],
         noTestTrace: !!flags['no-test-trace'],
+        noBrowser: !!flags['no-browser'],
       })
       break
 
