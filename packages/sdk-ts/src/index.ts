@@ -21,3 +21,16 @@ export { createGravelHandler } from './handler/index.js'
 
 // Tracing context helpers
 export { withGravelMetadata, withTracingDisabled, gravelContext } from './tracing/context.js'
+
+// Judge / evals
+export { judgeCall, JudgeError } from './judge/client.js'
+export type {
+  Verdict,
+  VerdictBreakdownEntry,
+  JudgeType,
+  JudgeCallInput,
+  JudgeCallOptions,
+  JudgeApiResponse,
+} from './judge/client.js'
+export { runEval } from './evals/runner.js'
+export type { EvalRow, EvalResult, RunEvalOptions, RunEvalReturn } from './evals/runner.js'
