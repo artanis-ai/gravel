@@ -34,3 +34,7 @@ export type {
 } from './judge/client.js'
 export { runEval } from './evals/runner.js'
 export type { EvalRow, EvalResult, RunEvalOptions, RunEvalReturn } from './evals/runner.js'
+
+// Analyze (Mallet)
+export { analyzePrompt, AnalyzeError } from './analyze/client.js'
+export type { AnalyzeIssue, AnalyzeUsage, AnalyzeResult } from './analyze/client.js'
