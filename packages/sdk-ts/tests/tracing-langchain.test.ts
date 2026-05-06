@@ -32,6 +32,30 @@ vi.mock('../src/tracing/persist.js', () => ({
 
 const PATCHED_KEY = Symbol.for('@artanis-ai/gravel/langchain-patched')
 
+/**
+ * Poll until the langchain patch has finished its async dynamic-import +
+ * handler registration. Replaces a flaky `setTimeout(10ms)` that was
+ * timing-dependent on CI runners.
+ */
+async function waitForRegistration(timeoutMs = 2000): Promise<void> {
+  const start = Date.now()
+  while (registeredHandler === null && Date.now() - start < timeoutMs) {
+    await new Promise((r) => setTimeout(r, 5))
+  }
+}
+
+/**
+ * Wait for `persistSpy` to have been invoked at least `n` times. Like
+ * `waitForRegistration` but for the post-event persistence path which
+ * also runs in a `.then()` chain off the user-facing handler call.
+ */
+async function waitForPersist(n = 1, timeoutMs = 2000): Promise<void> {
+  const start = Date.now()
+  while (persistSpy.mock.calls.length < n && Date.now() - start < timeoutMs) {
+    await new Promise((r) => setTimeout(r, 5))
+  }
+}
+
 describe('tracing/langchain', () => {
   beforeEach(() => {
     persistSpy.mockClear()
@@ -47,14 +71,14 @@ describe('tracing/langchain', () => {
 
   it('registers a global callback handler', async () => {
     await import('../src/tracing/langchain.js')
-    await new Promise((r) => setTimeout(r, 10))
+    await waitForRegistration()
     expect(registeredHandler).toBeTruthy()
     expect(registeredHandler.name).toBe('gravel-tracer')
   })
 
   it('persists a trace on handleLLMEnd', async () => {
     await import('../src/tracing/langchain.js')
-    await new Promise((r) => setTimeout(r, 10))
+    await waitForRegistration()
 
     const llm = { id: ['llm', 'OpenAI'], modelName: 'gpt-test' }
     const runId = 'run-1'
@@ -66,7 +90,7 @@ describe('tracing/langchain', () => {
       },
       runId,
     )
-    await new Promise((r) => setTimeout(r, 10))
+    await waitForPersist()
 
     expect(persistSpy).toHaveBeenCalledTimes(1)
     const payload = persistSpy.mock.calls[0]![0] as any
@@ -79,7 +103,7 @@ describe('tracing/langchain', () => {
 
   it('persists status=errored on handleLLMError', async () => {
     await import('../src/tracing/langchain.js')
-    await new Promise((r) => setTimeout(r, 10))
+    await waitForRegistration()
 
     const runId = 'run-2'
     registeredHandler.handleLLMStart(
@@ -88,7 +112,7 @@ describe('tracing/langchain', () => {
       runId,
     )
     registeredHandler.handleLLMError(new Error('boom-langchain'), runId)
-    await new Promise((r) => setTimeout(r, 10))
+    await waitForPersist()
 
     expect(persistSpy).toHaveBeenCalledTimes(1)
     const payload = persistSpy.mock.calls[0]![0] as any
@@ -98,12 +122,12 @@ describe('tracing/langchain', () => {
 
   it('persists chain start/end', async () => {
     await import('../src/tracing/langchain.js')
-    await new Promise((r) => setTimeout(r, 10))
+    await waitForRegistration()
 
     const runId = 'run-3'
     registeredHandler.handleChainStart({ id: ['chain', 'MyChain'] }, { foo: 'bar' }, runId)
     registeredHandler.handleChainEnd({ result: 42 }, runId)
-    await new Promise((r) => setTimeout(r, 10))
+    await waitForPersist()
 
     expect(persistSpy).toHaveBeenCalledTimes(1)
     const payload = persistSpy.mock.calls[0]![0] as any
@@ -116,7 +140,11 @@ describe('tracing/langchain', () => {
   it('GRAVEL_TRACING_DISABLED=1 prevents handler registration', async () => {
     process.env.GRAVEL_TRACING_DISABLED = '1'
     await import('../src/tracing/langchain.js')
-    await new Promise((r) => setTimeout(r, 10))
+    // Brief wait gives the dynamic import a chance to resolve before
+    // asserting the handler is still null. We deliberately don't poll
+    // (waitForRegistration would time out the full 2s) — the env-var
+    // gate fires synchronously inside the patch module.
+    await new Promise((r) => setTimeout(r, 50))
     expect(registeredHandler).toBeNull()
   })
 })
