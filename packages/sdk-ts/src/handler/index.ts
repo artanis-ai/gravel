@@ -10,6 +10,7 @@ import type { GravelConfig, GravelRequest, ResolvedGravelConfig } from '../types
 import { resolveConfig } from '../types.js'
 import { authenticate } from '../auth/index.js'
 import { openDatabase, type Database } from '../db/index.js'
+import { setGravelTracingConfig } from '../tracing/persist.js'
 import { route } from './routes.js'
 
 export interface CreateHandlerOpts {
@@ -33,6 +34,10 @@ async function ensureDb(config: ResolvedGravelConfig): Promise<Database> {
 export function createGravelHandler(opts: CreateHandlerOpts) {
   if (!cachedConfig) {
     cachedConfig = resolveConfig(opts.config)
+    // Hand the resolved config to the tracing module so the auto-patches
+    // (loaded via `import '@artanis-ai/gravel/auto'`) have a DB to write
+    // their traces into. Without this they're lazily inert.
+    setGravelTracingConfig(cachedConfig)
   }
   const config = cachedConfig
 
