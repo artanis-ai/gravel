@@ -10,6 +10,15 @@ Spec: gravel-cloud/docs/spec/api-surface.md
 from .analyze import AnalyzeError, AnalyzeIssue, AnalyzeResponse, AnalyzeUsage, analyze_prompt
 from .evals import Result, Row, RunResult, run_eval
 from .judge import CriterionVerdict, JudgeError, JudgeResponse, Verdict, judge_call
+from .tracing import (
+    awith_gravel_metadata,
+    awith_tracing_disabled,
+    gravel_context,
+    set_gravel_tracing_config,
+    with_gravel_metadata,
+    with_gravel_metadata_call,
+    with_tracing_disabled,
+)
 from .types import (
     DEFAULT_MOUNT_PATH,
     DEFAULT_PRODUCT_NAME,
@@ -50,6 +59,13 @@ __all__ = [
     "AnalyzeIssue",
     "AnalyzeResponse",
     "AnalyzeUsage",
+    "gravel_context",
+    "with_gravel_metadata",
+    "with_gravel_metadata_call",
+    "awith_gravel_metadata",
+    "with_tracing_disabled",
+    "awith_tracing_disabled",
+    "set_gravel_tracing_config",
 ]
 
 __version__ = "0.0.1"
