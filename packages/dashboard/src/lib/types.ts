@@ -140,3 +140,73 @@ export interface AnalysisResponse {
     reset_at: string
   }
 }
+
+// ---------- Prompts ----------
+//
+// Mirrors `packages/sdk-ts/src/manifest/types.ts` (ManifestPrompt) and the
+// route shapes in `packages/sdk-ts/src/handler/routes.ts` (`/api/prompts*`,
+// `/api/github/*`).
+
+export type PromptType = 'file' | 'embedded'
+
+export interface ManifestPromptListItem {
+  id: string
+  type: PromptType
+  path: string
+  hash: string
+  // embedded only
+  lineStart?: number
+  lineEnd?: number
+  charStart?: number
+  charEnd?: number
+  varName?: string
+}
+
+export interface PromptsListResponse {
+  prompts: ManifestPromptListItem[]
+  last_scan_at: string | null
+}
+
+export interface PromptDetailResponse {
+  id: string
+  type: PromptType
+  path: string
+  content: string
+  varName?: string
+}
+
+export interface DraftRow {
+  id: string
+  promptId: string
+  draftBranch: string
+  newText: string
+  editorUserId: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DraftsResponse {
+  draftBranch: string
+  drafts: DraftRow[]
+}
+
+export interface PutDraftResponse {
+  draft: DraftRow
+  draftBranch: string
+}
+
+export interface SubmitPrResult {
+  ok: true
+  pr: {
+    prUrl: string
+    prNumber: number
+    branchName: string
+  }
+}
+
+export interface GithubStatusResponse {
+  connected: boolean
+  repoOwner: string | null
+  repoName: string | null
+  connectedAt: string | null
+}
