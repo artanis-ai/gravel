@@ -37,9 +37,9 @@ export async function incomingToFetch(req: IncomingMessage): Promise<Request> {
 
 export async function fetchToServerResponse(response: Response, res: ServerResponse): Promise<void> {
   res.statusCode = response.status
-  for (const [key, value] of response.headers) {
+  response.headers.forEach((value, key) => {
     res.setHeader(key, value)
-  }
+  })
   if (response.body) {
     const reader = response.body.getReader()
     while (true) {

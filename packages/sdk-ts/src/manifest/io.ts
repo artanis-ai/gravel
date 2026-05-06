@@ -3,7 +3,8 @@
  */
 import { promises as fs } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { Manifest, MANIFEST_PATH, MANIFEST_VERSION, emptyManifest } from './types.js'
+import { MANIFEST_PATH, MANIFEST_VERSION, emptyManifest } from './types.js'
+import type { Manifest } from './types.js'
 
 export async function readManifest(repoRoot: string): Promise<Manifest> {
   const path = join(repoRoot, MANIFEST_PATH)

@@ -7,8 +7,6 @@ from __future__ import annotations
 
 import sys
 
-from sqlalchemy import ForeignKeyConstraint
-
 from .schema import ALL_TABLES
 
 
@@ -20,6 +18,7 @@ _TYPE_MAP = {
     "JSONB": "json",
     "INTEGER": "integer",
     "BIGINT": "integer",
+    "BIGINTEGER": "integer",
     "DATETIME": "timestamp",
     "TIMESTAMP": "timestamp",
     "BOOLEAN": "boolean",

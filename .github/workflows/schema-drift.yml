@@ -21,8 +21,6 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -35,7 +33,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Dump TS schema
-        run: pnpm --filter @artanis-ai/gravel schema:dump > /tmp/ts-schema.txt
+        run: pnpm --silent --filter @artanis-ai/gravel schema:dump > /tmp/ts-schema.txt
 
       - name: Install Python deps
         working-directory: python/gravel

@@ -12,16 +12,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r typecheck
-      - run: pnpm -r build
-      - run: pnpm -r test --if-present
+      # Scope to the publishable workspaces. Examples are runnable docs but
+      # require env vars (DATABASE_URL, GRAVEL_ADMIN_PASSWORD) at build
+      # time, so we don't gate CI on their build.
+      - run: pnpm --filter "./packages/*" -r typecheck
+      - run: pnpm --filter "./packages/*" -r build
+      - run: pnpm --filter "./packages/*" -r test --if-present
 
   python:
     name: Python
