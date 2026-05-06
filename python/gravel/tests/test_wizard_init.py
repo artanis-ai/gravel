@@ -1,8 +1,9 @@
-"""Integration test for run_wizard / init() — explicit-credential path.
+"""Integration test for run_wizard / init().
 
-Avoids OAuth entirely by passing api_key + project. Disables --no-migrate
-(no DATABASE_URL on test boxes), --no-hook (no git repo), --no-deep-scan,
-and --no-test-trace (both are TODOs that always blocker-out).
+The CLI is always local — sign-in lives in the dashboard. We exercise:
+  - default install (no creds in .env, fully offline)
+  - api_key + project flag path (creds baked into .env)
+  - env-var fallback for the same flag path
 """
 from __future__ import annotations
 
@@ -24,28 +25,27 @@ def _bare_python_project(root: Path) -> None:
     )
 
 
-def test_writes_env_and_config(tmp_path: Path) -> None:
+def test_default_install_is_local(tmp_path: Path) -> None:
+    """No flags, no env: runs fully local — no creds in .env, no network."""
     _bare_python_project(tmp_path)
 
     summary = run_wizard(
-        api_key="ak_test",
-        project_id="proj_xxx",
         cwd=tmp_path,
         no_migrate=True,
         no_hook=True,
         no_deep_scan=True,
         no_test_trace=True,
-        ci=True,  # avoid attempting OAuth even if env stripping ever changes
     )
 
-    env_file = tmp_path / ".env.local"
-    assert env_file.exists(), "wizard should write .env.local when neither .env nor .env.local exists"
-    env_text = env_file.read_text(encoding="utf-8")
-    assert "GRAVEL_API_KEY=ak_test" in env_text
-    assert "GRAVEL_PROJECT_ID=proj_xxx" in env_text
+    assert summary["auth_mode"] == "local"
+    assert summary["api_key"] is None
+    assert summary["project_id"] is None
+
+    env_text = (tmp_path / ".env.local").read_text(encoding="utf-8")
+    assert "GRAVEL_API_KEY" not in env_text
+    assert "GRAVEL_PROJECT_ID" not in env_text
     assert "GRAVEL_ADMIN_PASSWORD=" in env_text
 
-    # Random 32-char password (D-Q70).
     pw_line = next(line for line in env_text.splitlines() if line.startswith("GRAVEL_ADMIN_PASSWORD="))
     pw = pw_line.split("=", 1)[1]
     assert len(pw) == 32
@@ -56,14 +56,31 @@ def test_writes_env_and_config(tmp_path: Path) -> None:
     assert "GravelConfig" in cfg_text
     assert "/admin/ai" in cfg_text
 
-    # FastAPI route shim should have been emitted.
     assert (tmp_path / "gravel_route.py").exists()
 
+
+def test_flags_path_bakes_creds_into_env(tmp_path: Path) -> None:
+    """Passing api_key + project drops them straight into .env."""
+    _bare_python_project(tmp_path)
+
+    summary = run_wizard(
+        api_key="ak_test",
+        project_id="proj_xxx",
+        cwd=tmp_path,
+        no_migrate=True,
+        no_hook=True,
+        no_deep_scan=True,
+        no_test_trace=True,
+    )
+
+    assert summary["auth_mode"] == "flags"
     assert summary["api_key"] == "ak_test"
     assert summary["project_id"] == "proj_xxx"
-    assert summary["password_generated"] == pw
-    # With all skip flags, no blockers should fire on the happy path.
-    assert summary["blockers"] == [], f"unexpected blockers: {summary['blockers']}"
+
+    env_text = (tmp_path / ".env.local").read_text(encoding="utf-8")
+    assert "GRAVEL_API_KEY=ak_test" in env_text
+    assert "GRAVEL_PROJECT_ID=proj_xxx" in env_text
+    assert "GRAVEL_ADMIN_PASSWORD=" in env_text
 
 
 def test_skipping_deep_scan_and_trace_emits_blockers(tmp_path: Path) -> None:
@@ -74,7 +91,6 @@ def test_skipping_deep_scan_and_trace_emits_blockers(tmp_path: Path) -> None:
         cwd=tmp_path,
         no_migrate=True,
         no_hook=True,
-        ci=True,
     )
     assert any("Deep prompt scan" in b for b in summary["blockers"])
     assert any("Test trace" in b for b in summary["blockers"])
@@ -90,7 +106,6 @@ def test_init_alias_matches_run_wizard(tmp_path: Path) -> None:
         no_hook=True,
         no_deep_scan=True,
         no_test_trace=True,
-        ci=True,
     )
     assert summary["api_key"] == "ak_alias"
     assert summary["project_id"] == "proj_alias"
@@ -106,13 +121,11 @@ def test_libcst_inject_router_into_main(tmp_path: Path) -> None:
         no_hook=True,
         no_deep_scan=True,
         no_test_trace=True,
-        ci=True,
     )
     main_text = (tmp_path / "main.py").read_text(encoding="utf-8")
     assert "gravel_route" in main_text
     assert "include_router" in main_text
     assert "/admin/ai" in main_text
-    # Backup created.
     assert (tmp_path / "main.py.gravel.bak").exists()
 
 
@@ -127,7 +140,6 @@ def test_existing_env_preserved(tmp_path: Path) -> None:
         no_hook=True,
         no_deep_scan=True,
         no_test_trace=True,
-        ci=True,
     )
     env_text = (tmp_path / ".env").read_text(encoding="utf-8")
     assert "EXISTING=keep" in env_text
@@ -135,10 +147,10 @@ def test_existing_env_preserved(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("flag", ["api_key", "project_id"])
-def test_env_fallback_works_when_one_missing(
+def test_env_fallback_works_when_flags_missing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, flag: str
 ) -> None:
-    """If api_key+project come from env vars, OAuth should be skipped."""
+    """If api_key+project come from env vars, they get baked into .env."""
     _bare_python_project(tmp_path)
     monkeypatch.setenv("GRAVEL_API_KEY", "env_ak")
     monkeypatch.setenv("GRAVEL_PROJECT_ID", "env_proj")
@@ -148,61 +160,22 @@ def test_env_fallback_works_when_one_missing(
         no_hook=True,
         no_deep_scan=True,
         no_test_trace=True,
-        ci=True,
     )
+    assert summary["auth_mode"] == "flags"
     assert summary["api_key"] == "env_ak"
     assert summary["project_id"] == "env_proj"
 
 
-def test_local_mode_skips_cloud_creds(tmp_path: Path) -> None:
-    """``--local`` should run the install but omit cloud creds from .env."""
+def test_only_api_key_without_project_falls_back_to_local(tmp_path: Path) -> None:
+    """Half-set creds shouldn't accidentally trigger flags mode."""
     _bare_python_project(tmp_path)
     summary = run_wizard(
-        cwd=tmp_path,
-        local=True,
-        no_migrate=True,
-        no_hook=True,
-        no_deep_scan=True,
-        no_test_trace=True,
-    )
-    assert summary["auth_mode"] == "local"
-    assert summary["api_key"] is None
-    assert summary["project_id"] is None
-
-    env_text = (tmp_path / ".env.local").read_text(encoding="utf-8")
-    assert "GRAVEL_API_KEY" not in env_text
-    assert "GRAVEL_PROJECT_ID" not in env_text
-    assert "GRAVEL_ADMIN_PASSWORD=" in env_text
-
-
-def test_non_tty_defaults_to_local(tmp_path: Path) -> None:
-    """Non-TTY callers should not silently phone home — they get local mode."""
-    _bare_python_project(tmp_path)
-    summary = run_wizard(
+        api_key="ak_orphan",
         cwd=tmp_path,
         no_migrate=True,
         no_hook=True,
         no_deep_scan=True,
         no_test_trace=True,
-        prompt_is_tty=False,
-    )
-    assert summary["auth_mode"] == "local"
-    assert summary["api_key"] is None
-
-
-def test_interactive_prompt_default_is_local(tmp_path: Path) -> None:
-    """Hitting Enter at the prompt should land the user in local mode."""
-    import io
-
-    _bare_python_project(tmp_path)
-    summary = run_wizard(
-        cwd=tmp_path,
-        no_migrate=True,
-        no_hook=True,
-        no_deep_scan=True,
-        no_test_trace=True,
-        prompt_is_tty=True,
-        prompt_input=io.StringIO("\n"),
     )
     assert summary["auth_mode"] == "local"
     assert summary["api_key"] is None

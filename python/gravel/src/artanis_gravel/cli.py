@@ -18,43 +18,25 @@ def cli() -> None:
 
 
 @cli.command()
-@click.option("--local", is_flag=True, help="Local-only install: skip cloud sign-in.")
-@click.option("--ci", is_flag=True, help="Non-interactive mode (dev placeholders).")
-@click.option("--api-key", help="Skip OAuth; use this project key.")
-@click.option("--project", help="Specify project ID.")
+@click.option("--api-key", help="CI installs: pre-bake this project key into .env.")
+@click.option("--project", help="CI installs: pre-bake this project ID into .env.")
 @click.option("--mount-path", default="/admin/ai")
 @click.option("--no-migrate", is_flag=True)
 @click.option("--no-hook", is_flag=True)
 @click.option("--no-deep-scan", is_flag=True)
 @click.option("--no-test-trace", is_flag=True)
-@click.option("--no-browser", is_flag=True, help="Don't auto-open the browser during OAuth.")
-def init(no_browser: bool, **kwargs) -> None:
+def init(**kwargs) -> None:
     """Run the install wizard.
 
-    By default an interactive ``init`` prompts the user to choose between
-    local-only mode (the default) and signing in. Pass ``--local`` to skip
-    the prompt and run a fully local install; pass ``--ci`` for the
-    non-interactive CI behaviour (writes dev placeholder credentials and
-    surfaces a blocker). After ``init --local``, run ``gravel login`` to
-    enable cloud features (judge, analyze, evals).
+    Always local: the CLI never phones home. Cloud features (judge,
+    analyze, evals) are enabled from the dashboard's sign-in flow when the
+    user clicks any of them at ``/admin/ai``. For CI / scripted installs
+    that need creds in ``.env`` from the start, pass ``--api-key`` +
+    ``--project`` (or set ``GRAVEL_API_KEY`` + ``GRAVEL_PROJECT_ID`` in
+    the environment).
     """
     from .wizard import run_wizard
-    run_wizard(open_browser=not no_browser, **kwargs)
-
-
-@cli.command()
-@click.option("--no-browser", is_flag=True, help="Don't auto-open the browser.")
-def login(no_browser: bool) -> None:
-    """Sign in and write GRAVEL_PROJECT_ID + GRAVEL_API_KEY to .env.
-
-    Use this after ``gravel init --local`` (or to switch projects). Runs the
-    same OAuth handshake as the wizard's sign-in step and appends the two
-    cloud-cred env vars to ``.env.local`` (or ``.env`` if ``.env.local`` is
-    absent). Short-circuits with a friendly message if both keys are
-    already set.
-    """
-    from .login import run_login
-    run_login(open_browser=not no_browser)
+    run_wizard(**kwargs)
 
 
 @cli.group("manifest")
