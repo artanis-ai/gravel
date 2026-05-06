@@ -2,7 +2,7 @@
 
 > Open-source library that mounts an admin dashboard inside your AI app. Domain experts review output, manage prompts, and run evals — without ever touching your codebase.
 
-**Status: pre-v0. Skeleton in progress.** Not yet usable. See [`STATUS.md`](STATUS.md) for what's built and what's next, and [`docs/roadmap.md`](https://github.com/artanis-ai/gravel-cloud/blob/main/docs/roadmap.md) (private) for the full plan.
+**Status: v0 wedge ~95% done.** Wizard installs cleanly against the live `gravel.artanis.ai` control plane; default-password auth, manifest-backed prompt list / draft / submit-as-PR backend, and dashboard prompt editor all landed. The dashboard SPA is being bundled into the SDK package as the last v0 step. v1 tracing auto-patches (OpenAI / Anthropic / Langchain / Vercel AI SDK) are live on both SDKs. v2 judge dispatcher + eval runner shipped ahead of schedule. v3 Mallet analysis plumbed through Clerk-org rate-limiting. Polar billing scaffolded; pricing wiring awaits validation. See [`STATUS.md`](STATUS.md).
 
 ```bash
 # What this will do once v0 ships:
