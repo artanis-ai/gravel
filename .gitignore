@@ -18,5 +18,6 @@ venv/
 *.tgz
 .pnpm-store/
 .tsbuildinfo
+*.tsbuildinfo
 coverage/
 .nyc_output/
