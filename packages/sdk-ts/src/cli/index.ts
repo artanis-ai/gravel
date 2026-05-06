@@ -35,11 +35,6 @@ Init flags:
   --no-deep-scan             Skip deep scan (also skipped while not implemented).
   --no-test-trace            Skip test trace.
 
-Cloud features (judge, analyze, evals) are gated behind a sign-in flow that
-lives in the dashboard, not the CLI. Visit /admin/ai and click any cloud
-feature to enable them on this project.
-
-Docs: https://gravel.artanis.ai/docs
 Issues: https://github.com/artanis-ai/gravel/issues
 `
 

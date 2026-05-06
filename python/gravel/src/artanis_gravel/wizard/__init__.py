@@ -106,13 +106,6 @@ def run_wizard(
     print("Gravel skeleton installed. Next:")
     print(f"  1. Visit {mount_path} in your app and log in.")
     print("  2. Edit your get_user callback in gravel_config.py to match your auth.")
-    print("  3. Read https://gravel.artanis.ai/docs")
-    if auth_mode == "local":
-        print("")
-        print(
-            "Cloud features (judge, analyze, evals) are gated behind a "
-            "dashboard sign-in — click any of them in /admin/ai to enable."
-        )
 
     return {
         "detection": detection,

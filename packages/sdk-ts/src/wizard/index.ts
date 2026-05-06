@@ -149,11 +149,6 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
   log('Gravel skeleton installed. Next:')
   log(`  1. Visit ${opts.mountPath ?? '/admin/ai'} in your app and log in (admin password is in your .env).`)
   log(`  2. Edit your getUser callback in gravel.config.ts to match your auth.`)
-  log(`  3. Read https://gravel.artanis.ai/docs`)
-  if (authMode === 'local') {
-    log('')
-    log('Cloud features (judge, analyze, evals) are gated behind a dashboard sign-in — click any of them in /admin/ai to enable.')
-  }
 
   return {
     detection,

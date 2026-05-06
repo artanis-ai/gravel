@@ -110,8 +110,7 @@ export interface ResolvedGravelConfig extends Required<Omit<GravelConfig,
 export function resolveConfig(config: GravelConfig): ResolvedGravelConfig {
   if (!config.auth.getUser && !config.auth.defaultPassword) {
     throw new Error(
-      '[gravel] Auth misconfigured: provide either auth.getUser or auth.defaultPassword. ' +
-        'See https://gravel.artanis.ai/docs/auth',
+      '[gravel] Auth misconfigured: provide either auth.getUser or auth.defaultPassword.',
     )
   }
   if (config.auth.getUser && config.auth.defaultPassword) {

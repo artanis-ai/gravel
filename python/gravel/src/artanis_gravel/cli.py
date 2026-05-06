@@ -28,9 +28,7 @@ def cli() -> None:
 def init(**kwargs) -> None:
     """Run the install wizard.
 
-    Always local: the CLI never phones home. Cloud features (judge,
-    analyze, evals) are enabled from the dashboard's sign-in flow when the
-    user clicks any of them at ``/admin/ai``. For CI / scripted installs
+    Always local: the CLI never phones home. For CI / scripted installs
     that need creds in ``.env`` from the start, pass ``--api-key`` +
     ``--project`` (or set ``GRAVEL_API_KEY`` + ``GRAVEL_PROJECT_ID`` in
     the environment).

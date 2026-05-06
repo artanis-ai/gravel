@@ -6,7 +6,7 @@ export const config = defineConfig({
     url: process.env.DATABASE_URL!,
   },
   auth: {
-    // Replace with `getUser` once your auth is wired up. See gravel.artanis.ai/docs/auth.
+    // Replace with `getUser` once your auth is wired up.
     defaultPassword: process.env.GRAVEL_ADMIN_PASSWORD!,
   },
 })
