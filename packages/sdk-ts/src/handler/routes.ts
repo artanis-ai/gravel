@@ -10,6 +10,13 @@
 import type { GravelRequest, GravelUser, ResolvedGravelConfig } from '../types.js'
 import type { Database } from '../db/index.js'
 import { json } from './index.js'
+import {
+  signSession,
+  verifyPassword,
+  SESSION_COOKIE,
+  VIEW_AS_COOKIE,
+} from '../auth/session.js'
+import { attemptLogin, recordSuccess } from '../auth/rate-limit.js'
 
 interface RouteCtx {
   config: ResolvedGravelConfig
@@ -45,25 +52,123 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
       hideArtanisBranding: config.hideArtanisBranding,
     })
   },
-  'POST /api/auth/login': async () => {
-    // BLOCKER: implement password login + session cookie issuance.
-    // Spec: auth.md §2.2.
-    return json({ error: 'not-implemented' }, 501)
+  'POST /api/auth/login': async ({ request, config, grRequest }) => {
+    if (!config.auth.defaultPassword) {
+      return json({ error: 'password mode not configured' }, 400)
+    }
+    // Body parsing: form-encoded (login form) or JSON.
+    const ctype = request.headers.get('content-type') ?? ''
+    let password = ''
+    if (ctype.includes('application/x-www-form-urlencoded')) {
+      const form = await request.formData()
+      password = String(form.get('password') ?? '')
+    } else {
+      try {
+        const body = (await request.json()) as { password?: unknown }
+        password = typeof body.password === 'string' ? body.password : ''
+      } catch {
+        password = ''
+      }
+    }
+    const ip = clientIp(grRequest)
+    const rate = attemptLogin(ip)
+    if (!rate.allowed) {
+      return new Response(
+        JSON.stringify({
+          error: 'too many attempts',
+          retry_after_ms: rate.retryAfterMs ?? 60_000,
+        }),
+        {
+          status: 429,
+          headers: { 'content-type': 'application/json' },
+        },
+      )
+    }
+    if (!password || !verifyPassword(password, config.auth.defaultPassword)) {
+      // Form-driven flow: bounce back to /login. JSON-driven: 401.
+      const isForm = ctype.includes('application/x-www-form-urlencoded')
+      if (isForm) {
+        return new Response(null, {
+          status: 303,
+          headers: { location: `${config.mountPath}/login?error=1` },
+        })
+      }
+      return json({ error: 'invalid password' }, 401)
+    }
+    recordSuccess(ip)
+    const cookie = signSession(config.auth.defaultPassword)
+    const headers = new Headers({ 'set-cookie': sessionCookieValue(cookie, request.url) })
+    const isForm = ctype.includes('application/x-www-form-urlencoded')
+    if (isForm) {
+      headers.set('location', config.mountPath || '/')
+      return new Response(null, { status: 303, headers })
+    }
+    headers.set('content-type', 'application/json')
+    return new Response(JSON.stringify({ ok: true }), { status: 200, headers })
   },
-  'POST /api/auth/logout': async () => {
-    // BLOCKER: clear session cookie.
-    return json({ error: 'not-implemented' }, 501)
+  'POST /api/auth/logout': async ({ request, config }) => {
+    const headers = new Headers({ 'set-cookie': sessionCookieClearValue(request.url) })
+    headers.set('location', `${config.mountPath}/login`)
+    return new Response(null, { status: 303, headers })
   },
-  'POST /api/auth/view-as': async () => {
-    // BLOCKER: set/clear gravel_view_as cookie.
-    return json({ error: 'not-implemented' }, 501)
+  'POST /api/auth/view-as': async ({ request, authed, config }) => {
+    if (!authed) return json({ error: 'unauthorized' }, 401)
+    if (authed.role !== 'admin') return json({ error: 'admin only' }, 403)
+    let mode: string | null = null
+    try {
+      const body = (await request.json()) as { mode?: unknown }
+      mode = typeof body.mode === 'string' ? body.mode : null
+    } catch {
+      // form-style: cookie cleared
+    }
+    const headers = new Headers({
+      'content-type': 'application/json',
+    })
+    if (mode === 'user') {
+      headers.set('set-cookie', viewAsCookieValue('user', request.url))
+    } else {
+      headers.set('set-cookie', viewAsCookieClearValue(request.url))
+    }
+    void config
+    return new Response(JSON.stringify({ ok: true, view_as: mode === 'user' ? 'user' : null }), {
+      status: 200,
+      headers,
+    })
   },
 
-  // Prompts (v0 surface)
-  'GET /api/prompts': async () => json({ prompts: [], BLOCKER: 'wire to gravel_prompts' }),
-  'GET /api/prompts/:id': async () => json({ error: 'not-implemented' }, 501),
-  'PUT /api/prompts/:id': async () => json({ error: 'not-implemented' }, 501),
-  'POST /api/prompts/submit': async () => json({ error: 'not-implemented' }, 501),
+  // Prompts (v0 surface) — list + read implemented from the manifest;
+  // edit + submit-as-PR pending (depends on dashboard wiring).
+  'GET /api/prompts': async () => {
+    const { readManifest } = await import('../manifest/io.js')
+    const manifest = await readManifest(process.cwd())
+    return json({ prompts: manifest.prompts, last_scan_at: manifest.lastFullScanAt })
+  },
+  'GET /api/prompts/:id': async ({ path }) => {
+    const id = path.split('/').pop()
+    if (!id) return json({ error: 'missing id' }, 400)
+    const { readManifest } = await import('../manifest/io.js')
+    const { promises: fs } = await import('node:fs')
+    const { join } = await import('node:path')
+    const manifest = await readManifest(process.cwd())
+    const entry = manifest.prompts.find((p) => p.id === id)
+    if (!entry) return json({ error: 'not found' }, 404)
+
+    const fullText = await fs.readFile(join(process.cwd(), entry.path), 'utf8')
+    if (entry.type === 'file') {
+      return json({ id: entry.id, type: entry.type, path: entry.path, content: fullText })
+    }
+    // Embedded: slice by char range.
+    const content = fullText.slice(entry.charStart, entry.charEnd)
+    return json({
+      id: entry.id,
+      type: entry.type,
+      path: entry.path,
+      varName: entry.varName,
+      content,
+    })
+  },
+  'PUT /api/prompts/:id': async () => json({ error: 'not-implemented', spec: 'spec/prompts.md §4 — pending dashboard wiring' }, 501),
+  'POST /api/prompts/submit': async () => json({ error: 'not-implemented', spec: 'spec/prompts.md §5 — pending dashboard wiring' }, 501),
 
   // GitHub OAuth connection. Spec: gravel-cloud/docs/spec/prompts.md §6.
   'GET /api/github/status': async ({ db }) => {
@@ -122,11 +227,11 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
   // Mallet analysis (v3 paid)
   'GET /api/analysis/:id': async () => json({ error: 'not-implemented' }, 501),
 
-  // Billing
-  'GET /api/billing/credits': async ({ db }) => {
-    void db
-    return json({ tier: 'free', creditsRemaining: 0, BLOCKER: 'fetch from gravel_projects' })
-  },
+  // Billing — placeholder. v0/v1 have no paid surface; this returns the
+  // free tier permanently. v2 will fetch from the control plane (the
+  // judge dispatcher decrements credits there, not here).
+  'GET /api/billing/credits': async () =>
+    json({ tier: 'free', creditsRemaining: 0, paidSurfaceVersion: null }),
   'POST /api/billing/refresh': async () => json({ error: 'not-implemented' }, 501),
 
   // Dashboard SPA bootstrap
@@ -192,6 +297,73 @@ function loginShell(config: ResolvedGravelConfig): string {
   </form>
 </body>
 </html>`
+}
+
+// ---- Cookie + IP helpers ----
+
+function isHttps(requestUrl: string): boolean {
+  try {
+    return new URL(requestUrl).protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+function sessionCookieValue(value: string, requestUrl: string): string {
+  const parts = [
+    `${SESSION_COOKIE}=${value}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    'Max-Age=2592000', // 30 days
+  ]
+  if (isHttps(requestUrl)) parts.push('Secure')
+  return parts.join('; ')
+}
+
+function sessionCookieClearValue(requestUrl: string): string {
+  const parts = [
+    `${SESSION_COOKIE}=`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    'Max-Age=0',
+  ]
+  if (isHttps(requestUrl)) parts.push('Secure')
+  return parts.join('; ')
+}
+
+function viewAsCookieValue(value: string, requestUrl: string): string {
+  const parts = [
+    `${VIEW_AS_COOKIE}=${value}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    'Max-Age=2592000',
+  ]
+  if (isHttps(requestUrl)) parts.push('Secure')
+  return parts.join('; ')
+}
+
+function viewAsCookieClearValue(requestUrl: string): string {
+  const parts = [
+    `${VIEW_AS_COOKIE}=`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    'Max-Age=0',
+  ]
+  if (isHttps(requestUrl)) parts.push('Secure')
+  return parts.join('; ')
+}
+
+function clientIp(req: GravelRequest): string {
+  // Best-effort IP — proxies usually set X-Forwarded-For.
+  return (
+    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+    req.headers.get('x-real-ip') ??
+    'unknown'
+  )
 }
 
 function escape(s: string): string {
