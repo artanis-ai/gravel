@@ -3,6 +3,9 @@
  * mode and the session cookie is missing/invalid.
  */
 export function LoginPage() {
+  // The SDK injects window.__GRAVEL_MOUNT_PATH__ into the shell HTML
+  // (handler/routes.ts → rewriteShell). Fall back to '' (root mount).
+  const mountPath = (window as unknown as { __GRAVEL_MOUNT_PATH__?: string }).__GRAVEL_MOUNT_PATH__ ?? ''
   return (
     <div className="min-h-screen flex items-center justify-center bg-cream">
       <div className="w-full max-w-sm bg-white rounded-2xl shadow-lg ring-1 ring-warm p-8">
@@ -14,7 +17,7 @@ export function LoginPage() {
         </div>
         <form
           method="POST"
-          action="/api/auth/login"
+          action={`${mountPath}/api/auth/login`}
           className="space-y-3"
         >
           <input

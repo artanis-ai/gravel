@@ -16,8 +16,14 @@ export function App() {
   if (isLoading) return <LoadingPage />
   if (error) return <LoginPage />
 
+  // The SDK injects window.__GRAVEL_MOUNT_PATH__ into the shell HTML
+  // (handler/routes.ts → rewriteShell). Wouter uses it as the base so
+  // `<Route path="/">` matches the dashboard root regardless of mount.
+  const base =
+    (window as unknown as { __GRAVEL_MOUNT_PATH__?: string }).__GRAVEL_MOUNT_PATH__ ?? ''
+
   return (
-    <Router>
+    <Router base={base}>
       <Layout user={me?.user}>
         <Switch>
           <Route path="/" component={() => <PromptsPage />} />

@@ -1,0 +1,17 @@
+{
+  "name": "gravel-tests-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "description": "End-to-end Playwright smoke for the Gravel SDK + bundled dashboard.",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "install:browsers": "playwright install --with-deps chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}

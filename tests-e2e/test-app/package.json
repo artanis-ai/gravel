@@ -1,0 +1,22 @@
+{
+  "name": "gravel-e2e-test-app",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Self-contained host app that mounts the Gravel SDK for E2E.",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/server.ts"
+  },
+  "dependencies": {
+    "@artanis-ai/gravel": "workspace:*",
+    "@hono/node-server": "^1.13.0",
+    "better-sqlite3": "^11.5.0",
+    "hono": "^4.6.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

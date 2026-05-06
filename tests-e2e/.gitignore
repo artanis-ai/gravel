@@ -1,0 +1,5 @@
+node_modules/
+test-results/
+playwright-report/
+test-app/test.db
+test-app/test.db-*

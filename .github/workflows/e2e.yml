@@ -1,0 +1,50 @@
+name: E2E
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "packages/sdk-ts/**"
+      - "packages/dashboard/**"
+      - "tests-e2e/**"
+      - ".github/workflows/e2e.yml"
+
+jobs:
+  playwright:
+    name: Playwright (Chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install workspace deps
+        run: pnpm install --frozen-lockfile
+
+      # Builds the dashboard SPA AND the SDK bundle (build-dashboard.mjs runs
+      # as part of `pnpm --filter @artanis-ai/gravel build`).
+      - name: Build SDK + bundled dashboard
+        run: pnpm --filter @artanis-ai/gravel build
+
+      - name: Install Playwright Chromium
+        working-directory: tests-e2e
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run E2E
+        working-directory: tests-e2e
+        env:
+          GRAVEL_ADMIN_PASSWORD: e2e-test-password
+        run: pnpm test
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: tests-e2e/playwright-report
+          retention-days: 7
