@@ -139,8 +139,8 @@ function printGenericInstructions(mountPath: string): MountResult {
   // eslint-disable-next-line no-console
   console.log(`
 [gravel] No automatic mounting available for this framework. Mount the handler
-at ${mountPath} using the @artanis-ai/gravel/node adapter. See the README at
-https://github.com/artanis-ai/gravel for examples.
+at ${mountPath} using the @artanis-ai/gravel/node adapter. See
+https://gravel.artanis.ai/docs/install for examples.
 `)
   return { path: '<your app entry>', mode: 'manual-instructions' }
 }

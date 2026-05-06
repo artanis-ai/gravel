@@ -108,6 +108,6 @@ def _mount_generic_instructions(mount_path: str) -> MountResult:
     print(
         f"\n[gravel] No automatic mounting available for this framework. "
         f"Mount the ASGI handler at {mount_path} using `artanis_gravel.asgi.GravelAsgiApp`. "
-        f"See the README at https://github.com/artanis-ai/gravel\n"
+        f"See https://gravel.artanis.ai/docs/install\n"
     )
     return MountResult(path="<your app entry>", mode="manual-instructions")

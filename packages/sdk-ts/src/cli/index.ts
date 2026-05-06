@@ -35,6 +35,7 @@ Init flags:
   --no-deep-scan             Skip deep scan (also skipped while not implemented).
   --no-test-trace            Skip test trace.
 
+Docs: https://gravel.artanis.ai/docs
 Issues: https://github.com/artanis-ai/gravel/issues
 `
 

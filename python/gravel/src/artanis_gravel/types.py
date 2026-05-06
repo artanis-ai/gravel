@@ -97,7 +97,7 @@ def resolve_config(config: GravelConfig) -> ResolvedGravelConfig:
     if not auth.get("get_user") and not auth.get("default_password"):
         raise ValueError(
             "[gravel] Auth misconfigured: provide either auth['get_user'] or "
-            "auth['default_password']."
+            "auth['default_password']. See https://gravel.artanis.ai/docs/auth"
         )
     if auth.get("get_user") and auth.get("default_password"):
         warnings.warn(
