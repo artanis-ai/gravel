@@ -12,7 +12,12 @@ export default defineConfig({
   format: ['esm', 'cjs'],
   dts: true,
   clean: true,
-  splitting: false,
+  // Splitting must be ON: the auto-patch entry (./auto) and the main
+  // entry both import ./tracing/persist.js, which holds module-scoped
+  // state (the resolved tracing config + cached DB). Without splitting,
+  // tsup emits two independent copies — `setGravelTracingConfig` only
+  // mutates one of them and the other never sees a config.
+  splitting: true,
   sourcemap: true,
   target: 'node20',
 })

@@ -67,6 +67,16 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
   // Step 1
   const detection = await detect(cwd)
   log(`Detected ${detection.language}, ${detection.framework}, pkg=${detection.packageManager}, db=${detection.database.driver}, auth=${detection.auth}`)
+  if (detection.nextHasBothRouters) {
+    const warning =
+      `[gravel] This project has BOTH ${detection.nextAppDir}/ and pages/ directories — ` +
+      `you're mid-migration. The wizard mounted the dashboard under the App Router ` +
+      `(${detection.nextAppDir}/admin/ai/[[...slug]]/route.ts). If you'd rather mount it ` +
+      `under pages/ instead, delete the app-router file and run \`gravel init\` again with ` +
+      `--mount-path/--framework or hand-mount per gravel.artanis.ai/docs/install.`
+    log(warning)
+    blockers.push(warning)
+  }
 
   // Step 2 — auth.
   //

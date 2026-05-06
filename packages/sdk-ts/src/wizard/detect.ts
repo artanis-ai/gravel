@@ -33,6 +33,20 @@ export interface DetectionResult {
   language: 'ts' | 'python'
   packageManager: PackageManager
   framework: Framework
+  /**
+   * For Next.js projects, where `app/` lives relative to `cwd`. Empty
+   * string for the root convention (`./app/`); `'src'` for the src/
+   * convention (`./src/app/`); `null` if neither (e.g. pages-router
+   * project, or non-Next stack).
+   */
+  nextAppDir: 'app' | 'src/app' | null
+  /**
+   * For Next.js projects: true if BOTH `app/` (or `src/app/`) AND
+   * `pages/` (or `src/pages/`) exist — incremental migration scenario.
+   * The wizard prefers app router but surfaces this so the caller can
+   * warn the user.
+   */
+  nextHasBothRouters: boolean
   database: { driver: DbDriver; envVar: string | null }
   auth: AuthProvider
   existingTracers: string[]
@@ -50,6 +64,8 @@ export async function detect(cwd: string = process.cwd()): Promise<DetectionResu
     language: 'ts',
     packageManager: 'npm',
     framework: 'generic-node',
+    nextAppDir: null,
+    nextHasBothRouters: false,
     database: { driver: 'unknown', envVar: null },
     auth: 'unknown',
     existingTracers: [],
@@ -67,14 +83,30 @@ async function detectTs(cwd: string): Promise<DetectionResult | null> {
     ? 'pnpm'
     : (await pathExists(join(cwd, 'yarn.lock')))
       ? 'yarn'
-      : (await pathExists(join(cwd, 'bun.lockb')))
+      : // Bun ≥1.2 default is text-format `bun.lock`; older versions used
+        // the binary `bun.lockb`. Check both so the wizard catches projects
+        // that opted into the new format.
+        (await pathExists(join(cwd, 'bun.lock'))) || (await pathExists(join(cwd, 'bun.lockb')))
         ? 'bun'
         : 'npm'
 
   let framework: Framework = 'generic-node'
+  let nextAppDir: 'app' | 'src/app' | null = null
+  let nextHasBothRouters = false
   if (allDeps['next']) {
-    // App router if `app/` dir exists.
-    framework = (await pathExists(join(cwd, 'app'))) ? 'next-app-router' : 'next-pages-router'
+    // Detect the App Router by looking in both conventional locations:
+    // `app/` at the repo root, or `src/app/`. Same for `pages/`. A project
+    // with both directories (incremental migration) is flagged via
+    // `nextHasBothRouters` so the wizard surfaces a warning rather than
+    // silently picking app-router.
+    const hasAppRoot = await pathExists(join(cwd, 'app'))
+    const hasAppSrc = await pathExists(join(cwd, 'src', 'app'))
+    const hasPagesRoot = await pathExists(join(cwd, 'pages'))
+    const hasPagesSrc = await pathExists(join(cwd, 'src', 'pages'))
+    if (hasAppRoot) nextAppDir = 'app'
+    else if (hasAppSrc) nextAppDir = 'src/app'
+    framework = nextAppDir ? 'next-app-router' : 'next-pages-router'
+    nextHasBothRouters = !!nextAppDir && (hasPagesRoot || hasPagesSrc)
   } else if (allDeps['express']) {
     framework = 'express'
   } else if (allDeps['fastify']) {
@@ -110,6 +142,8 @@ async function detectTs(cwd: string): Promise<DetectionResult | null> {
     language: 'ts',
     packageManager,
     framework,
+    nextAppDir,
+    nextHasBothRouters,
     database,
     auth,
     existingTracers,
@@ -157,6 +191,8 @@ async function detectPython(cwd: string): Promise<DetectionResult | null> {
     language: 'python',
     packageManager,
     framework,
+    nextAppDir: null,
+    nextHasBothRouters: false,
     database,
     auth,
     existingTracers,

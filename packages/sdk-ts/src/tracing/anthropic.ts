@@ -61,7 +61,10 @@ function wrapMessagesCreate(proto: any): void {
 
     let result: any
     try {
-      result = original.apply(this, args)
+      // Suppress fetch auto-tracing — the Anthropic SDK calls fetch under
+      // the hood, and we don't want the raw-fetch patcher to record a
+      // duplicate alongside this SDK-level trace.
+      result = gravelContext.runWithFetchTracingDisabled(() => original.apply(this, args))
     } catch (err) {
       void persistTrace({
         name: 'anthropic.messages.create',

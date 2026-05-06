@@ -346,3 +346,15 @@ export async function bootstrap(db: Database): Promise<void> {
     await db.exec(statement)
   }
 }
+
+/**
+ * Sync helper used by `openDatabase` for SQLite. Applies the same DDL as
+ * `bootstrap()` directly against a `better-sqlite3` Database instance —
+ * cheaper than wrapping in a Database adapter when we just want the
+ * idempotent CREATE TABLE IF NOT EXISTS semantics on first open.
+ */
+export function applySqliteBootstrap(sqlite: { exec: (sql: string) => unknown }): void {
+  for (const statement of SQLITE_BOOTSTRAP.split(/;\s*\n/).map((s) => s.trim()).filter(Boolean)) {
+    sqlite.exec(statement)
+  }
+}

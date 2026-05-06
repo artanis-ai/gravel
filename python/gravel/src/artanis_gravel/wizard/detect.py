@@ -28,6 +28,12 @@ class DetectionResult:
     auth: AuthProvider
     existing_tracers: list[str] = field(default_factory=list)
     has_git: bool = False
+    # Next.js: where `app/` lives. "app" for root, "src/app" for src/, None
+    # if neither (pages-only, or non-Next).
+    next_app_dir: Literal["app", "src/app", None] = None
+    # Next.js: True if both app/ (or src/app/) AND pages/ (or src/pages/)
+    # exist — incremental migration scenario.
+    next_has_both_routers: bool = False
 
 
 def detect(cwd: str | Path | None = None) -> DetectionResult:
@@ -127,14 +133,27 @@ def _detect_ts(cwd: Path) -> DetectionResult | None:
         pm = "pnpm"
     elif (cwd / "yarn.lock").exists():
         pm = "yarn"
-    elif (cwd / "bun.lockb").exists():
+    elif (cwd / "bun.lock").exists() or (cwd / "bun.lockb").exists():
+        # Bun ≥1.2 default is text-format `bun.lock`; older was binary
+        # `bun.lockb`. Accept either.
         pm = "bun"
     else:
         pm = "npm"
 
     framework: Framework = "generic-node"
+    next_app_dir: Literal["app", "src/app", None] = None
+    next_has_both_routers = False
     if "next" in deps:
-        framework = "next-app-router" if (cwd / "app").exists() else "next-pages-router"
+        has_app_root = (cwd / "app").exists()
+        has_app_src = (cwd / "src" / "app").exists()
+        has_pages_root = (cwd / "pages").exists()
+        has_pages_src = (cwd / "src" / "pages").exists()
+        if has_app_root:
+            next_app_dir = "app"
+        elif has_app_src:
+            next_app_dir = "src/app"
+        framework = "next-app-router" if next_app_dir else "next-pages-router"
+        next_has_both_routers = bool(next_app_dir) and (has_pages_root or has_pages_src)
     elif "express" in deps:
         framework = "express"
     elif "fastify" in deps:
@@ -174,6 +193,8 @@ def _detect_ts(cwd: Path) -> DetectionResult | None:
         auth=auth,
         existing_tracers=existing,
         has_git=(cwd / ".git").exists(),
+        next_app_dir=next_app_dir,
+        next_has_both_routers=next_has_both_routers,
     )
 
 

@@ -87,6 +87,19 @@ async function openSqlite(config: GravelDatabaseConfig): Promise<Database> {
   sqlite.pragma('foreign_keys = ON')
   const db = drizzle(sqlite)
 
+  // Auto-bootstrap the schema on first open. For SQLite (single-process,
+  // local-only) this is a no-op idempotent CREATE TABLE IF NOT EXISTS. For
+  // Postgres we skip — multi-instance deploys want explicit `gravel migrate`
+  // so the DDL doesn't race across boots. The bootstrap statements live in
+  // src/db/bootstrap.ts; we apply just the SQLite variant.
+  try {
+    const { applySqliteBootstrap } = await import('./bootstrap.js')
+    applySqliteBootstrap(sqlite)
+  } catch {
+    // Bootstrap is best-effort; if the user already migrated by hand, the
+    // CREATE TABLE IF NOT EXISTS statements would be no-ops anyway.
+  }
+
   return {
     dialect: 'sqlite',
     drizzle: db,

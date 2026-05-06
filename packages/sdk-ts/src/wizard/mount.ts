@@ -33,7 +33,9 @@ export async function mountDashboardRoute(
 ): Promise<MountResult> {
   switch (detection.framework) {
     case 'next-app-router':
-      return await mountNextAppRouter(cwd, mountPath)
+      // Honour the detected layout: `./app/...` for the root convention,
+      // `./src/app/...` when the project uses src/.
+      return await mountNextAppRouter(cwd, mountPath, detection.nextAppDir ?? 'app')
     case 'next-pages-router':
       return await mountNextPagesRouter(cwd, mountPath)
     case 'fastapi':
@@ -47,18 +49,29 @@ export async function mountDashboardRoute(
   }
 }
 
-async function mountNextAppRouter(cwd: string, mountPath: string): Promise<MountResult> {
+async function mountNextAppRouter(
+  cwd: string,
+  mountPath: string,
+  appDir: 'app' | 'src/app',
+): Promise<MountResult> {
   const segments = mountPath.replace(/^\//, '').split('/').filter(Boolean)
-  const dir = join(cwd, 'app', ...segments, '[[...slug]]')
+  const appSegments = appDir.split('/')
+  const dir = join(cwd, ...appSegments, ...segments, '[[...slug]]')
   const file = join(dir, 'route.ts')
   if (await pathExists(file)) {
     await safeBackup(file)
   }
   await fs.mkdir(dir, { recursive: true })
+  // src/ projects conventionally configure tsconfig `paths: { "@/*": ["./src/*"] }`,
+  // which makes `@/gravel.config` resolve to `./src/gravel.config`. The
+  // wizard writes `gravel.config.ts` at the cwd root, so we use a relative
+  // import from the route file instead.
+  const relPrefix = appDir === 'src/app' ? '../'.repeat(segments.length + 2) : '@/'
+  const configImport = appDir === 'src/app' ? `${relPrefix}gravel.config` : `@/gravel.config`
   await fs.writeFile(
     file,
     `import { createGravelHandler } from '@artanis-ai/gravel/next'
-import { config } from '@/gravel.config'
+import { config } from '${configImport}'
 
 const handler = createGravelHandler({ config })
 

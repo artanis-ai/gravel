@@ -132,7 +132,10 @@ function wrapCreate(proto: any, methodName: string, opts: WrapOptions): void {
 
     let result: any
     try {
-      result = original.apply(this, args)
+      // Suppress fetch auto-tracing for the duration of the SDK call so
+      // the underlying fetch (the OpenAI SDK uses native fetch under the
+      // hood) doesn't record a duplicate trace alongside the SDK-level one.
+      result = gravelContext.runWithFetchTracingDisabled(() => original.apply(this, args))
     } catch (err) {
       // Sync throw (rare for the OpenAI SDK; defensive).
       void persistTrace({

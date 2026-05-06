@@ -74,7 +74,9 @@ function wrapVercelFn(mod: any, name: string): void {
 
     let result: any
     try {
-      result = original.apply(undefined, args)
+      // Suppress fetch auto-tracing — Vercel AI SDK calls provider HTTP
+      // endpoints under the hood; the SDK-level trace is the canonical one.
+      result = gravelContext.runWithFetchTracingDisabled(() => original.apply(undefined, args))
     } catch (err) {
       void persistTrace({
         name: `vercel-ai.${name}`,

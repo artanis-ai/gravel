@@ -21,4 +21,9 @@ if (DISABLED) {
   void import('./tracing/anthropic.js')
   void import('./tracing/langchain.js')
   void import('./tracing/vercel-ai.js')
+  // Last so SDK-level patches take precedence: SDKs route through fetch
+  // internally, but the SDK patcher already records that call and we don't
+  // want a duplicate. The classifier only matches LLM-shaped paths, so
+  // non-LLM fetch calls are passed through untouched.
+  void import('./tracing/fetch.js')
 }
