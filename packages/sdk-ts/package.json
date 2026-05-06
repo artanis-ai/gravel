@@ -53,12 +53,14 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "node scripts/build-dashboard.mjs && tsup",
+    "build:bundle": "node scripts/build-dashboard.mjs",
+    "build:bundle:stub": "node scripts/stub-dashboard.mjs",
     "dev": "tsup --watch",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "node scripts/stub-dashboard.mjs --if-missing && vitest run",
+    "test:watch": "node scripts/stub-dashboard.mjs --if-missing && vitest",
     "lint": "eslint src",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "node scripts/stub-dashboard.mjs --if-missing && tsc --noEmit",
     "schema:dump": "tsx src/schema/dump.ts",
     "migrations:generate": "drizzle-kit generate --config=drizzle.config.postgres.ts && drizzle-kit generate --config=drizzle.config.sqlite.ts"
   },

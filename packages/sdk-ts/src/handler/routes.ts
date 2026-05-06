@@ -17,6 +17,11 @@ import {
   VIEW_AS_COOKIE,
 } from '../auth/session.js'
 import { attemptLogin, recordSuccess } from '../auth/rate-limit.js'
+import {
+  DASHBOARD_INDEX_HTML,
+  DASHBOARD_LOGIN_HTML,
+  DASHBOARD_ASSETS,
+} from './dashboard-bundle.js'
 
 interface RouteCtx {
   config: ResolvedGravelConfig
@@ -354,69 +359,61 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
     json({ tier: 'free', creditsRemaining: 0, paidSurfaceVersion: null }),
   'POST /api/billing/refresh': async () => json({ error: 'not-implemented' }, 501),
 
-  // Dashboard SPA bootstrap
+  // Dashboard SPA bootstrap. The Vite-built index.html is bundled at SDK
+  // build time (see scripts/build-dashboard.mjs). Asset paths in the HTML
+  // are emitted relative (`./assets/foo.js`) so we can rewrite them to
+  // mount-relative URLs at request time without parsing HTML.
   'GET /': async ({ config }) =>
-    new Response(htmlShell(config), {
+    new Response(rewriteShell(DASHBOARD_INDEX_HTML, config.mountPath), {
       status: 200,
-      headers: { 'content-type': 'text/html; charset=utf-8' },
+      headers: {
+        'content-type': 'text/html; charset=utf-8',
+        'cache-control': 'no-cache',
+      },
     }),
   'GET /login': async ({ config }) =>
-    new Response(loginShell(config), {
+    new Response(rewriteShell(DASHBOARD_LOGIN_HTML, config.mountPath), {
       status: 200,
-      headers: { 'content-type': 'text/html; charset=utf-8' },
+      headers: {
+        'content-type': 'text/html; charset=utf-8',
+        'cache-control': 'no-cache',
+      },
     }),
+
+  // Bundled dashboard assets. Filenames are content-hashed by Vite, so
+  // we cache aggressively. Public route — auth bypass lives in
+  // handler/index.ts so the login page can load its JS/CSS too.
+  'GET /_assets/:id': async ({ path }) => {
+    const filename = decodeURIComponent(path.split('/').pop() ?? '')
+    if (!filename || filename.includes('/') || filename.includes('..')) {
+      return json({ error: 'invalid asset name' }, 400)
+    }
+    const asset = DASHBOARD_ASSETS[filename]
+    if (!asset) return json({ error: 'asset not found', filename }, 404)
+    const bytes = Buffer.from(asset.content, 'base64')
+    return new Response(bytes, {
+      status: 200,
+      headers: {
+        'content-type': asset.contentType,
+        'cache-control': 'public, max-age=31536000, immutable',
+        'content-length': String(bytes.byteLength),
+      },
+    })
+  },
 }
 
-function htmlShell(config: ResolvedGravelConfig): string {
-  // BLOCKER: replace with the Vite-built dashboard's index.html, with
-  // assets paths rewritten to mount-relative URLs.
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>${escape(config.productName)}</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="robots" content="noindex">
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 720px; margin: 4rem auto; padding: 0 1rem; color: #2D1810; }
-    code { background: #FFF7E8; padding: 0.1rem 0.4rem; border-radius: 4px; }
-    .badge { display: inline-block; background: #D4A76A; color: #2D1810; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
-  </style>
-</head>
-<body>
-  <h1>${escape(config.productName)} <span class="badge">Skeleton</span></h1>
-  <p>The dashboard SPA isn't bundled into this build yet.</p>
-  <p>You're authenticated. The internal API is reachable at <code>${escape(config.mountPath)}/api/*</code>.</p>
-  <p>Try: <code>${escape(config.mountPath)}/api/auth/me</code></p>
-  <p style="color: #6B5744; font-size: 13px;">v0 build in progress — see <a href="https://github.com/artanis-ai/gravel">github.com/artanis-ai/gravel</a>.</p>
-</body>
-</html>`
-}
-
-function loginShell(config: ResolvedGravelConfig): string {
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Sign in — ${escape(config.productName)}</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="robots" content="noindex">
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 360px; margin: 8rem auto; padding: 0 1rem; color: #2D1810; }
-    h1 { font-size: 1.4rem; }
-    form { display: flex; flex-direction: column; gap: 0.75rem; margin-top: 1.5rem; }
-    input { padding: 0.6rem 0.8rem; border: 1px solid #D4A76A; border-radius: 8px; font-size: 14px; }
-    button { padding: 0.6rem 0.8rem; background: #9B4340; color: white; border: 0; border-radius: 8px; font-weight: 600; cursor: pointer; }
-  </style>
-</head>
-<body>
-  <h1>Sign in to ${escape(config.productName)}</h1>
-  <form method="POST" action="${escape(config.mountPath)}/api/auth/login">
-    <input type="password" name="password" placeholder="Admin password" autofocus required>
-    <button type="submit">Sign in</button>
-  </form>
-</body>
-</html>`
+/**
+ * Rewrite the bundled dashboard's relative asset URLs so they resolve
+ * under the SDK mount path. Vite emits `src="./assets/index-XYZ.js"`
+ * and `href="./assets/index-XYZ.css"`; we point them at our flat
+ * `${mountPath}/_assets/<basename>` route.
+ */
+function rewriteShell(html: string, mountPath: string): string {
+  const prefix = mountPath.replace(/\/$/, '')
+  return html.replace(/(src|href)="\.\/assets\/([^"]+)"/g, (_, attr, file) => {
+    const basename = String(file).split('/').pop() ?? file
+    return `${attr}="${prefix}/_assets/${basename}"`
+  })
 }
 
 // ---- Cookie + IP helpers ----
@@ -486,6 +483,3 @@ function clientIp(req: GravelRequest): string {
   )
 }
 
-function escape(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
-}
