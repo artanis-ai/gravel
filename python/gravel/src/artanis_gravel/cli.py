@@ -18,7 +18,8 @@ def cli() -> None:
 
 
 @cli.command()
-@click.option("--ci", is_flag=True, help="Non-interactive mode.")
+@click.option("--local", is_flag=True, help="Local-only install: skip cloud sign-in.")
+@click.option("--ci", is_flag=True, help="Non-interactive mode (dev placeholders).")
 @click.option("--api-key", help="Skip OAuth; use this project key.")
 @click.option("--project", help="Specify project ID.")
 @click.option("--mount-path", default="/admin/ai")
@@ -26,17 +27,34 @@ def cli() -> None:
 @click.option("--no-hook", is_flag=True)
 @click.option("--no-deep-scan", is_flag=True)
 @click.option("--no-test-trace", is_flag=True)
-def init(**kwargs) -> None:
+@click.option("--no-browser", is_flag=True, help="Don't auto-open the browser during OAuth.")
+def init(no_browser: bool, **kwargs) -> None:
     """Run the install wizard.
 
-    Walks the user through OAuth (against ``gravel.artanis.ai``), writes
-    ``.env`` + ``gravel_config.py``, mounts the dashboard route, runs the
-    schema bootstrap, and installs the manifest pre-commit hook. Pass
-    ``--ci`` for non-interactive mode (skips OAuth, writes dev-mode
-    placeholder credentials).
+    By default an interactive ``init`` prompts the user to choose between
+    local-only mode (the default) and signing in. Pass ``--local`` to skip
+    the prompt and run a fully local install; pass ``--ci`` for the
+    non-interactive CI behaviour (writes dev placeholder credentials and
+    surfaces a blocker). After ``init --local``, run ``gravel login`` to
+    enable cloud features (judge, analyze, evals).
     """
     from .wizard import run_wizard
-    run_wizard(**kwargs)
+    run_wizard(open_browser=not no_browser, **kwargs)
+
+
+@cli.command()
+@click.option("--no-browser", is_flag=True, help="Don't auto-open the browser.")
+def login(no_browser: bool) -> None:
+    """Sign in and write GRAVEL_PROJECT_ID + GRAVEL_API_KEY to .env.
+
+    Use this after ``gravel init --local`` (or to switch projects). Runs the
+    same OAuth handshake as the wizard's sign-in step and appends the two
+    cloud-cred env vars to ``.env.local`` (or ``.env`` if ``.env.local`` is
+    absent). Short-circuits with a friendly message if both keys are
+    already set.
+    """
+    from .login import run_login
+    run_login(open_browser=not no_browser)
 
 
 @cli.group("manifest")

@@ -9,6 +9,7 @@ import { runWizard } from '../wizard/index.js'
 import { runManifestCheck, runManifestUpdate } from './manifest.js'
 import { runDoctor } from './doctor.js'
 import { runMigrate } from './migrate.js'
+import { runLogin } from './login.js'
 
 const HELP = `gravel — embedded prompt management, tracing, and evals.
 
@@ -16,6 +17,8 @@ Usage: gravel <command> [options]
 
 Commands:
   init                       Run the install wizard.
+  login                      Sign in and write GRAVEL_PROJECT_ID + GRAVEL_API_KEY
+                             to .env (use after \`init --local\` or to switch).
   manifest --check           Verify .artanis/manifest.json is in sync (used by hook).
   manifest --update          Regenerate .artanis/manifest.json from working tree.
   manifest --list            Print human-readable summary of current manifest.
@@ -25,7 +28,10 @@ Commands:
   help                       Show this message.
 
 Init flags:
-  --ci                       Non-interactive mode.
+  --local                    Local-only install: skip cloud sign-in. Default
+                             when running interactively. Use \`gravel login\`
+                             later to enable cloud features.
+  --ci                       Non-interactive mode (emits dev placeholders).
   --api-key <key>            Skip OAuth; use this project key.
   --project <id>             Specify project ID.
   --mount-path <path>        Override default '/admin/ai'.
@@ -34,6 +40,9 @@ Init flags:
   --no-deep-scan             Skip deep scan (also skipped while not implemented).
   --no-test-trace            Skip test trace.
   --no-browser               Don't auto-open the browser during OAuth.
+
+Login flags:
+  --no-browser               Don't auto-open the browser.
 
 Docs: https://gravel.artanis.ai/docs
 Issues: https://github.com/artanis-ai/gravel/issues
@@ -70,6 +79,7 @@ async function main(): Promise<void> {
     case 'init':
       await runWizard({
         ci: !!flags.ci,
+        local: !!flags.local,
         apiKey: typeof flags['api-key'] === 'string' ? flags['api-key'] : undefined,
         project: typeof flags.project === 'string' ? flags.project : undefined,
         mountPath: typeof flags['mount-path'] === 'string' ? flags['mount-path'] : undefined,
@@ -77,6 +87,12 @@ async function main(): Promise<void> {
         noHook: !!flags['no-hook'],
         noDeepScan: !!flags['no-deep-scan'],
         noTestTrace: !!flags['no-test-trace'],
+        noBrowser: !!flags['no-browser'],
+      })
+      break
+
+    case 'login':
+      await runLogin({
         noBrowser: !!flags['no-browser'],
       })
       break

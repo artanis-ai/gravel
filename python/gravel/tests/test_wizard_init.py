@@ -152,3 +152,58 @@ def test_env_fallback_works_when_one_missing(
     )
     assert summary["api_key"] == "env_ak"
     assert summary["project_id"] == "env_proj"
+
+
+def test_local_mode_skips_cloud_creds(tmp_path: Path) -> None:
+    """``--local`` should run the install but omit cloud creds from .env."""
+    _bare_python_project(tmp_path)
+    summary = run_wizard(
+        cwd=tmp_path,
+        local=True,
+        no_migrate=True,
+        no_hook=True,
+        no_deep_scan=True,
+        no_test_trace=True,
+    )
+    assert summary["auth_mode"] == "local"
+    assert summary["api_key"] is None
+    assert summary["project_id"] is None
+
+    env_text = (tmp_path / ".env.local").read_text(encoding="utf-8")
+    assert "GRAVEL_API_KEY" not in env_text
+    assert "GRAVEL_PROJECT_ID" not in env_text
+    assert "GRAVEL_ADMIN_PASSWORD=" in env_text
+
+
+def test_non_tty_defaults_to_local(tmp_path: Path) -> None:
+    """Non-TTY callers should not silently phone home — they get local mode."""
+    _bare_python_project(tmp_path)
+    summary = run_wizard(
+        cwd=tmp_path,
+        no_migrate=True,
+        no_hook=True,
+        no_deep_scan=True,
+        no_test_trace=True,
+        prompt_is_tty=False,
+    )
+    assert summary["auth_mode"] == "local"
+    assert summary["api_key"] is None
+
+
+def test_interactive_prompt_default_is_local(tmp_path: Path) -> None:
+    """Hitting Enter at the prompt should land the user in local mode."""
+    import io
+
+    _bare_python_project(tmp_path)
+    summary = run_wizard(
+        cwd=tmp_path,
+        no_migrate=True,
+        no_hook=True,
+        no_deep_scan=True,
+        no_test_trace=True,
+        prompt_is_tty=True,
+        prompt_input=io.StringIO("\n"),
+    )
+    assert summary["auth_mode"] == "local"
+    assert summary["api_key"] is None
+    assert summary["project_id"] is None
