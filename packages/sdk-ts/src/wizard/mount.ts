@@ -26,18 +26,29 @@ export type MountResult = {
   mode: 'created' | 'updated' | 'manual-instructions'
 } | null
 
+export interface MountOptions {
+  /**
+   * Skip writing/patching `instrumentation.ts` (Next.js only). The file
+   * is what bootstraps `import '@artanis-ai/gravel/auto'` server-side
+   * so LLM calls auto-trace; without it you'd have to add the import
+   * manually somewhere on the server boot path.
+   */
+  noInstrumentation?: boolean
+}
+
 export async function mountDashboardRoute(
   detection: DetectionResult,
   cwd: string,
   mountPath: string,
+  opts: MountOptions = {},
 ): Promise<MountResult> {
   switch (detection.framework) {
     case 'next-app-router':
       // Honour the detected layout: `./app/...` for the root convention,
       // `./src/app/...` when the project uses src/.
-      return await mountNextAppRouter(cwd, mountPath, detection.nextAppDir ?? 'app')
+      return await mountNextAppRouter(cwd, mountPath, detection.nextAppDir ?? 'app', opts)
     case 'next-pages-router':
-      return await mountNextPagesRouter(cwd, mountPath)
+      return await mountNextPagesRouter(cwd, mountPath, opts)
     case 'fastapi':
       return await mountFastApi(cwd, mountPath)
     case 'django':
@@ -53,6 +64,7 @@ async function mountNextAppRouter(
   cwd: string,
   mountPath: string,
   appDir: 'app' | 'src/app',
+  opts: MountOptions = {},
 ): Promise<MountResult> {
   const segments = mountPath.replace(/^\//, '').split('/').filter(Boolean)
   const appSegments = appDir.split('/')
@@ -82,10 +94,13 @@ export const DELETE = handler
 `,
   )
   await ensureNextServerExternalPackages(cwd)
+  if (!opts.noInstrumentation) {
+    await ensureNextInstrumentation(cwd, appDir === 'src/app')
+  }
   return { path: file, mode: 'created' }
 }
 
-async function mountNextPagesRouter(cwd: string, mountPath: string): Promise<MountResult> {
+async function mountNextPagesRouter(cwd: string, mountPath: string, opts: MountOptions = {}): Promise<MountResult> {
   const segments = mountPath.replace(/^\//, '').split('/').filter(Boolean)
   const dir = join(cwd, 'pages', ...segments)
   const file = join(dir, '[[...slug]].ts')
@@ -100,6 +115,13 @@ export default createGravelHandler({ config })
 `,
   )
   await ensureNextServerExternalPackages(cwd)
+  if (!opts.noInstrumentation) {
+    // Pages projects don't have a `src/app/` convention, but they may
+    // still use `src/` for `pages/`. We probe both `instrumentation.ts`
+    // candidates inside `ensureNextInstrumentation`, so just default to
+    // root for the seed location.
+    await ensureNextInstrumentation(cwd, false)
+  }
   return { path: file, mode: 'created' }
 }
 
@@ -158,6 +180,95 @@ at ${mountPath} using the @artanis-ai/gravel/node adapter. See
 https://gravel.artanis.ai/docs/install for examples.
 `)
   return { path: '<your app entry>', mode: 'manual-instructions' }
+}
+
+/**
+ * Write (or splice into) a Next.js `instrumentation.ts` file so the
+ * gravel SDK's auto-patches install on server boot. Without this, an
+ * \`import '@artanis-ai/gravel/auto'\` would have to live somewhere
+ * the user's server actually executes — there's no obvious natural
+ * home in a Next.js app, so the wizard plugs the gap via Next.js's
+ * dedicated server-instrumentation hook.
+ *
+ * Spec: https://nextjs.org/docs/app/building-your-application/optimizing/instrumentation
+ *
+ * Idempotency:
+ *   - If a file at the right location already imports `@artanis-ai/gravel/auto`,
+ *     leave it alone.
+ *   - If it has a \`register()\` function but no gravel import, write a
+ *     sibling \`.gravel.instrumentation.suggestion.txt\` and warn — we
+ *     don't want to risk corrupting hand-written instrumentation.
+ *   - Otherwise (no file, or only \`export default {}\`-shaped file),
+ *     create a fresh one.
+ */
+async function ensureNextInstrumentation(cwd: string, srcLayout: boolean): Promise<void> {
+  // Per Next.js docs, `instrumentation.ts` lives at the project root or
+  // alongside the app/pages tree if the project uses a `src/` directory.
+  const candidates = srcLayout
+    ? [
+        join(cwd, 'src', 'instrumentation.ts'),
+        join(cwd, 'instrumentation.ts'),
+        join(cwd, 'src', 'instrumentation.js'),
+        join(cwd, 'instrumentation.js'),
+      ]
+    : [
+        join(cwd, 'instrumentation.ts'),
+        join(cwd, 'src', 'instrumentation.ts'),
+        join(cwd, 'instrumentation.js'),
+        join(cwd, 'src', 'instrumentation.js'),
+      ]
+
+  let existing: string | null = null
+  let existingBody = ''
+  for (const p of candidates) {
+    if (await pathExists(p)) {
+      existing = p
+      existingBody = await fs.readFile(p, 'utf8')
+      break
+    }
+  }
+
+  if (existing && existingBody.includes('@artanis-ai/gravel/auto')) return
+
+  if (existing && /\bregister\s*\(/.test(existingBody)) {
+    // Hand-written instrumentation with its own register(). Don't risk
+    // corrupting it — emit a sibling .suggestion.txt with the snippet.
+    await fs.writeFile(
+      existing + '.gravel.instrumentation.suggestion.txt',
+      `// Add this inside your existing register() function so gravel's
+// auto-patches install on Next.js server boot:
+
+if (process.env.NEXT_RUNTIME === 'nodejs') {
+  await import('@artanis-ai/gravel/auto')
+}
+`,
+    )
+    // eslint-disable-next-line no-console
+    console.log(
+      `[gravel] Found existing ${existing} — wrote suggestion to ${existing}.gravel.instrumentation.suggestion.txt. Splice the snippet into your register() to enable auto-tracing.`,
+    )
+    return
+  }
+
+  // Fresh write. Pick the first preferred path that doesn't exist.
+  const target = existing ?? candidates[0]!
+  if (existing) await safeBackup(existing)
+  await fs.writeFile(
+    target,
+    `// Added by Gravel wizard. Next.js calls register() once on server
+// startup — the canonical place to bootstrap server-side instrumentation.
+// We import \`@artanis-ai/gravel/auto\` so the SDK's monkey-patches for
+// OpenAI / Anthropic / LangChain / Vercel AI / raw fetch install
+// before any LLM call fires, and traces flow into gravel_traces.
+//
+// See https://nextjs.org/docs/app/building-your-application/optimizing/instrumentation
+export async function register() {
+  if (process.env.NEXT_RUNTIME === 'nodejs') {
+    await import('@artanis-ai/gravel/auto')
+  }
+}
+`,
+  )
 }
 
 async function safeBackup(file: string): Promise<void> {

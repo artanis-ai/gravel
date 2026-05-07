@@ -26,12 +26,21 @@ Commands:
   help                       Show this message.
 
 Init flags:
+  --yes, -y                  Assume Yes to all interactive prompts
+                             (mount, migrate, hook, instrumentation).
+                             Use this for agents and other non-human
+                             callers — by default the wizard prompts on
+                             a TTY and runs silently otherwise.
+  --non-interactive          Force no prompts even on a TTY (default-yes
+                             for everything). Equivalent to --yes today;
+                             kept as an alias for clarity.
   --api-key <key>            CI / scripted installs: pre-bake this project key
                              into .env. Requires --project as well.
   --project <id>             CI / scripted installs: pre-bake this project ID.
   --mount-path <path>        Override default '/admin/ai'.
   --no-migrate               Skip running migrations.
   --no-hook                  Skip pre-commit hook installation.
+  --no-instrumentation       Skip writing/patching Next.js instrumentation.ts.
   --no-deep-scan             Skip deep scan (also skipped while not implemented).
   --no-test-trace            Skip test trace.
 
@@ -72,8 +81,11 @@ async function main(): Promise<void> {
         apiKey: typeof flags['api-key'] === 'string' ? flags['api-key'] : undefined,
         project: typeof flags.project === 'string' ? flags.project : undefined,
         mountPath: typeof flags['mount-path'] === 'string' ? flags['mount-path'] : undefined,
+        yes: !!flags.yes || !!flags.y,
+        nonInteractive: !!flags['non-interactive'],
         noMigrate: !!flags['no-migrate'],
         noHook: !!flags['no-hook'],
+        noInstrumentation: !!flags['no-instrumentation'],
         noDeepScan: !!flags['no-deep-scan'],
         noTestTrace: !!flags['no-test-trace'],
       })

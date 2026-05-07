@@ -28,6 +28,7 @@ import { writeEnvAdditions, generatePassword } from './env.js'
 import { runBootstrap } from './migrate.js'
 import { installHook } from '../manifest/hook.js'
 import { resolveControlPlaneUrl } from './oauth.js'
+import { confirm } from './prompt.js'
 
 export type WizardAuthMode = 'local' | 'flags'
 
@@ -39,8 +40,13 @@ export interface WizardOptions {
   mountPath?: string
   noMigrate?: boolean
   noHook?: boolean
+  noInstrumentation?: boolean
   noDeepScan?: boolean
   noTestTrace?: boolean
+  /** Skip interactive prompts even on a TTY — assume yes for everything. */
+  yes?: boolean
+  /** Force non-interactive (no prompts even if stdin is a TTY). */
+  nonInteractive?: boolean
   framework?: string
 }
 
@@ -118,26 +124,77 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
   if (apiKey) envVars.GRAVEL_API_KEY = apiKey
   await writeEnvAdditions(cwd, envVars)
 
-  // Step 5
-  const mountedRoute = await mountDashboardRoute(detection, cwd, opts.mountPath ?? '/admin/ai')
-  await generateConfigFile(detection, cwd, { mountPath: opts.mountPath ?? '/admin/ai' })
+  // Interactivity setup. By default we prompt on a TTY, run silently
+  // otherwise. `--yes` skips prompts even on a TTY (default-yes for all).
+  // `--non-interactive` forces no prompts even on a TTY (also default-yes).
+  const stdinIsTTY = (process.stdin as NodeJS.ReadStream).isTTY === true
+  const interactive = stdinIsTTY && !opts.yes && !opts.nonInteractive
+  const ask = async (question: string, defaultYes = true): Promise<boolean> => {
+    if (!interactive) return true
+    return await confirm(question, { defaultYes })
+  }
 
-  // Step 6
+  // Step 5 — mount + framework config patches.
+  const wantMount = await ask(
+    `[gravel] Mount the dashboard at ${opts.mountPath ?? '/admin/ai'} and write gravel.config.ts? ` +
+      (detection.framework.startsWith('next-')
+        ? `(Also patches next.config + adds instrumentation.ts to bootstrap tracing.)`
+        : ''),
+    true,
+  )
+  let mountedRoute = null as Awaited<ReturnType<typeof mountDashboardRoute>>
+  if (wantMount) {
+    mountedRoute = await mountDashboardRoute(detection, cwd, opts.mountPath ?? '/admin/ai', {
+      noInstrumentation: opts.noInstrumentation === true,
+    })
+    await generateConfigFile(detection, cwd, { mountPath: opts.mountPath ?? '/admin/ai' })
+  } else {
+    blockers.push(
+      'Mount step skipped — run `npx @artanis-ai/gravel init` again with --yes (or pass nothing) to mount the dashboard.',
+    )
+  }
+
+  // Step 6 — DB schema. Destructive (creates 13 tables in the user's DB).
   let ranBootstrap = false
+  const dbDriver = detection.database.driver
+  const dbDest =
+    dbDriver === 'postgres'
+      ? `Postgres at ${detection.database.envVar ?? 'DATABASE_URL'}`
+      : dbDriver === 'sqlite'
+        ? `SQLite (${detection.database.envVar ?? 'DATABASE_URL'})`
+        : 'your configured DATABASE_URL'
   if (!opts.noMigrate) {
-    try {
-      await runBootstrap(cwd)
-      ranBootstrap = true
-    } catch (e) {
-      blockers.push(`Schema bootstrap failed: ${(e as Error).message}. Re-run \`npx @artanis-ai/gravel migrate\`.`)
+    const wantMigrate = await ask(
+      `[gravel] Create 13 gravel_* tables in ${dbDest}? (idempotent CREATE TABLE IF NOT EXISTS)`,
+      true,
+    )
+    if (wantMigrate) {
+      try {
+        await runBootstrap(cwd)
+        ranBootstrap = true
+      } catch (e) {
+        blockers.push(`Schema bootstrap failed: ${(e as Error).message}. Re-run \`npx @artanis-ai/gravel migrate\`.`)
+      }
+    } else {
+      blockers.push(
+        'Schema migration skipped — run `npx @artanis-ai/gravel migrate` before starting your app.',
+      )
     }
   }
 
-  // Step 7
+  // Step 7 — pre-commit hook (keeps prompts manifest in sync with git).
   let installedHook = null as { mode: string; path?: string } | null
   if (!opts.noHook && detection.hasGit) {
-    const result = await installHook(cwd)
-    installedHook = { mode: result.mode, path: result.path }
+    const wantHook = await ask(
+      `[gravel] Install a pre-commit hook to keep .artanis/manifest.json in sync? (Reversible: ${
+        detection.hasGit ? 'edit/remove .git/hooks/pre-commit or your .husky/.pre-commit-config.yaml' : 'n/a'
+      })`,
+      true,
+    )
+    if (wantHook) {
+      const result = await installHook(cwd)
+      installedHook = { mode: result.mode, path: result.path }
+    }
   }
 
   // Step 8 — BLOCKER
