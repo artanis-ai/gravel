@@ -36,8 +36,28 @@ interface RouteCtx {
 export async function route(ctx: RouteCtx): Promise<Response> {
   const key = `${ctx.request.method} ${matchPath(ctx.path)}`
   const handler = ROUTES[key]
-  if (!handler) return json({ error: 'not-found', path: ctx.path }, 404)
-  return await handler(ctx)
+  if (handler) return await handler(ctx)
+
+  // SPA fallthrough: client-side routes (`/prompts`, `/traces/abc`, etc.)
+  // 404 on hard-refresh because the dashboard is a wouter SPA that owns
+  // those URLs at runtime. Serve the shell HTML for any unmatched GET
+  // that's NOT under `/api/` (real API) or `/_assets/` (Vite bundle).
+  // The SPA's router takes over from there.
+  if (
+    ctx.request.method === 'GET' &&
+    !ctx.path.startsWith('/api/') &&
+    !ctx.path.startsWith('/_assets/')
+  ) {
+    return new Response(rewriteShell(DASHBOARD_INDEX_HTML, ctx.config), {
+      status: 200,
+      headers: {
+        'content-type': 'text/html; charset=utf-8',
+        'cache-control': 'no-cache',
+      },
+    })
+  }
+
+  return json({ error: 'not-found', path: ctx.path }, 404)
 }
 
 function matchPath(path: string): string {
