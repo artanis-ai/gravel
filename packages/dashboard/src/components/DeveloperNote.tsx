@@ -29,12 +29,12 @@ export function DeveloperNote({ children }: { children: ReactNode }) {
   if (data?.user?.id !== 'localhost') return null
 
   return (
-    <div className="rounded-xl border border-dashed border-text-muted/50 bg-warm/40 p-3 text-xs text-text-mid">
-      <div className="mb-1.5 inline-flex items-center gap-1 rounded bg-text-mid/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-text-mid">
+    <div className="overflow-hidden rounded-xl border-2 border-dashed border-accent bg-accent-light/40 shadow-sm">
+      <div className="flex items-center gap-1.5 border-b border-accent/50 bg-accent/30 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-earth-dark">
         <svg
           xmlns="http://www.w3.org/2000/svg"
-          width="10"
-          height="10"
+          width="14"
+          height="14"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -43,12 +43,12 @@ export function DeveloperNote({ children }: { children: ReactNode }) {
           strokeLinejoin="round"
           aria-hidden="true"
         >
-          <polyline points="16 18 22 12 16 6" />
-          <polyline points="8 6 2 12 8 18" />
+          <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z" />
+          <circle cx="12" cy="12" r="3" />
         </svg>
-        Developer only · localhost
+        Visible only on localhost
       </div>
-      <div>{children}</div>
+      <div className="px-3 py-3 text-xs text-earth-dark">{children}</div>
     </div>
   )
 }

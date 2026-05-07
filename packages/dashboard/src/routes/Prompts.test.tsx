@@ -108,7 +108,7 @@ describe('Prompts list', () => {
     expect(await screen.findByText(/no prompts yet/i)).toBeInTheDocument()
     // Developer-only hint visible because auth/me reports localhost.
     expect(await screen.findByText(/manifest --update/i)).toBeInTheDocument()
-    expect(screen.getByText(/developer only/i)).toBeInTheDocument()
+    expect(screen.getByText(/visible only on localhost/i)).toBeInTheDocument()
   })
 
   it('hides the CLI hint from domain experts (non-localhost user)', async () => {
@@ -121,7 +121,7 @@ describe('Prompts list', () => {
     renderRoute(<PromptsPage />)
     expect(await screen.findByText(/no prompts yet/i)).toBeInTheDocument()
     expect(screen.queryByText(/manifest --update/i)).not.toBeInTheDocument()
-    expect(screen.queryByText(/developer only/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/visible only on localhost/i)).not.toBeInTheDocument()
   })
 
   it('renders prompts grouped by directory and a draft dot', async () => {

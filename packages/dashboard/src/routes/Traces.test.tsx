@@ -65,7 +65,7 @@ describe('Traces list', () => {
     expect(await screen.findByText(/no traces yet/i)).toBeInTheDocument()
     // Developer-only hint visible because auth/me reports localhost.
     expect(await screen.findByText(/gravel doctor/i)).toBeInTheDocument()
-    expect(screen.getByText(/developer only/i)).toBeInTheDocument()
+    expect(screen.getByText(/visible only on localhost/i)).toBeInTheDocument()
   })
 
   it('renders rows when traces are returned', async () => {
