@@ -64,23 +64,32 @@ export function buildInstallUrl(args: { state: string; slug?: string }): string 
 
 /**
  * Mint a repo-scoped installation token by asking the control plane. The
- * control plane signs an App JWT with the private key and exchanges it for
- * the token, then forwards it back to us.
+ * control plane signs an App JWT with the private key and exchanges it
+ * for the token, then forwards it back to us.
  *
- * Caching is the caller's job — see `tokenCache` in `submit.ts` (added in
- * the cutover commit).
+ * The PR-creation feature is free — there's no tier or paid-customer
+ * check. The bearer token below is a *binding* check: the install
+ * callback hands the SDK a one-time-issued signed token, the SDK
+ * persists it, and the control plane verifies it on every mint. That
+ * stops a stranger who knows an `installation_id` (a smallish integer)
+ * from minting tokens to push to someone else's repo. Without this
+ * check the mint endpoint would be a free write-anywhere oracle for
+ * every repo `gravel[bot]` is installed on.
+ *
+ * Caching is the caller's job — see `tokenCache` in `submit.ts` (added
+ * in the cutover commit).
  */
 export async function mintInstallationToken(args: {
   controlPlaneUrl: string
-  /** Project's API key — auth's the SDK to its control-plane tenant. */
-  projectApiKey: string
+  /** Per-installation bearer token issued by the install callback. */
+  installBindingToken: string
   installationId: number
 }): Promise<InstallationToken> {
   const res = await fetch(`${args.controlPlaneUrl}/api/cli/github/installation-token`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      authorization: `Bearer ${args.projectApiKey}`,
+      authorization: `Bearer ${args.installBindingToken}`,
     },
     body: JSON.stringify({ installation_id: args.installationId }),
   })
