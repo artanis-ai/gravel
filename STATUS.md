@@ -4,7 +4,7 @@
 
 ## Where we are
 
-**v0 wedge backend is live.** Customers can wizard-install, sign in to a default-password dashboard, list manifest prompts, save edits as drafts, and (once GH is connected + a repo selected) submit drafts as a single PR via the existing Mallet GitHub OAuth App. The remaining v0 work is the dashboard prompt editor UI + bundling that SPA into the SDK package.
+**v0 wedge backend is live.** Customers can wizard-install, sign in to a default-password dashboard, list manifest prompts, save edits as drafts. PR-submission via the dedicated `gravel[bot]` GitHub App is **TBD** — registration runbook at [`gravel-cloud/docs/runbook/github-app-setup.md`](../gravel-cloud/docs/runbook/github-app-setup.md); the OAuth-as-the-DE flow that previously gated this was reverted in `decisions.md` D-Q53 (2026-05-07 entry). The dashboard prompt editor UI is shipped; SPA bundling into the SDK package is shipped.
 
 **v1 tracing landed on both SDKs.** OpenAI / Anthropic / Langchain auto-patches in TypeScript and Python; Vercel AI SDK on the TS side too. Streaming works without consuming the iterator the user passes through. Trace persistence honours `GRAVEL_TRACING_DISABLED=1` and per-config PII scrubbers.
 

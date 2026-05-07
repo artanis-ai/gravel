@@ -320,8 +320,8 @@ function GithubBanner({
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-accent/40 bg-accent/15 p-3 text-sm text-earth-dark">
       <span>
         {notConnected
-          ? 'Connect GitHub to submit edits as PRs. Until then, your drafts are session-only.'
-          : 'GitHub is connected — pick the repo where prompt PRs should land.'}
+          ? 'Install the Gravel GitHub App so domain experts can submit prompt edits as PRs.'
+          : 'GitHub App is installed — pick the repo where prompt PRs should land.'}
       </span>
       <button
         type="button"
@@ -329,7 +329,7 @@ function GithubBanner({
         className="cursor-pointer rounded-lg bg-primary px-3 py-1 text-xs font-medium text-white hover:bg-primary-dark disabled:cursor-not-allowed disabled:bg-primary/60"
         onClick={() => (notConnected ? connect.mutate() : onPickRepo?.())}
       >
-        {notConnected ? (connect.isPending ? 'Redirecting…' : 'Connect GitHub') : 'Pick repo'}
+        {notConnected ? (connect.isPending ? 'Redirecting…' : 'Install GitHub App') : 'Pick repo'}
       </button>
     </div>
   )

@@ -198,10 +198,36 @@ describe('Prompts list', () => {
     await waitFor(() => expect(mockedPost).toHaveBeenCalledWith('/api/prompts/submit', expect.objectContaining({ title: 'PR title' })))
   })
 
-  it('shows the connect-GitHub banner when not connected', async () => {
+  it('shows the install-GitHub-App banner to the dev when not connected', async () => {
     setupGet([makePrompt()], [], { connected: false, repoOwner: null, repoName: null })
     renderRoute(<PromptsPage />)
-    await screen.findByText(/connect github to submit edits/i)
-    expect(screen.getByRole('button', { name: /connect github/i })).toBeInTheDocument()
+    await screen.findByText(/install the gravel github app/i)
+    expect(screen.getByRole('button', { name: /install github app/i })).toBeInTheDocument()
+    // The whole banner is wrapped in DeveloperNote — visible only on localhost.
+    expect(screen.getByText(/visible only on localhost/i)).toBeInTheDocument()
+  })
+
+  it('hides the install-GitHub-App banner from non-localhost users', async () => {
+    mockedGet.mockImplementation(async (path: string) => {
+      if (path === '/api/auth/me') {
+        return { user: { id: 'u_real', firstName: 'Pat', role: 'user' } }
+      }
+      if (path === '/api/prompts') {
+        return { prompts: [makePrompt()], last_scan_at: null }
+      }
+      if (path === '/api/prompts/drafts') {
+        return { draftBranch: 'gravel/draft-2026-05-05-u1', drafts: [] }
+      }
+      if (path === '/api/github/status') {
+        return { connected: false, repoOwner: null, repoName: null, connectedAt: null }
+      }
+      throw new Error(`unmocked GET ${path}`)
+    })
+    renderRoute(<PromptsPage />)
+    // The prompt list still renders…
+    await screen.findByText(/triage\.md/i)
+    // …but no banner about installing the GH App.
+    expect(screen.queryByText(/install the gravel github app/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /install github app/i })).not.toBeInTheDocument()
   })
 })
