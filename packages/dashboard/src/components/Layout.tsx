@@ -24,7 +24,6 @@ const NAV_ITEMS = [
   { path: '/datasets', label: 'Datasets', match: ['/datasets'] },
   { path: '/evals', label: 'Evals', match: ['/evals'] },
   { path: '/analysis', label: 'Analysis', match: ['/analysis'] },
-  { path: '/settings', label: 'Settings', match: ['/settings'], adminOnly: true },
 ]
 
 function isActive(location: string, prefixes: string[]): boolean {
@@ -51,7 +50,7 @@ export function Layout({ children, user }: { children: ReactNode; user?: User })
             </div>
           ) : null}
           <nav className="flex-1 p-4 space-y-1 text-sm">
-            {NAV_ITEMS.filter((i) => !i.adminOnly || isAdmin).map((item) => {
+            {NAV_ITEMS.map((item) => {
               const active = isActive(location, item.match)
               return (
                 <Link key={item.path} href={item.path}>

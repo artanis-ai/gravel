@@ -22,7 +22,6 @@ src/
     ├── Datasets.tsx
     ├── Evals.tsx
     ├── Analysis.tsx
-    ├── Settings.tsx
     └── Login.tsx
 ```
 

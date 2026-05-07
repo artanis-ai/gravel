@@ -392,13 +392,6 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
   // Mallet analysis (v3 paid)
   'GET /api/analysis/:id': async () => json({ error: 'not-implemented' }, 501),
 
-  // Billing — placeholder. v0/v1 have no paid surface; this returns the
-  // free tier permanently. v2 will fetch from the control plane (the
-  // judge dispatcher decrements credits there, not here).
-  'GET /api/billing/credits': async () =>
-    json({ tier: 'free', creditsRemaining: 0, paidSurfaceVersion: null }),
-  'POST /api/billing/refresh': async () => json({ error: 'not-implemented' }, 501),
-
   // Dashboard SPA bootstrap. The Vite-built index.html is bundled at SDK
   // build time (see scripts/build-dashboard.mjs). Asset paths in the HTML
   // are emitted relative (`./assets/foo.js`) so we can rewrite them to

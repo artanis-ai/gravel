@@ -6,7 +6,6 @@ import { TracesPage } from './routes/Traces'
 import { DatasetsPage } from './routes/Datasets'
 import { EvalsPage } from './routes/Evals'
 import { AnalysisPage } from './routes/Analysis'
-import { SettingsPage } from './routes/Settings'
 import { LoadingPage } from './components/LoadingPage'
 import { LoginPage } from './routes/Login'
 
@@ -36,7 +35,6 @@ export function App() {
           <Route path="/evals" component={() => <EvalsPage />} />
           <Route path="/evals/:id">{(params) => <EvalsPage runId={params.id} />}</Route>
           <Route path="/analysis" component={() => <AnalysisPage />} />
-          <Route path="/settings" component={() => <SettingsPage />} />
         </Switch>
       </Layout>
     </Router>

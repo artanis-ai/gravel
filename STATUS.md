@@ -89,7 +89,6 @@
 |---|---|---|
 | Dashboard prompt editor screen | In flight (agent running) | `packages/dashboard/src/routes/Prompts.tsx` |
 | Dashboard SPA bundled into SDK | Pending — mechanical Vite-output integration | `packages/sdk-ts/src/handler/routes.ts` `htmlShell` |
-| Polar credit decrement / tier updates / `/api/billing/credits` | Awaiting Yousef's pricing decisions | `apps/control-plane` |
 | In-app notifications | Spec says v0 is browser localStorage only | dashboard |
 | GitHub repo picker (list user's repos) | v1+ — for now the dashboard takes free-text owner/name | dashboard |
 | SQLite parity for `prompts/drafts.ts` + `prompts/user-extra.ts` | Postgres-only for v0 | sdk-ts |
