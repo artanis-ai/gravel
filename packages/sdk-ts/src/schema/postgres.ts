@@ -25,12 +25,21 @@ import {
 import { sql } from 'drizzle-orm'
 
 // 1.1 gravel_projects — local cache of the project this install is bound to.
+//
+// GH columns are populated by `/api/github/install/callback` once the
+// dev installs the Gravel App on their repo. PR creation reads them on
+// every submit. Null while the App isn't installed.
 export const gravelProjects = pgTable('gravel_projects', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   tier: text('tier').notNull().default('free'),
   creditsRemaining: bigint('credits_remaining', { mode: 'number' }).notNull().default(0),
   creditsRefreshedAt: timestamp('credits_refreshed_at', { mode: 'date' }),
+  ghInstallationId: bigint('gh_installation_id', { mode: 'number' }),
+  ghRepoOwner: text('gh_repo_owner'),
+  ghRepoName: text('gh_repo_name'),
+  ghBindingToken: text('gh_binding_token'),
+  ghInstalledAt: timestamp('gh_installed_at', { mode: 'date' }),
   createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
 })
 

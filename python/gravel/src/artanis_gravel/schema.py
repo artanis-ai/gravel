@@ -42,6 +42,13 @@ gravel_projects = Table(
     Column("tier", String, nullable=False, server_default="free"),
     Column("credits_remaining", BigInteger, nullable=False, server_default="0"),
     Column("credits_refreshed_at", DateTime(timezone=True)),
+    # GH App install state. Populated by /api/github/install/callback;
+    # null while the App isn't installed. PR creation reads these.
+    Column("gh_installation_id", BigInteger),
+    Column("gh_repo_owner", String),
+    Column("gh_repo_name", String),
+    Column("gh_binding_token", String),
+    Column("gh_installed_at", DateTime(timezone=True)),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 

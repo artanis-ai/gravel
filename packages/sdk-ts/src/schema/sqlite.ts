@@ -27,6 +27,11 @@ export const gravelProjects = sqliteTable('gravel_projects', {
   tier: text('tier').notNull().default('free'),
   creditsRemaining: integer('credits_remaining').notNull().default(0),
   creditsRefreshedAt: integer('credits_refreshed_at'),
+  ghInstallationId: integer('gh_installation_id'),
+  ghRepoOwner: text('gh_repo_owner'),
+  ghRepoName: text('gh_repo_name'),
+  ghBindingToken: text('gh_binding_token'),
+  ghInstalledAt: integer('gh_installed_at'),
   createdAt: integer('created_at').notNull().default(now),
 })
 

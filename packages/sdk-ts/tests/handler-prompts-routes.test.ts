@@ -17,6 +17,7 @@ const submitSpy = vi.fn()
 const ensureUserSpy = vi.fn(async () => {})
 const getGhStateSpy = vi.fn()
 const patchGhStateSpy = vi.fn(async () => {})
+const mintTokenSpy = vi.fn()
 
 vi.mock('../src/prompts/drafts.js', async () => {
   const actual = await vi.importActual<typeof import('../src/prompts/drafts.js')>(
@@ -42,9 +43,20 @@ vi.mock('../src/prompts/submit.js', async () => {
 
 vi.mock('../src/prompts/user-extra.js', () => ({
   ensureGravelUser: (...a: unknown[]) => ensureUserSpy(...a),
-  getUserGhState: (...a: unknown[]) => getGhStateSpy(...a),
-  patchUserGhState: (...a: unknown[]) => patchGhStateSpy(...a),
 }))
+
+vi.mock('../src/github/project-state.js', () => ({
+  getGhInstallState: (...a: unknown[]) => getGhStateSpy(...a),
+  setGhInstallState: (...a: unknown[]) => patchGhStateSpy(...a),
+}))
+
+vi.mock('../src/github/app.js', async () => {
+  const actual = await vi.importActual<typeof import('../src/github/app.js')>('../src/github/app.js')
+  return {
+    ...actual,
+    mintInstallationToken: (...a: unknown[]) => mintTokenSpy(...a),
+  }
+})
 
 let originalCwd: string
 let workdir: string
@@ -97,7 +109,8 @@ async function runRoute(
     db: {} as unknown as import('../src/db/index.js').Database,
     request,
     grRequest: grRequest as unknown as import('../src/types.js').GravelRequest,
-    path,
+    // Match prod: handler/index.ts passes url.pathname (no query string).
+    path: path.split('?')[0]!,
     authed: opts.authed === undefined ? { id: 'u1', firstName: 'Alice', role: 'admin' } : opts.authed,
   })
 }
@@ -114,6 +127,7 @@ describe('prompt routes', () => {
     ensureUserSpy.mockClear()
     getGhStateSpy.mockReset()
     patchGhStateSpy.mockClear()
+    mintTokenSpy.mockReset()
   })
   afterEach(async () => {
     process.chdir(originalCwd)
@@ -179,18 +193,25 @@ describe('prompt routes', () => {
   })
 
   describe('POST /api/prompts/submit', () => {
-    it('409 github_not_connected when no token', async () => {
-      getGhStateSpy.mockResolvedValue({})
+    it('409 github_not_installed when App not installed', async () => {
+      getGhStateSpy.mockResolvedValue(null)
       const r = await runRoute('POST', '/api/prompts/submit', { body: {} })
       expect(r.status).toBe(409)
       const body = await r.json()
-      expect(body.error).toBe('github_not_connected')
+      expect(body.error).toBe('github_not_installed')
     })
-    it('200 when GH connected: returns PR URL + clears drafts', async () => {
+    it('200 when App installed: mints token, returns PR URL', async () => {
       getGhStateSpy.mockResolvedValue({
-        ghAccessToken: 'gh_t',
+        installationId: 12345,
         repoOwner: 'acme',
         repoName: 'app',
+        bindingToken: 'bind.jwt.signed',
+        installedAt: '2026-05-07T00:00:00.000Z',
+      })
+      mintTokenSpy.mockResolvedValue({
+        token: 'ghs_minted',
+        repoFullName: 'acme/app',
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
       })
       submitSpy.mockResolvedValue({
         prUrl: 'https://github.com/acme/app/pull/9',
@@ -201,9 +222,27 @@ describe('prompt routes', () => {
       expect(r.status).toBe(200)
       const body = await r.json()
       expect(body.pr.prUrl).toBe('https://github.com/acme/app/pull/9')
+      expect(mintTokenSpy).toHaveBeenCalledOnce()
+      const mintArgs = mintTokenSpy.mock.calls[0]![0] as { installationId: number; installBindingToken: string }
+      expect(mintArgs.installationId).toBe(12345)
+      expect(mintArgs.installBindingToken).toBe('bind.jwt.signed')
       expect(submitSpy).toHaveBeenCalledOnce()
-      const args = submitSpy.mock.calls[0]![0] as { title?: string; deFirstName?: string; repoOwner: string }
-      expect(args).toMatchObject({ title: 'My PR', deFirstName: 'Alice', repoOwner: 'acme' })
+      const args = submitSpy.mock.calls[0]![0] as { title?: string; deFirstName?: string; repoOwner: string; accessToken: string }
+      expect(args).toMatchObject({ title: 'My PR', deFirstName: 'Alice', repoOwner: 'acme', accessToken: 'ghs_minted' })
+    })
+    it('502 if token mint fails (e.g. customer uninstalled the App)', async () => {
+      getGhStateSpy.mockResolvedValue({
+        installationId: 12345,
+        repoOwner: 'acme',
+        repoName: 'app',
+        bindingToken: 'bind.jwt.signed',
+        installedAt: '2026-05-07T00:00:00.000Z',
+      })
+      mintTokenSpy.mockRejectedValue(new Error('installation/12345 404: not found'))
+      const r = await runRoute('POST', '/api/prompts/submit', { body: {} })
+      expect(r.status).toBe(502)
+      const body = await r.json()
+      expect(body.error).toBe('github_token_mint_failed')
     })
   })
 
@@ -217,22 +256,36 @@ describe('prompt routes', () => {
     })
   })
 
-  describe('POST /api/github/repo', () => {
-    it('400 on bad owner/name', async () => {
-      const r = await runRoute('POST', '/api/github/repo', { body: { owner: 'acme', name: '' } })
-      expect(r.status).toBe(400)
+  describe('GET /api/github/install/callback', () => {
+    it('persists install state + 302s back to dashboard', async () => {
+      const r = await runRoute(
+        'GET',
+        '/api/github/install/callback?installation_id=12345&binding_token=bind.jwt&repo_owner=acme&repo_name=app',
+      )
+      expect(r.status).toBe(302)
+      expect(patchGhStateSpy).toHaveBeenCalledOnce()
+      const args = patchGhStateSpy.mock.calls[0]![1] as {
+        installationId: number
+        repoOwner: string
+        repoName: string
+        bindingToken: string
+      }
+      expect(args).toMatchObject({
+        installationId: 12345,
+        repoOwner: 'acme',
+        repoName: 'app',
+        bindingToken: 'bind.jwt',
+      })
     })
-    it('200 + persists', async () => {
-      const r = await runRoute('POST', '/api/github/repo', { body: { owner: 'acme', name: 'app' } })
-      expect(r.status).toBe(200)
-      expect(ensureUserSpy).toHaveBeenCalledOnce()
-      expect(patchGhStateSpy).toHaveBeenCalledWith(expect.any(Object), 'u1', { repoOwner: 'acme', repoName: 'app' })
+    it('400 when params missing', async () => {
+      const r = await runRoute('GET', '/api/github/install/callback?installation_id=12345')
+      expect(r.status).toBe(400)
     })
   })
 
   describe('GET /api/github/status', () => {
-    it('reports connected: false when no token', async () => {
-      getGhStateSpy.mockResolvedValue({})
+    it('reports connected: false when App not installed', async () => {
+      getGhStateSpy.mockResolvedValue(null)
       const r = await runRoute('GET', '/api/github/status')
       expect(r.status).toBe(200)
       const body = await r.json()
@@ -240,10 +293,11 @@ describe('prompt routes', () => {
     })
     it('reports connected with repo state', async () => {
       getGhStateSpy.mockResolvedValue({
-        ghAccessToken: 'gh_t',
+        installationId: 12345,
         repoOwner: 'acme',
         repoName: 'app',
-        ghConnectedAt: '2026-05-06T05:00:00.000Z',
+        bindingToken: 'bind.jwt',
+        installedAt: '2026-05-07T00:00:00.000Z',
       })
       const r = await runRoute('GET', '/api/github/status')
       const body = await r.json()
@@ -251,7 +305,7 @@ describe('prompt routes', () => {
         connected: true,
         repoOwner: 'acme',
         repoName: 'app',
-        connectedAt: '2026-05-06T05:00:00.000Z',
+        connectedAt: '2026-05-07T00:00:00.000Z',
       })
     })
   })

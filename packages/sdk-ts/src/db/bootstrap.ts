@@ -20,8 +20,18 @@ CREATE TABLE IF NOT EXISTS gravel_projects (
   tier TEXT NOT NULL DEFAULT 'free',
   credits_remaining BIGINT NOT NULL DEFAULT 0,
   credits_refreshed_at TIMESTAMPTZ,
+  gh_installation_id BIGINT,
+  gh_repo_owner TEXT,
+  gh_repo_name TEXT,
+  gh_binding_token TEXT,
+  gh_installed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE gravel_projects ADD COLUMN IF NOT EXISTS gh_installation_id BIGINT;
+ALTER TABLE gravel_projects ADD COLUMN IF NOT EXISTS gh_repo_owner TEXT;
+ALTER TABLE gravel_projects ADD COLUMN IF NOT EXISTS gh_repo_name TEXT;
+ALTER TABLE gravel_projects ADD COLUMN IF NOT EXISTS gh_binding_token TEXT;
+ALTER TABLE gravel_projects ADD COLUMN IF NOT EXISTS gh_installed_at TIMESTAMPTZ;
 
 -- gravel_environments
 CREATE TABLE IF NOT EXISTS gravel_environments (
@@ -190,8 +200,18 @@ CREATE TABLE IF NOT EXISTS gravel_projects (
   tier TEXT NOT NULL DEFAULT 'free',
   credits_remaining INTEGER NOT NULL DEFAULT 0,
   credits_refreshed_at INTEGER,
+  gh_installation_id INTEGER,
+  gh_repo_owner TEXT,
+  gh_repo_name TEXT,
+  gh_binding_token TEXT,
+  gh_installed_at INTEGER,
   created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
 );
+-- SQLite has no IF NOT EXISTS for ADD COLUMN; the wizard runs once, so
+-- existing rows would predate the GH columns and fail the ADD. Use a
+-- one-shot migration that ignores "duplicate column" errors. Caller
+-- catches errors and proceeds.
+
 
 CREATE TABLE IF NOT EXISTS gravel_environments (
   id TEXT PRIMARY KEY,

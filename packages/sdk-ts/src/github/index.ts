@@ -8,14 +8,8 @@ export type { GitHubError } from './api.js'
 export { createPullRequest } from './create-pr.js'
 export type { PromptChange, CreatePullRequestArgs, CreatePullRequestResult } from './create-pr.js'
 
-export { buildInstallUrl, mintInstallationToken } from './app.js'
+export { buildInstallUrl, mintInstallationToken, DEFAULT_APP_SLUG, DEFAULT_APP_ID } from './app.js'
 export type { GravelAppId, InstallationBinding, InstallationToken } from './app.js'
 
-/**
- * @deprecated Per-user OAuth flow. Superseded by the App above. Kept
- * exported for one release so the cutover can land in pieces; remove once
- * the App is live in production and no project rows still reference
- * per-user GH tokens.
- */
-export { startConnectFlow, finalizeConnectCallback } from './connect.js'
-export type { ConnectStartResult, ConnectFinalizeResult } from './connect.js'
+export { getGhInstallState, setGhInstallState } from './project-state.js'
+export type { GhInstallState } from './project-state.js'

@@ -5,14 +5,13 @@
  * Spec: gravel-cloud/docs/spec/prompts.md §2 (edit flow), §3 (no "new
  * prompt" button + empty-state copy), §6 (GitHub OAuth gating), §9 (search).
  */
-import { useMemo, useState, type FormEvent } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'wouter'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { EmptyState } from '../components/EmptyState'
 import { DeveloperNote } from '../components/DeveloperNote'
 import { SkeletonText } from '../components/Skeleton'
-import { Modal } from '../components/Modal'
 import { PromptBadge } from '../components/prompts/PromptBadge'
 import { SubmitModal, type SubmitDraftEntry } from '../components/prompts/SubmitModal'
 import { cx } from '../lib/format'
@@ -33,7 +32,6 @@ export function PromptsPage({ promptId }: { promptId?: string } = {}) {
 function PromptsList() {
   const [search, setSearch] = useState('')
   const [submitOpen, setSubmitOpen] = useState(false)
-  const [repoModalOpen, setRepoModalOpen] = useState(false)
   const [submittedPrUrl, setSubmittedPrUrl] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
@@ -92,7 +90,6 @@ function PromptsList() {
 
   const hasDrafts = (draftsQ.data?.drafts.length ?? 0) > 0
   const ghConnected = ghQ.data?.connected === true
-  const ghRepoSet = Boolean(ghQ.data?.repoOwner && ghQ.data?.repoName)
 
   return (
     <div className="space-y-6">
@@ -121,19 +118,15 @@ function PromptsList() {
       </header>
 
       {/*
-        GH connect/repo-picker is dev-only setup. Domain experts can't
-        (and shouldn't) wire up a bot; they just want to edit a prompt.
-        When the bot is configured by the dev once, server-side, every
-        viewer's "Submit changes" goes through it.
+        GH App install is dev-only setup. Domain experts can't (and
+        shouldn't) wire up a bot; they just want to edit a prompt. When
+        the App is installed by the dev once on the repo, every viewer's
+        "Submit changes" goes through it. The repo binding happens at
+        install time on github.com — no separate repo-picker needed.
       */}
       {ghQ.data && !ghConnected && (
         <DeveloperNote>
-          <GithubBanner kind="not-connected" />
-        </DeveloperNote>
-      )}
-      {ghQ.data && ghConnected && !ghRepoSet && (
-        <DeveloperNote>
-          <GithubBanner kind="no-repo" onPickRepo={() => setRepoModalOpen(true)} />
+          <GithubBanner />
         </DeveloperNote>
       )}
 
@@ -211,11 +204,6 @@ function PromptsList() {
         }}
       />
 
-      <RepoPickerModal
-        open={repoModalOpen}
-        onClose={() => setRepoModalOpen(false)}
-        onSaved={() => queryClient.invalidateQueries({ queryKey: ['github', 'status'] })}
-      />
     </div>
   )
 }
@@ -302,130 +290,28 @@ function DirectoryGroup({
   )
 }
 
-function GithubBanner({
-  kind,
-  onPickRepo,
-}: {
-  kind: 'not-connected' | 'no-repo'
-  onPickRepo?: () => void
-}) {
-  const connect = useMutation<{ redirectUrl: string }, Error, void>({
-    mutationFn: () => api.get<{ redirectUrl: string }>('/api/github/connect'),
+function GithubBanner() {
+  const install = useMutation<{ redirectUrl: string }, Error, void>({
+    mutationFn: () => api.get<{ redirectUrl: string }>('/api/github/install'),
     onSuccess: (data) => {
       window.location.href = data.redirectUrl
     },
   })
-  const notConnected = kind === 'not-connected'
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-accent/40 bg-accent/15 p-3 text-sm text-earth-dark">
       <span>
-        {notConnected
-          ? 'Install the Gravel GitHub App so domain experts can submit prompt edits as PRs.'
-          : 'GitHub App is installed — pick the repo where prompt PRs should land.'}
+        Install the Gravel GitHub App on your repo so domain experts can submit prompt edits as PRs.
+        The repo binds at install time — no separate repo-picker step.
       </span>
       <button
         type="button"
-        disabled={notConnected && connect.isPending}
+        disabled={install.isPending}
         className="cursor-pointer rounded-lg bg-primary px-3 py-1 text-xs font-medium text-white hover:bg-primary-dark disabled:cursor-not-allowed disabled:bg-primary/60"
-        onClick={() => (notConnected ? connect.mutate() : onPickRepo?.())}
+        onClick={() => install.mutate()}
       >
-        {notConnected ? (connect.isPending ? 'Redirecting…' : 'Install GitHub App') : 'Pick repo'}
+        {install.isPending ? 'Redirecting…' : 'Install GitHub App'}
       </button>
     </div>
   )
 }
 
-function RepoPickerModal({
-  open,
-  onClose,
-  onSaved,
-}: {
-  open: boolean
-  onClose: () => void
-  onSaved: () => void
-}) {
-  const [owner, setOwner] = useState('')
-  const [name, setName] = useState('')
-  const [error, setError] = useState<string | null>(null)
-
-  const save = useMutation<unknown, Error, void>({
-    mutationFn: () => api.post('/api/github/repo', { owner, name }),
-    onSuccess: () => {
-      setOwner('')
-      setName('')
-      setError(null)
-      onSaved()
-      onClose()
-    },
-    onError: (err) => setError(err.message),
-  })
-
-  function onSubmit(e: FormEvent) {
-    e.preventDefault()
-    if (!owner.trim() || !name.trim()) {
-      setError('Owner and repo name are required.')
-      return
-    }
-    save.mutate()
-  }
-
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Pick a GitHub repo"
-      footer={
-        <>
-          <button
-            type="button"
-            className="cursor-pointer rounded-lg border border-warm px-3 py-1.5 text-sm hover:bg-warm"
-            onClick={onClose}
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            form="pick-repo-form"
-            disabled={save.isPending}
-            className={cx(
-              'rounded-lg px-3 py-1.5 text-sm font-medium text-white',
-              save.isPending
-                ? 'cursor-not-allowed bg-primary/60'
-                : 'cursor-pointer bg-primary hover:bg-primary-dark',
-            )}
-          >
-            {save.isPending ? 'Saving…' : 'Save'}
-          </button>
-        </>
-      }
-    >
-      <form id="pick-repo-form" onSubmit={onSubmit} className="space-y-3">
-        <p className="text-xs text-text-mid">
-          The repo where prompt-edit PRs will be opened.
-        </p>
-        <label className="flex flex-col gap-1 text-xs font-medium text-text-mid">
-          Owner
-          <input
-            type="text"
-            value={owner}
-            onChange={(e) => setOwner(e.target.value)}
-            placeholder="acme"
-            autoFocus
-            className="w-full rounded-md border border-warm bg-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs font-medium text-text-mid">
-          Repo name
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="ai-app"
-            className="w-full rounded-md border border-warm bg-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </label>
-        {error && <p className="text-xs text-primary-dark">{error}</p>}
-      </form>
-    </Modal>
-  )
-}

@@ -50,7 +50,13 @@ export interface InstallationToken {
   expiresAt: Date
 }
 
-const DEFAULT_APP_SLUG = 'gravel'
+/**
+ * Production App registered at github.com/organizations/artanis-ai/settings/apps/gravel-bot
+ * (slug `gravel-bot` because `gravel` was taken). Override per-deployment
+ * via GRAVEL_GH_APP_SLUG / GRAVEL_GH_APP_ID for test or self-hosted setups.
+ */
+export const DEFAULT_APP_SLUG = 'gravel-bot'
+export const DEFAULT_APP_ID = '3637942'
 
 /**
  * Build the install URL the customer's dev clicks once. The CSRF state is
@@ -85,6 +91,25 @@ export async function mintInstallationToken(args: {
   installBindingToken: string
   installationId: number
 }): Promise<InstallationToken> {
+  // Dev stub: when the install callback was the stubbed one (no real
+  // GitHub install), use a PAT from the dev's .env directly. Pairs with
+  // `GRAVEL_GH_DEV_STUB=1` in `handler/routes.ts`.
+  if (args.installBindingToken === 'dev-stub') {
+    const stubToken = process.env.GRAVEL_GH_DEV_STUB_TOKEN
+    if (!stubToken) {
+      throw new Error(
+        'GRAVEL_GH_DEV_STUB_TOKEN not set — required when GRAVEL_GH_DEV_STUB=1. Use a PAT scoped to your test repo.',
+      )
+    }
+    const repoFullName = `${process.env.GRAVEL_GH_DEV_REPO_OWNER}/${process.env.GRAVEL_GH_DEV_REPO_NAME}`
+    return {
+      token: stubToken,
+      repoFullName,
+      // PATs don't expire, but pretending an hour from now keeps the
+      // shape consistent + caches/refresh logic happy if we add it.
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    }
+  }
   const res = await fetch(`${args.controlPlaneUrl}/api/cli/github/installation-token`, {
     method: 'POST',
     headers: {

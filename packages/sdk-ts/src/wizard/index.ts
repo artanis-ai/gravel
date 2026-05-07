@@ -215,8 +215,11 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
   log('')
   log('Gravel skeleton installed. Next:')
   log(`  1. Visit ${opts.mountPath ?? '/admin/ai'} in your app and log in (admin password is in your .env).`)
-  log(`  2. Edit your getUser callback in gravel.config.ts to match your auth.`)
-  log(`  3. Read https://gravel.artanis.ai/docs`)
+  log(`  2. Install the Gravel GitHub App on the repo where prompt PRs should land:`)
+  log(`     https://github.com/apps/gravel-bot/installations/new`)
+  log(`     (or click "Install GitHub App" inside the dashboard — same flow, with a return URL.)`)
+  log(`  3. Edit your getUser callback in gravel.config.ts to match your auth.`)
+  log(`  4. Read https://gravel.artanis.ai/docs`)
 
   return {
     detection,

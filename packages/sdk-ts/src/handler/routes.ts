@@ -270,16 +270,37 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
     } catch {
       body = {}
     }
-    const { getUserGhState } = await import('../prompts/user-extra.js')
-    const ghState = await getUserGhState(db, authed.id)
-    if (!ghState.ghAccessToken || !ghState.repoOwner || !ghState.repoName) {
+    const { getGhInstallState } = await import('../github/project-state.js')
+    const ghState = await getGhInstallState(db)
+    if (!ghState) {
       return json(
         {
-          error: 'github_not_connected',
+          error: 'github_not_installed',
           message:
-            'Connect GitHub + select a repo before submitting. POST /api/github/repo to set the repo.',
+            'Gravel GitHub App is not installed on this project. Ask your developer to install it from the dashboard.',
         },
         409,
+      )
+    }
+    // Mint a fresh installation token for this submit. ~1-hour scope;
+    // we don't cache because the token is single-use here (one PR per
+    // mint), and the mint round-trip is fast.
+    const { mintInstallationToken } = await import('../github/app.js')
+    const cpUrl = process.env.GRAVEL_CONTROL_PLANE_URL ?? 'https://gravel.artanis.ai'
+    let token: Awaited<ReturnType<typeof mintInstallationToken>>
+    try {
+      token = await mintInstallationToken({
+        controlPlaneUrl: cpUrl,
+        installBindingToken: ghState.bindingToken,
+        installationId: ghState.installationId,
+      })
+    } catch (err) {
+      return json(
+        {
+          error: 'github_token_mint_failed',
+          message: (err as Error).message,
+        },
+        502,
       )
     }
     const { submitDrafts, SubmitError } = await import('../prompts/submit.js')
@@ -289,7 +310,7 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
         db,
         repoRoot: process.cwd(),
         draftBranch: draftBranchFor(authed.id),
-        accessToken: ghState.ghAccessToken,
+        accessToken: token.token,
         repoOwner: ghState.repoOwner,
         repoName: ghState.repoName,
         title: typeof body.title === 'string' ? body.title : undefined,
@@ -305,72 +326,83 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
     }
   },
 
-  // GitHub OAuth connection. Spec: gravel-cloud/docs/spec/prompts.md §6.
-  'GET /api/github/status': async ({ db, authed }) => {
-    if (!authed) return json({ error: 'unauthorized' }, 401)
-    const { getUserGhState } = await import('../prompts/user-extra.js')
-    const state = await getUserGhState(db, authed.id)
+  // GitHub App install. Spec: gravel-cloud/docs/spec/prompts.md §6.
+  // Per-user OAuth was removed 2026-05-07 (decisions.md D-Q53 re-reversal).
+  'GET /api/github/status': async ({ db }) => {
+    const { getGhInstallState } = await import('../github/project-state.js')
+    const state = await getGhInstallState(db)
     return json({
-      connected: Boolean(state.ghAccessToken),
-      repoOwner: state.repoOwner ?? null,
-      repoName: state.repoName ?? null,
-      connectedAt: state.ghConnectedAt ?? null,
+      connected: Boolean(state),
+      repoOwner: state?.repoOwner ?? null,
+      repoName: state?.repoName ?? null,
+      connectedAt: state?.installedAt ?? null,
     })
   },
-  'POST /api/github/repo': async ({ request, db, authed }) => {
-    if (!authed) return json({ error: 'unauthorized' }, 401)
-    let body: { owner?: unknown; name?: unknown }
-    try {
-      body = (await request.json()) as { owner?: unknown; name?: unknown }
-    } catch {
-      return json({ error: 'invalid JSON body' }, 400)
-    }
-    const owner = typeof body.owner === 'string' ? body.owner : null
-    const name = typeof body.name === 'string' ? body.name : null
-    if (!owner || !name || !/^[\w.-]+$/.test(owner) || !/^[\w.-]+$/.test(name)) {
-      return json({ error: 'owner and name (alphanumeric / . / _ / -) required' }, 400)
-    }
-    const { ensureGravelUser, patchUserGhState } = await import('../prompts/user-extra.js')
-    await ensureGravelUser(db, authed)
-    await patchUserGhState(db, authed.id, { repoOwner: owner, repoName: name })
-    return json({ ok: true, repoOwner: owner, repoName: name })
-  },
-  'GET /api/github/connect': async ({ request, config }) => {
-    const apiKey = process.env.GRAVEL_API_KEY
+  'GET /api/github/install': async ({ request, config }) => {
     const projectId = process.env.GRAVEL_PROJECT_ID
-    if (!apiKey || !projectId) {
-      return json({ error: 'GRAVEL_API_KEY / GRAVEL_PROJECT_ID not set in .env' }, 500)
+    if (!projectId) return json({ error: 'GRAVEL_PROJECT_ID not set' }, 500)
+    const callback = new URL(`${config.mountPath}/api/github/install/callback`, request.url).toString()
+    // Dev stub: bypass GitHub + control plane entirely. Used for the
+    // local fixture suite + UI iteration when the dev hasn't deployed
+    // the CP yet. Set GRAVEL_GH_DEV_STUB=1 + GRAVEL_GH_DEV_REPO_OWNER
+    // + GRAVEL_GH_DEV_REPO_NAME to short-circuit. Submit later requires
+    // GRAVEL_GH_DEV_STUB_TOKEN — a real PAT scoped to the stub repo.
+    if (process.env.GRAVEL_GH_DEV_STUB === '1') {
+      const owner = process.env.GRAVEL_GH_DEV_REPO_OWNER
+      const name = process.env.GRAVEL_GH_DEV_REPO_NAME
+      if (!owner || !name) {
+        return json(
+          { error: 'GRAVEL_GH_DEV_STUB=1 requires GRAVEL_GH_DEV_REPO_OWNER + GRAVEL_GH_DEV_REPO_NAME' },
+          500,
+        )
+      }
+      const stubCallback = new URL(callback)
+      stubCallback.searchParams.set('installation_id', '0')
+      stubCallback.searchParams.set('binding_token', 'dev-stub')
+      stubCallback.searchParams.set('repo_owner', owner)
+      stubCallback.searchParams.set('repo_name', name)
+      return json({ redirectUrl: stubCallback.toString() })
     }
-    const { startConnectFlow } = await import('../github/index.js')
-    const callbackUrl = new URL(`${config.mountPath}/api/github/callback`, request.url).toString()
-    const { redirectUrl } = startConnectFlow({ apiKey, projectId, callbackUrl })
-    return json({ redirectUrl })
+    // Bounce through the control plane so it can issue the signed
+    // `state` parameter GitHub's install URL needs.
+    const cpUrl = process.env.GRAVEL_CONTROL_PLANE_URL ?? 'https://gravel.artanis.ai'
+    const start = new URL('/api/cli/github/install/start', cpUrl)
+    start.searchParams.set('project_id', projectId)
+    start.searchParams.set('return_to', callback)
+    return json({ redirectUrl: start.toString() })
   },
-  'GET /api/github/callback': async ({ request, db, authed, config }) => {
-    if (!authed) return json({ error: 'unauthorized' }, 401)
-    const apiKey = process.env.GRAVEL_API_KEY
-    if (!apiKey) return json({ error: 'GRAVEL_API_KEY not set' }, 500)
+  'GET /api/github/install/callback': async ({ request, db }) => {
+    // The control plane redirects here after the dev finishes the
+    // GitHub install flow. URL params:
+    //   - installation_id: numeric, GitHub's identifier
+    //   - binding_token  : long-lived JWT, used to mint installation tokens
+    //   - repo_owner / repo_name: the repo the dev picked at install time
     const url = new URL(request.url)
-    const jwt = url.searchParams.get('session')
-    if (!jwt) return json({ error: 'missing session parameter' }, 400)
-    try {
-      const { finalizeConnectCallback } = await import('../github/index.js')
-      const result = finalizeConnectCallback({ apiKey, jwt })
-      const { ensureGravelUser, patchUserGhState } = await import('../prompts/user-extra.js')
-      await ensureGravelUser(db, authed)
-      await patchUserGhState(db, authed.id, {
-        ghAccessToken: result.ghAccessToken,
-        ghConnectedAt: new Date().toISOString(),
-      })
-      // Bounce the browser back to a friendly settings page; the dashboard
-      // SPA will re-fetch /api/github/status to update its UI.
-      return new Response(null, {
-        status: 302,
-        headers: { location: `${config.mountPath}/?gh=connected` },
-      })
-    } catch (err) {
-      return json({ error: (err as Error).message }, 400)
+    const installationIdRaw = url.searchParams.get('installation_id')
+    const bindingToken = url.searchParams.get('binding_token')
+    const repoOwner = url.searchParams.get('repo_owner')
+    const repoName = url.searchParams.get('repo_name')
+    if (!installationIdRaw || !bindingToken || !repoOwner || !repoName) {
+      return json({ error: 'missing install params' }, 400)
     }
+    const installationId = Number(installationIdRaw)
+    if (!Number.isInteger(installationId) || installationId <= 0) {
+      return json({ error: 'bad installation_id' }, 400)
+    }
+    const { setGhInstallState } = await import('../github/project-state.js')
+    await setGhInstallState(db, {
+      installationId,
+      repoOwner,
+      repoName,
+      bindingToken,
+      installedAt: new Date().toISOString(),
+    })
+    // Bounce the browser back to the dashboard root with a flag so the
+    // SPA can refetch /api/github/status and dismiss the setup banner.
+    return new Response(null, {
+      status: 302,
+      headers: { location: `${url.pathname.replace('/api/github/install/callback', '')}/?gh=installed` },
+    })
   },
 
   // Traces (v1)
