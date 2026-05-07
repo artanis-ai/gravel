@@ -23,7 +23,6 @@ const NAV_ITEMS = [
   { path: '/traces', label: 'Traces', match: ['/traces'] },
   { path: '/datasets', label: 'Datasets', match: ['/datasets'] },
   { path: '/evals', label: 'Evals', match: ['/evals'] },
-  { path: '/analysis', label: 'Analysis', match: ['/analysis'] },
 ]
 
 function isActive(location: string, prefixes: string[]): boolean {

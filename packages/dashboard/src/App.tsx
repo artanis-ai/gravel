@@ -5,7 +5,6 @@ import { PromptsPage } from './routes/Prompts'
 import { TracesPage } from './routes/Traces'
 import { DatasetsPage } from './routes/Datasets'
 import { EvalsPage } from './routes/Evals'
-import { AnalysisPage } from './routes/Analysis'
 import { LoadingPage } from './components/LoadingPage'
 import { LoginPage } from './routes/Login'
 
@@ -34,7 +33,6 @@ export function App() {
           <Route path="/datasets/:id">{(params) => <DatasetsPage datasetId={params.id} />}</Route>
           <Route path="/evals" component={() => <EvalsPage />} />
           <Route path="/evals/:id">{(params) => <EvalsPage runId={params.id} />}</Route>
-          <Route path="/analysis" component={() => <AnalysisPage />} />
         </Switch>
       </Layout>
     </Router>
