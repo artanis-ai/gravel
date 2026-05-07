@@ -81,6 +81,7 @@ export const PUT = handler
 export const DELETE = handler
 `,
   )
+  await ensureNextServerExternalPackages(cwd)
   return { path: file, mode: 'created' }
 }
 
@@ -98,6 +99,7 @@ import { config } from '@/gravel.config'
 export default createGravelHandler({ config })
 `,
   )
+  await ensureNextServerExternalPackages(cwd)
   return { path: file, mode: 'created' }
 }
 
@@ -163,6 +165,106 @@ async function safeBackup(file: string): Promise<void> {
   await fs.copyFile(file, bak)
   // eslint-disable-next-line no-console
   console.log(`[gravel] Existing ${file} backed up to ${bak}.`)
+}
+
+/**
+ * Patch (or create) the project's `next.config.{ts,js,mjs}` to mark
+ * `@artanis-ai/gravel`, `pg`, and `better-sqlite3` as
+ * `serverExternalPackages` (Next 15) / `experimental.serverComponentsExternalPackages`
+ * (Next 14). Without this, webpack tries to bundle the gravel SDK's
+ * native peer deps and the dashboard route 500s with a "Could not
+ * locate the bindings file" / "Module not found" error.
+ *
+ * Idempotent: looks for the package names in the existing config text;
+ * if they're already mentioned anywhere in the file, leaves it alone.
+ * Otherwise:
+ *   - `next.config.ts` / `next.config.mjs`: regex-rewrites the
+ *     `export default {…}` body. If the file is just `export default {}`
+ *     we replace cleanly. If it's anything more complex, we back it up
+ *     and emit a polite-blocking notice.
+ *   - No `next.config.*`: writes a fresh `next.config.mjs`.
+ */
+async function ensureNextServerExternalPackages(cwd: string): Promise<void> {
+  const candidates = ['next.config.ts', 'next.config.mjs', 'next.config.js']
+  let target: string | null = null
+  let body = ''
+  for (const f of candidates) {
+    const p = join(cwd, f)
+    if (await pathExists(p)) {
+      target = p
+      body = await fs.readFile(p, 'utf8')
+      break
+    }
+  }
+
+  // App Router uses `serverExternalPackages` (Next 15) — keeps the listed
+  // packages out of the App Router server bundle. Pages Router API routes
+  // need a webpack `externals` block too. We add both so a project that
+  // mounts under either router (or both) works.
+  const required = ['@artanis-ai/gravel', 'pg', 'better-sqlite3']
+  const block = `
+  serverExternalPackages: ['@artanis-ai/gravel', 'pg', 'better-sqlite3'],
+  webpack: (cfg, { isServer }) => {
+    if (isServer) {
+      cfg.externals = cfg.externals || []
+      cfg.externals.push('better-sqlite3', 'pg', '@artanis-ai/gravel', '@artanis-ai/gravel/next', '@artanis-ai/gravel/next-pages', '@artanis-ai/gravel/auto')
+    }
+    return cfg
+  },`
+
+  // Already patched? Heuristic: webpack externals function with our
+  // package names already in the file.
+  if (
+    target &&
+    body.includes('@artanis-ai/gravel') &&
+    body.includes('externals') &&
+    required.every((pkg) => body.includes(`'${pkg}'`) || body.includes(`"${pkg}"`))
+  ) {
+    return
+  }
+
+  if (!target) {
+    // No config file — create a minimal one.
+    const newPath = join(cwd, 'next.config.mjs')
+    await fs.writeFile(
+      newPath,
+      `// Added by Gravel wizard. Keeps Next.js's webpack from trying to
+// bundle gravel's native peer deps (pg, better-sqlite3) into the
+// server bundle. \`serverExternalPackages\` covers App Router server
+// code; the \`webpack\` externals block covers Pages Router API
+// routes (which are still bundled by webpack).
+const config = {${block}
+}
+export default config
+`,
+    )
+    return
+  }
+
+  // Splice in. Cheap path: empty config object.
+  if (/export default\s*\{\s*\}/.test(body)) {
+    const patched = body.replace(/export default\s*\{\s*\}/, `export default {${block}\n}`)
+    await safeBackup(target)
+    await fs.writeFile(target, patched)
+    return
+  }
+
+  // Otherwise: write a sibling suggestion file. The user's config is
+  // non-trivial; we don't want to risk corrupting it with a regex-rewrite.
+  await fs.writeFile(
+    target + '.gravel.next-config.suggestion.txt',
+    `Add this to your Next.js config's exported object so the gravel
+dashboard route doesn't 500 with "Module not found":${block}
+
+If you only use App Router, the \`serverExternalPackages\` line alone
+is enough. The \`webpack\` block additionally keeps Pages Router API
+routes from bundling the native peer deps.
+`,
+  )
+  // eslint-disable-next-line no-console
+  console.log(
+    `[gravel] Could not auto-patch ${target} — wrote a suggestion to ${target}.gravel.next-config.suggestion.txt. Add the snippet to fix dashboard 500s.`,
+  )
 }
 
 async function pathExists(p: string): Promise<boolean> {
