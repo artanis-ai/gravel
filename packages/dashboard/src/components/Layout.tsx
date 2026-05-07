@@ -1,6 +1,12 @@
 import { Link, useLocation } from 'wouter'
 import type { ReactNode } from 'react'
 
+declare global {
+  interface Window {
+    __GRAVEL_PRODUCT_NAME__?: string
+  }
+}
+
 interface User {
   id: string
   firstName: string
@@ -19,17 +25,20 @@ const NAV_ITEMS = [
 export function Layout({ children, user }: { children: ReactNode; user?: User }) {
   const [location] = useLocation()
   const isAdmin = user?.role === 'admin'
+  // Show productName only if the host configured one. With nothing set,
+  // the header chrome is fully neutral — no "G" logo, no "Gravel"
+  // wordmark — so the embedded dashboard reads as part of the host
+  // app to the domain experts logging in.
+  const productName = window.__GRAVEL_PRODUCT_NAME__?.trim() || ''
 
   return (
     <div className="min-h-screen flex flex-col">
       <header className="border-b border-warm bg-cream/95 backdrop-blur-sm sticky top-0 z-40">
         <div className="px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center">
-              <span className="text-white text-xs font-bold">G</span>
-            </div>
-            <span className="font-display font-semibold text-sm">Gravel</span>
-            <span className="text-xs text-text-muted ml-2 px-2 py-0.5 rounded-full bg-warm">Skeleton</span>
+            {productName ? (
+              <span className="font-display font-semibold text-sm">{productName}</span>
+            ) : null}
           </div>
           {user && (
             <div className="flex items-center gap-3 text-sm">

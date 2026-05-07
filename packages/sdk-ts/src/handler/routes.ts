@@ -368,7 +368,7 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
   // are emitted relative (`./assets/foo.js`) so we can rewrite them to
   // mount-relative URLs at request time without parsing HTML.
   'GET /': async ({ config }) =>
-    new Response(rewriteShell(DASHBOARD_INDEX_HTML, config.mountPath), {
+    new Response(rewriteShell(DASHBOARD_INDEX_HTML, config), {
       status: 200,
       headers: {
         'content-type': 'text/html; charset=utf-8',
@@ -376,7 +376,7 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
       },
     }),
   'GET /login': async ({ config }) =>
-    new Response(rewriteShell(DASHBOARD_LOGIN_HTML, config.mountPath), {
+    new Response(rewriteShell(DASHBOARD_LOGIN_HTML, config), {
       status: 200,
       headers: {
         'content-type': 'text/html; charset=utf-8',
@@ -412,17 +412,30 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
  * and `href="./assets/index-XYZ.css"`; we point them at our flat
  * `${mountPath}/_assets/<basename>` route.
  *
- * Also injects `window.__GRAVEL_MOUNT_PATH__` so the SPA's API client
- * (packages/dashboard/src/lib/api.ts) and the login form can build
- * absolute URLs without re-deriving the mount path from `location`.
+ * Also injects window globals the SPA reads at boot:
+ *   - `__GRAVEL_MOUNT_PATH__` — used by the API client + login form
+ *     to build absolute URLs without re-deriving from `location`.
+ *   - `__GRAVEL_PRODUCT_NAME__` — used by the login + nav UI so the
+ *     dashboard can be re-branded as the host product (the dashboard
+ *     is meant to feel like part of the user's app, not a Gravel
+ *     sign-in). Only injected when productName is set.
+ *   - `__GRAVEL_HIDE_ARTANIS__` — paid-tier flag; SPA hides the
+ *     "Powered by Artanis" footer when true.
  */
-function rewriteShell(html: string, mountPath: string): string {
-  const prefix = mountPath.replace(/\/$/, '')
+function rewriteShell(html: string, config: ResolvedGravelConfig): string {
+  const prefix = config.mountPath.replace(/\/$/, '')
   const rewritten = html.replace(/(src|href)="\.\/assets\/([^"]+)"/g, (_, attr, file) => {
     const basename = String(file).split('/').pop() ?? file
     return `${attr}="${prefix}/_assets/${basename}"`
   })
-  const inject = `<script>window.__GRAVEL_MOUNT_PATH__=${JSON.stringify(prefix)}</script>`
+  const globals: string[] = [`window.__GRAVEL_MOUNT_PATH__=${JSON.stringify(prefix)}`]
+  if (config.productName) {
+    globals.push(`window.__GRAVEL_PRODUCT_NAME__=${JSON.stringify(config.productName)}`)
+  }
+  if (config.hideArtanisBranding) {
+    globals.push(`window.__GRAVEL_HIDE_ARTANIS__=true`)
+  }
+  const inject = `<script>${globals.join(';')}</script>`
   // Drop the inject just before the first <script type="module"> so it
   // runs before the SPA bundle reads the global. Fall back to <head> end
   // if the bundle's script tag has been renamed.

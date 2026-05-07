@@ -90,7 +90,14 @@ export function defineConfig(config: GravelConfig): GravelConfig {
 // ---------- Default / runtime constants ----------
 
 export const DEFAULT_MOUNT_PATH = '/admin/ai'
-export const DEFAULT_PRODUCT_NAME = 'Gravel'
+/**
+ * Empty default — the host opts INTO branding by setting `productName`
+ * in gravel.config.{ts,py}. With nothing set, the dashboard shows
+ * neutral chrome (no "Gravel" header, no G logo) so the embedded
+ * surface feels like part of the host app to the domain expert
+ * who's logging in to review traces, not a third-party service.
+ */
+export const DEFAULT_PRODUCT_NAME = ''
 export const DEFAULT_TABLE_PREFIX = 'gravel_'
 export const DEFAULT_CONCURRENCY = { trace: 5, live: 2 } as const
 export const DEFAULT_ENVIRONMENT = 'prod'
