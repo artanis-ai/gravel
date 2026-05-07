@@ -22,6 +22,7 @@ import {
   DASHBOARD_LOGIN_HTML,
   DASHBOARD_ASSETS,
 } from './dashboard-bundle.js'
+import { getVersionInfo } from './version.js'
 
 interface RouteCtx {
   config: ResolvedGravelConfig
@@ -64,6 +65,15 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
       mountPath: config.mountPath,
       hideArtanisBranding: config.hideArtanisBranding,
     })
+  },
+
+  // Version info — admin only. Used by the dashboard to surface an
+  // "update available" banner when the host's installed @artanis-ai/gravel
+  // is behind npm @latest. See handler/version.ts for the cache + opt-out
+  // (`GRAVEL_VERSION_CHECK_DISABLED=1`).
+  'GET /api/version': async ({ authed }) => {
+    if (!authed || authed.role !== 'admin') return json({ error: 'unauthorized' }, 401)
+    return json(await getVersionInfo())
   },
   'POST /api/auth/login': async ({ request, config, grRequest }) => {
     if (!config.auth.defaultPassword) {

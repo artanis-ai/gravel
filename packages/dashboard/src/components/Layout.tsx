@@ -1,9 +1,11 @@
 import { Link, useLocation } from 'wouter'
 import type { ReactNode } from 'react'
+import { UpdateBanner } from './UpdateBanner'
 
 declare global {
   interface Window {
     __GRAVEL_PRODUCT_NAME__?: string
+    __GRAVEL_MOUNT_PATH__?: string
   }
 }
 
@@ -31,8 +33,11 @@ export function Layout({ children, user }: { children: ReactNode; user?: User })
   // app to the domain experts logging in.
   const productName = window.__GRAVEL_PRODUCT_NAME__?.trim() || ''
 
+  const mountPath = window.__GRAVEL_MOUNT_PATH__ ?? ''
+
   return (
     <div className="min-h-screen flex flex-col">
+      <UpdateBanner mountPath={mountPath} isAdmin={isAdmin} />
       <header className="border-b border-warm bg-cream/95 backdrop-blur-sm sticky top-0 z-40">
         <div className="px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
