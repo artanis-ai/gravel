@@ -19,6 +19,7 @@ import {
   type DatasetSummary,
 } from '../lib/types'
 import { EmptyState } from '../components/EmptyState'
+import { DeveloperNote } from '../components/DeveloperNote'
 import { SkeletonTable, SkeletonText } from '../components/Skeleton'
 import { Badge } from '../components/Badge'
 import { Modal } from '../components/Modal'
@@ -106,16 +107,19 @@ function TracesList() {
           <SkeletonTable rows={6} cols={6} />
         </div>
       ) : traces.length === 0 ? (
-        <EmptyState
-          title="No traces yet"
-          body={
-            <>
-              Make sure tracing is enabled (it's auto-enabled by default) and your app is running.
-              Need help? Run{' '}
-              <code className="rounded bg-cream px-1 py-0.5 font-mono text-xs">npx @artanis-ai/gravel doctor</code>.
-            </>
-          }
-        />
+        <div className="space-y-3">
+          <EmptyState
+            title="No traces yet"
+            body="Once the app sees traffic, traces will appear here so you can review and label them."
+          />
+          <DeveloperNote>
+            Traces flow in once the app runs with Gravel tracing on. To diagnose, run{' '}
+            <code className="rounded bg-cream px-1 py-0.5 font-mono text-[11px]">
+              npx @artanis-ai/gravel doctor
+            </code>
+            .
+          </DeveloperNote>
+        </div>
       ) : (
         <TracesTable traces={traces} />
       )}

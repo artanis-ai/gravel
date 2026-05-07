@@ -10,6 +10,7 @@ import { Link } from 'wouter'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { EmptyState } from '../components/EmptyState'
+import { DeveloperNote } from '../components/DeveloperNote'
 import { SkeletonText } from '../components/Skeleton'
 import { Modal } from '../components/Modal'
 import { PromptBadge } from '../components/prompts/PromptBadge'
@@ -159,19 +160,19 @@ function PromptsList() {
           {(promptsQ.error as Error)?.message ?? 'Failed to load prompts.'}
         </p>
       ) : (promptsQ.data?.prompts.length ?? 0) === 0 ? (
-        <EmptyState
-          title="No prompts yet"
-          body={
-            <>
-              Looking for a prompt that isn't here? It might not be in your manifest yet.
-              Ask your developer to add it to the codebase, then run{' '}
-              <code className="rounded bg-cream px-1 py-0.5 font-mono text-xs">
-                npx @artanis-ai/gravel manifest --update
-              </code>
-              .
-            </>
-          }
-        />
+        <div className="space-y-3">
+          <EmptyState
+            title="No prompts yet"
+            body="Once your team has prompts wired up, they'll appear here for editing."
+          />
+          <DeveloperNote>
+            Prompts come from the manifest. Add one in your code, then run{' '}
+            <code className="rounded bg-cream px-1 py-0.5 font-mono text-[11px]">
+              npx @artanis-ai/gravel manifest --update
+            </code>
+            .
+          </DeveloperNote>
+        </div>
       ) : filtered.length === 0 ? (
         <EmptyState
           title="No matches"

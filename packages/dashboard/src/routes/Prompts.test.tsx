@@ -43,6 +43,9 @@ function makePrompt(overrides: Partial<ManifestPromptListItem> = {}): ManifestPr
 }
 
 function routeFor(path: string): unknown {
+  if (path === '/api/auth/me') {
+    return { user: { id: 'localhost', firstName: 'Developer', role: 'admin' } }
+  }
   if (path === '/api/prompts') {
     return { prompts: [], last_scan_at: null } satisfies PromptsListResponse
   }
@@ -103,7 +106,22 @@ describe('Prompts list', () => {
     setupGet([])
     renderRoute(<PromptsPage />)
     expect(await screen.findByText(/no prompts yet/i)).toBeInTheDocument()
-    expect(screen.getByText(/manifest --update/i)).toBeInTheDocument()
+    // Developer-only hint visible because auth/me reports localhost.
+    expect(await screen.findByText(/manifest --update/i)).toBeInTheDocument()
+    expect(screen.getByText(/developer only/i)).toBeInTheDocument()
+  })
+
+  it('hides the CLI hint from domain experts (non-localhost user)', async () => {
+    mockedGet.mockImplementation(async (path: string) => {
+      if (path === '/api/auth/me') {
+        return { user: { id: 'u_real', firstName: 'Pat', role: 'user' } }
+      }
+      return routeFor(path)
+    })
+    renderRoute(<PromptsPage />)
+    expect(await screen.findByText(/no prompts yet/i)).toBeInTheDocument()
+    expect(screen.queryByText(/manifest --update/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/developer only/i)).not.toBeInTheDocument()
   })
 
   it('renders prompts grouped by directory and a draft dot', async () => {

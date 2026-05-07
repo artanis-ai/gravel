@@ -55,10 +55,17 @@ function makeTraces(n: number): TracesResponse {
 
 describe('Traces list', () => {
   it('renders the empty state when no traces are returned', async () => {
-    mockedGet.mockResolvedValueOnce({ traces: [], total: 0, page: 1, page_size: 20 } satisfies TracesResponse)
+    mockedGet.mockImplementation(async (path: string) => {
+      if (path === '/api/auth/me') {
+        return { user: { id: 'localhost', firstName: 'Developer', role: 'admin' } }
+      }
+      return { traces: [], total: 0, page: 1, page_size: 20 } satisfies TracesResponse
+    })
     renderRoute(<TracesPage />)
     expect(await screen.findByText(/no traces yet/i)).toBeInTheDocument()
-    expect(screen.getByText(/auto-enabled by default/i)).toBeInTheDocument()
+    // Developer-only hint visible because auth/me reports localhost.
+    expect(await screen.findByText(/gravel doctor/i)).toBeInTheDocument()
+    expect(screen.getByText(/developer only/i)).toBeInTheDocument()
   })
 
   it('renders rows when traces are returned', async () => {
