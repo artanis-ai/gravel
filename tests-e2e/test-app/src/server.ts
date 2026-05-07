@@ -45,6 +45,10 @@ const config = defineConfig({
   mountPath: '/admin/ai',
   database: { url: DATABASE_URL },
   auth: { defaultPassword: PASSWORD },
+  // The E2E suite exists to exercise the password / session flow end-to-end,
+  // which the localhost = admin shortcut would short-circuit. Disable the
+  // shortcut so Playwright actually drives login + cookie roundtrip.
+  localhostIsAdmin: false,
 })
 
 const handler = createGravelHandler({ config })

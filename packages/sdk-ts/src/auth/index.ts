@@ -10,6 +10,7 @@
 import type { GravelRequest, GravelUser, ResolvedGravelConfig } from '../types.js'
 import { verifyPassword, signSession, verifySession, SESSION_COOKIE } from './session.js'
 import { isViewAsUser } from './view-as.js'
+import { isLocalhostRequest } from './origin.js'
 
 export type AuthOutcome =
   | { kind: 'authed'; user: GravelUser }
@@ -21,6 +22,19 @@ export async function authenticate(
   config: ResolvedGravelConfig,
   req: GravelRequest,
 ): Promise<AuthOutcome> {
+  // Localhost = admin shortcut. The browser-facing hostname (X-Forwarded-Host
+  // ?? Host) drives the decision so prod behind a proxy isn't fooled by the
+  // server's local interface. View-as cookie still demotes to user — devs
+  // need to be able to preview the user-role experience without changing
+  // hosts.
+  if (config.localhostIsAdmin && isLocalhostRequest(req)) {
+    const role = isViewAsUser(req) ? 'user' : 'admin'
+    return {
+      kind: 'authed',
+      user: { id: 'localhost', firstName: 'Developer', role },
+    }
+  }
+
   if (config.auth.getUser) {
     return await authViaCallback(config, req)
   }

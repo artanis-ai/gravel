@@ -73,6 +73,18 @@ export interface GravelConfig {
   environments?: string[]
   /** Optional: hide branding (Enterprise tier). */
   hideArtanisBranding?: boolean
+  /**
+   * When true (the default), requests whose browser-facing hostname is
+   * localhost / 127.0.0.0/8 / ::1 / *.localhost skip the auth gate and
+   * land in the dashboard as `role: 'admin'`. The dev experience is
+   * "open the URL, you're in"; production traffic still goes through
+   * `getUser` / `defaultPassword`.
+   *
+   * Set to `false` for setups where localhost can mean a non-developer
+   * (multi-tenant dev hosts, shared sandboxes) — auth then falls
+   * through to the configured mode unconditionally.
+   */
+  localhostIsAdmin?: boolean
   /** Optional: eval defaults. */
   evals?: GravelEvalsConfig
   /** Optional: PII scrubbing hooks. See spec/tracing.md §7. */
@@ -140,6 +152,7 @@ export function resolveConfig(config: GravelConfig): ResolvedGravelConfig {
     auth: config.auth,
     environments: config.environments ?? [DEFAULT_ENVIRONMENT],
     hideArtanisBranding: config.hideArtanisBranding ?? false,
+    localhostIsAdmin: config.localhostIsAdmin ?? true,
     evals: {
       concurrency: {
         trace: config.evals?.concurrency?.trace ?? DEFAULT_CONCURRENCY.trace,

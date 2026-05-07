@@ -32,7 +32,10 @@ test.describe('API roundtrip', () => {
     }
     expect(me.user).toMatchObject({ id: 'admin', role: 'admin' })
     expect(typeof me.user.firstName).toBe('string')
-    expect(me.productName).toBe('Gravel')
+    // productName defaults to '' so the dashboard chrome stays neutral
+    // — the host opts INTO branding by setting `productName` in
+    // gravel.config.ts. The e2e test-app deliberately doesn't set one.
+    expect(me.productName).toBe('')
     expect(me.mountPath).toBe('/admin/ai')
 
     // 3. /api/prompts surfaces the (empty) manifest.
