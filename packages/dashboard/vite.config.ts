@@ -22,9 +22,15 @@ import react from '@vitejs/plugin-react'
 const HOST_PORT = process.env.GRAVEL_DEV_HOST_PORT ?? '3000'
 const MOUNT_PATH = process.env.GRAVEL_DEV_MOUNT_PATH ?? '/admin/ai'
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [react()],
-  base: './',
+  // Build: relative URLs so the SDK can rewrite assets under any mount
+  // path at request time. Dev: serve under MOUNT_PATH so assets resolve
+  // correctly when the gravel handler redirects to ${mountPath}/ after
+  // login (otherwise the post-login page lands on /admin/ai/ but Vite
+  // can only find the SPA bundle relative to the wrong base, and the
+  // user sees a blank page).
+  base: command === 'serve' ? `${MOUNT_PATH}/` : './',
   build: {
     outDir: 'dist',
     emptyOutDir: true,
@@ -54,4 +60,4 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     css: false,
   },
-})
+}))

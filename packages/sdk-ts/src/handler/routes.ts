@@ -143,7 +143,13 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
     const headers = new Headers({ 'set-cookie': sessionCookieValue(cookie, request.url) })
     const isForm = ctype.includes('application/x-www-form-urlencoded')
     if (isForm) {
-      headers.set('location', config.mountPath || '/')
+      // Trailing slash matters: relative asset URLs in the SPA shell
+      // resolve against the directory of the URL. `/admin/ai` (no slash)
+      // resolves `./assets/x.js` to `/admin/assets/x.js` which is wrong.
+      // The trailing slash also keeps Vite happy in dev (its base-path
+      // server only matches `${MOUNT_PATH}/`, so a redirect without the
+      // slash 404s and the user sees a blank page).
+      headers.set('location', `${config.mountPath || ''}/`)
       return new Response(null, { status: 303, headers })
     }
     headers.set('content-type', 'application/json')

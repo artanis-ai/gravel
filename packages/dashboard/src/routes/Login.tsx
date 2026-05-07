@@ -23,10 +23,26 @@ export function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-cream">
       <div className="w-full max-w-sm bg-white rounded-2xl shadow-lg ring-1 ring-warm p-8">
+        <div className="flex justify-center mb-5 text-text-mid">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="22"
+            height="22"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.75"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <rect x="4" y="11" width="16" height="10" rx="2" />
+            <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+          </svg>
+        </div>
         {productName ? (
-          <h1 className="font-display font-semibold text-lg mb-1">{productName}</h1>
+          <h1 className="font-display font-semibold text-lg text-center mb-5">{productName}</h1>
         ) : null}
-        <p className="text-sm text-text-mid mb-6">Sign in</p>
         <form
           method="POST"
           action={`${mountPath}/api/auth/login`}
