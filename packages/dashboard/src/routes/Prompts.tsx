@@ -120,11 +120,21 @@ function PromptsList() {
         </button>
       </header>
 
+      {/*
+        GH connect/repo-picker is dev-only setup. Domain experts can't
+        (and shouldn't) wire up a bot; they just want to edit a prompt.
+        When the bot is configured by the dev once, server-side, every
+        viewer's "Submit changes" goes through it.
+      */}
       {ghQ.data && !ghConnected && (
-        <GithubBanner kind="not-connected" />
+        <DeveloperNote>
+          <GithubBanner kind="not-connected" />
+        </DeveloperNote>
       )}
       {ghQ.data && ghConnected && !ghRepoSet && (
-        <GithubBanner kind="no-repo" onPickRepo={() => setRepoModalOpen(true)} />
+        <DeveloperNote>
+          <GithubBanner kind="no-repo" onPickRepo={() => setRepoModalOpen(true)} />
+        </DeveloperNote>
       )}
 
       {submittedPrUrl && (
