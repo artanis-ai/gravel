@@ -102,7 +102,7 @@ export interface WizardSummary {
 export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary> {
   const cwd = opts.cwd ?? process.cwd()
   const blockers: string[] = []
-  const mountPath = opts.mountPath ?? '/admin/ai'
+  let mountPath = opts.mountPath ?? '/admin/ai'
 
   // Step 1 — detect.
   const detection = await detect(cwd)
@@ -186,43 +186,36 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
         : null
 
   // ── Step 1 of 3 — Dashboard ──
-  // Always required if either pillar is selected. We can't know that
-  // upfront when the user hasn't been asked yet, so we run the dashboard
-  // step optimistically — if the user declines all pillars after that
-  // we'll have written a few harmless files (mount route, password,
-  // gravel.config.ts). Tradeoff worth taking for the simpler flow.
+  // Unconditional: nothing else works without it. The only choice the
+  // user gets is the mount path (default /admin/ai); --mount-path on
+  // the CLI also overrides without any prompt.
   stepHeader(1, 3, 'Dashboard')
   say(
-    `First I'll mount an embedded admin UI at ${c.bold(mountPath)}. This is where ` +
-      `your domain experts open Gravel — they'll see prompts to edit and (later) ` +
-      `LLM outputs to review. I'll also write a ${c.bold('gravel.config.ts')} so you can ` +
-      `wire up your own ${c.bold('getUser')} callback later.`,
+    `First I'll mount the embedded admin UI. This is where your domain ` +
+      `experts open Gravel — they'll see prompts to edit and (later) LLM ` +
+      `outputs to review. I'll also write a ${c.bold('gravel.config.ts')} so you can ` +
+      `wire up your own ${c.bold('getUser')} callback later if you want to use your own auth.`,
   )
   let dashboardWritten = false
   let mountedRoute = null as Awaited<ReturnType<typeof mountDashboardRoute>>
   let password: string | null = null
   if (state.mountExists && state.envHasPassword) {
-    bullet(`Already wired up. Skipping.`, 'skip')
+    bullet(`Already wired up at ${c.bold(mountPath)}. Skipping.`, 'skip')
     note(`(Re-run with a clean .env.local + ${mountFilePath(detection)} removed if you want to start over.)`)
     say('')
     dashboardWritten = true
   } else {
-    const wantMount = await ask('Continue?', true)
-    if (!wantMount) {
-      bullet('Skipped. Nothing else can run without the dashboard.', 'skip')
-      return summary({
-        detection,
-        password: null,
-        mountedRoute: null,
-        ranBootstrap: false,
-        installedHook: null,
-        controlPlane,
-        blockers,
-        projectId,
-        apiKey,
-        authMode,
-        pillars: { dashboard: false, prompts: false, traces: false },
-      })
+    // Ask only for the path. Enter accepts the default. CLI
+    // --mount-path skips the prompt entirely.
+    if (interactive && opts.mountPath === undefined) {
+      const typed = await askText(
+        `Mount path ${c.dim('(Enter to accept default ' + mountPath + ')')}`,
+        { defaultValue: mountPath },
+      )
+      const cleaned = typed.trim()
+      if (cleaned !== '') {
+        mountPath = cleaned.startsWith('/') ? cleaned : '/' + cleaned
+      }
     }
     password = generatePassword()
     const envVars: Record<string, string> = { GRAVEL_ADMIN_PASSWORD: password }
