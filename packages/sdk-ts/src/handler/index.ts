@@ -34,8 +34,12 @@ let dbOpenError: Error | null = null
 async function ensureDb(config: ResolvedGravelConfig): Promise<Database | null> {
   if (cachedDb) return cachedDb
   if (dbOpenAttempted) return null
+  // Prompts-only install: the user's gravel.config.ts has no
+  // `database` block on purpose. Don't probe, don't warn — just
+  // return null and let DB-dependent routes degrade.
+  if (config.database === null) return null
   dbOpenAttempted = true
-  if (!config.database?.url) return null
+  if (!config.database.url) return null
   try {
     cachedDb = await openDatabase(config.database)
     return cachedDb

@@ -63,8 +63,14 @@ export interface GravelConfig {
   mountPath?: string
   /** Product name shown in the dashboard chrome. Default 'Gravel'. */
   productName?: string
-  /** Database connection. */
-  database: GravelDatabaseConfig
+  /**
+   * Database connection. Optional — when omitted, the SDK installs in
+   * "prompts-only" mode: the dashboard mounts and serves the
+   * manifest, the GitHub PR flow works, but everything that needs a
+   * DB (tracing auto-patches, the Outputs tab, feedback, evals) is
+   * inert. Add this block when you want to wire up traces.
+   */
+  database?: GravelDatabaseConfig
   /** Auth. Either getUser or defaultPassword (exclusive). */
   auth: GravelAuthConfig
   /** Optional: required only for live evals. */
@@ -118,7 +124,9 @@ export const DEFAULT_ENVIRONMENT = 'prod'
  * Resolves a config object to a fully-populated runtime form with defaults.
  */
 export interface ResolvedGravelConfig extends Required<Omit<GravelConfig,
-  'auth' | 'runPipeline' | 'evals' | 'scrubInput' | 'scrubOutput'>> {
+  'auth' | 'database' | 'runPipeline' | 'evals' | 'scrubInput' | 'scrubOutput'>> {
+  /** Null when prompts-only — see GravelConfig.database. */
+  database: GravelDatabaseConfig | null
   auth: GravelAuthConfig
   runPipeline?: RunPipelineFn
   evals: { concurrency: { trace: number; live: number }; judgeVersion: string }
@@ -142,13 +150,21 @@ export function resolveConfig(config: GravelConfig): ResolvedGravelConfig {
     )
   }
 
+  // `database: null` (or a config without `url`) means prompts-only.
+  // The handler / tracing modules check for null and skip every DB
+  // op rather than trying to open and crash with "url is undefined".
+  const database: GravelDatabaseConfig | null =
+    config.database && config.database.url
+      ? {
+          url: config.database.url,
+          tablePrefix: config.database.tablePrefix ?? DEFAULT_TABLE_PREFIX,
+        }
+      : null
+
   return {
     mountPath: config.mountPath ?? DEFAULT_MOUNT_PATH,
     productName: config.productName ?? DEFAULT_PRODUCT_NAME,
-    database: {
-      url: config.database.url,
-      tablePrefix: config.database.tablePrefix ?? DEFAULT_TABLE_PREFIX,
-    },
+    database,
     auth: config.auth,
     environments: config.environments ?? [DEFAULT_ENVIRONMENT],
     hideArtanisBranding: config.hideArtanisBranding ?? false,

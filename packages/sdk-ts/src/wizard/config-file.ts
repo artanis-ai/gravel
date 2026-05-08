@@ -13,6 +13,14 @@ import type { DetectionResult } from './detect.js'
 
 export interface ConfigFileOptions {
   mountPath: string
+  /**
+   * When false, omit the `database` block entirely. Prompts-only
+   * installs run with no DB at all — every DB-dependent code path
+   * (handler/index.ts ensureDb, tracing/persist.ts getDb) checks
+   * `config.database` for null and short-circuits. Adding the block
+   * later (`gravel init --traces`) re-enables tracing.
+   */
+  withDatabase?: boolean
 }
 
 export async function generateConfigFile(
@@ -39,15 +47,19 @@ function tsConfigContent(detection: DetectionResult, opts: ConfigFileOptions): s
       ? nextAuthBlock()
       : passwordOnlyAuthBlock()
 
+  const dbBlock = opts.withDatabase
+    ? `  database: {
+    url: process.env.${detection.database.envVar ?? 'DATABASE_URL'}!,
+  },
+`
+    : ''
+
   return `import { defineConfig } from '@artanis-ai/gravel'
 ${authImport(detection.auth)}
 
 export const config = defineConfig({
   mountPath: '${opts.mountPath}',
-  database: {
-    url: process.env.${detection.database.envVar ?? 'DATABASE_URL'}!,
-  },
-${authBlock}
+${dbBlock}${authBlock}
 })
 `
 }

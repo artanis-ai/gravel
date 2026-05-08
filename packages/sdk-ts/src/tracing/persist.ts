@@ -82,9 +82,14 @@ async function getDb(): Promise<Database | null> {
     }
     return null
   }
+  // Prompts-only install: the user's config has no `database` block.
+  // Tracing auto-patches still fire (they're idempotent + low-cost),
+  // they just have nowhere to persist. No warning — the user opted
+  // out by omitting the block.
+  const dbConfig = resolvedConfig.database
+  if (!dbConfig) return null
   if (!dbOpenPromise) {
-    const cfg = resolvedConfig
-    dbOpenPromise = openDatabase(cfg.database)
+    dbOpenPromise = openDatabase(dbConfig)
       .then((db) => {
         cachedDb = db
         return db
