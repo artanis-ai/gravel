@@ -15,6 +15,7 @@ import { api } from '../lib/api'
 import { EmptyState } from '../components/EmptyState'
 import { DeveloperNote } from '../components/DeveloperNote'
 import { CopyableCode } from '../components/CopyableCode'
+import { OnboardingCard } from '../components/OnboardingCard'
 import { SkeletonText } from '../components/Skeleton'
 import { PromptBadge } from '../components/prompts/PromptBadge'
 import { SubmitModal, type SubmitDraftEntry } from '../components/prompts/SubmitModal'
@@ -99,6 +100,7 @@ function PromptsList() {
 
   return (
     <div className="space-y-6">
+      <OnboardingCard pillar="prompts" />
       <DeveloperNote>
         To re-scan your codebase for prompts, run{' '}
         <CopyableCode>npx @artanis-ai/gravel manifest --update</CopyableCode>

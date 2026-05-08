@@ -47,6 +47,15 @@ function routeFor(path: string): unknown {
   if (path === '/api/auth/me') {
     return { user: { id: 'localhost', firstName: 'Developer', role: 'admin' } }
   }
+  if (path === '/api/onboarding/status') {
+    // Default: prompts pillar fully set up, nothing to nudge — keeps
+    // the OnboardingCard out of the way unless a test opts in.
+    return {
+      prompts: { manifestExists: true, promptCount: 5, hookInstalled: true },
+      traces: { tablesExist: true, sampleCount: 100, hasFeedback: true },
+      githubApp: { connected: true, repoOwner: 'acme', repoName: 'app' },
+    }
+  }
   if (path === '/api/prompts') {
     return { prompts: [], last_scan_at: null } satisfies PromptsListResponse
   }

@@ -21,6 +21,8 @@ import {
 import { EmptyState } from '../components/EmptyState'
 import { DeveloperNote } from '../components/DeveloperNote'
 import { CopyableCode } from '../components/CopyableCode'
+import { OnboardingCard } from '../components/OnboardingCard'
+import { PayloadShape } from '../components/PayloadShape'
 import { SkeletonTable, SkeletonText } from '../components/Skeleton'
 import { Badge } from '../components/Badge'
 import { Sheet } from '../components/Sheet'
@@ -104,6 +106,7 @@ function SamplesList() {
 
   return (
     <div className="space-y-4">
+      <OnboardingCard pillar="traces" />
       <DeveloperNote>
         Outputs flow in once the app runs with Gravel tracing on. To diagnose, run{' '}
         <CopyableCode>npx @artanis-ai/gravel doctor</CopyableCode>
@@ -666,6 +669,7 @@ function SampleDetailBody({ sampleId, showTitle = false }: { sampleId: string; s
 function PayloadView({ label, value }: { label: string; value: unknown }) {
   const json = useMemo(() => safeJsonString(value), [value])
   const big = json.length > 4000
+  const [showRaw, setShowRaw] = useState(false)
   const [open, setOpen] = useState(!big)
   if (value == null || (typeof value === 'object' && Object.keys(value as object).length === 0)) {
     return null
@@ -674,19 +678,32 @@ function PayloadView({ label, value }: { label: string; value: unknown }) {
     <section className="space-y-2">
       <div className="flex items-baseline justify-between">
         <h2 className="font-display text-sm font-semibold text-text-dark">{label}</h2>
-        {big && (
+        <div className="flex items-center gap-3 text-xs">
           <button
             type="button"
-            onClick={() => setOpen((o) => !o)}
-            className="cursor-pointer text-xs text-text-mid hover:text-text-dark"
+            onClick={() => setShowRaw((s) => !s)}
+            className="cursor-pointer text-text-mid hover:text-text-dark"
           >
-            {open ? 'Collapse' : 'Expand'}
+            {showRaw ? 'Pretty' : 'Raw JSON'}
           </button>
-        )}
+          {big && showRaw && (
+            <button
+              type="button"
+              onClick={() => setOpen((o) => !o)}
+              className="cursor-pointer text-text-mid hover:text-text-dark"
+            >
+              {open ? 'Collapse' : 'Expand'}
+            </button>
+          )}
+        </div>
       </div>
-      <pre className="max-h-96 overflow-auto rounded-xl border border-warm bg-cream px-4 py-3 font-mono text-xs text-text-dark">
-        {open ? json : json.slice(0, 800) + '\n…'}
-      </pre>
+      {showRaw ? (
+        <pre className="max-h-96 overflow-auto rounded-xl border border-warm bg-cream px-4 py-3 font-mono text-xs text-text-dark">
+          {open ? json : json.slice(0, 800) + '\n…'}
+        </pre>
+      ) : (
+        <PayloadShape value={value} />
+      )}
     </section>
   )
 }

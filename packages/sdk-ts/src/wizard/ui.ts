@@ -81,6 +81,25 @@ export function step(title: string): void {
   write(`${c.brand(sym.active)}  ${c.bold(title)}\n${c.dim(sym.rail)}\n`)
 }
 
+/**
+ * Major section heading. The wizard splits its work into three
+ * pillars (Dashboard, Prompts, Traces); each opens with one of these.
+ * `tag` shows up to the right of the title (e.g. "skipped" / "already
+ * configured").
+ */
+export function section(num: number, title: string, description?: string, tag?: string): void {
+  if (!HAS_COLOR) {
+    write(`\n## ${num}. ${title}${tag ? ' (' + tag + ')' : ''}\n`)
+    if (description) write(`   ${description}\n`)
+    return
+  }
+  write('\n')
+  const tagPart = tag ? `  ${c.dim(c.italic('— ' + tag))}` : ''
+  write(`${c.brand(c.bold(`▸ ${num}.`))} ${c.bold(title)}${tagPart}\n`)
+  if (description) write(`${c.dim('   ' + description)}\n`)
+  write(`${c.dim(sym.rail)}\n`)
+}
+
 /** A line of supporting context under the current rail. */
 export function info(text: string): void {
   if (!HAS_COLOR) {

@@ -29,12 +29,27 @@ export type MountResult = {
 
 export interface MountOptions {
   /**
-   * Skip writing/patching `instrumentation.ts` (Next.js only). The file
-   * is what bootstraps `import '@artanis-ai/gravel/auto'` server-side
-   * so LLM calls auto-trace; without it you'd have to add the import
-   * manually somewhere on the server boot path.
+   * When true, skip the tracing-only side-effects: writing/patching
+   * `instrumentation.ts` and patching `next.config` server-externals
+   * for `pg` / `better-sqlite3`. Set this when the user installed
+   * Gravel for prompts only — they have no DB and no LLM-call tracing
+   * to wire up, so the extra files would just be confusing dead code.
    */
-  noInstrumentation?: boolean
+  withTracingDeps?: boolean
+}
+
+/**
+ * Wire up the Next.js tracing side-effects: instrumentation.ts hook +
+ * server-externals for native Node bindings. Idempotent. Exposed as a
+ * separate export so the wizard can run it later (when the user adds
+ * the traces pillar via `gravel init --traces`) without re-mounting.
+ */
+export async function installNextTracingHooks(
+  cwd: string,
+  opts: { srcLayout?: boolean } = {},
+): Promise<void> {
+  await ensureNextServerExternalPackages(cwd)
+  await ensureNextInstrumentation(cwd, opts.srcLayout === true)
 }
 
 export async function mountDashboardRoute(
@@ -94,9 +109,8 @@ export const PUT = handler
 export const DELETE = handler
 `,
   )
-  await ensureNextServerExternalPackages(cwd)
-  if (!opts.noInstrumentation) {
-    await ensureNextInstrumentation(cwd, appDir === 'src/app')
+  if (opts.withTracingDeps) {
+    await installNextTracingHooks(cwd, { srcLayout: appDir === 'src/app' })
   }
   return { path: file, mode: 'created' }
 }
@@ -115,13 +129,10 @@ import { config } from '@/gravel.config'
 export default createGravelHandler({ config })
 `,
   )
-  await ensureNextServerExternalPackages(cwd)
-  if (!opts.noInstrumentation) {
-    // Pages projects don't have a `src/app/` convention, but they may
-    // still use `src/` for `pages/`. We probe both `instrumentation.ts`
-    // candidates inside `ensureNextInstrumentation`, so just default to
-    // root for the seed location.
-    await ensureNextInstrumentation(cwd, false)
+  if (opts.withTracingDeps) {
+    // Pages projects may still use `src/` for `pages/`; the helper
+    // probes both instrumentation.ts candidates internally.
+    await installNextTracingHooks(cwd, { srcLayout: false })
   }
   return { path: file, mode: 'created' }
 }

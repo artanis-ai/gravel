@@ -28,11 +28,16 @@ Commands:
   help                       Show this message.
 
 Init flags:
-  --yes, -y                  Assume Yes to all interactive prompts
-                             (mount, migrate, hook, instrumentation).
-                             Use this for agents and other non-human
-                             callers — by default the wizard prompts on
-                             a TTY and runs silently otherwise.
+  --prompts, --no-prompts    Toggle the Prompts pillar (manifest scan +
+                             pre-commit hook). Default: ask on a TTY,
+                             yes otherwise.
+  --traces, --no-traces      Toggle the Traces pillar (DB tables +
+                             auto-instrumentation). Default: ask on a
+                             TTY, yes otherwise. Skipping this means
+                             zero database writes.
+  --yes, -y                  Assume Yes to every interactive prompt.
+                             Pillars + their sub-questions all default
+                             to yes. Use for agents and CI.
   --non-interactive          Force no prompts even on a TTY (default-yes
                              for everything). Equivalent to --yes today;
                              kept as an alias for clarity.
@@ -40,12 +45,12 @@ Init flags:
                              into .env. Requires --project as well.
   --project <id>             CI / scripted installs: pre-bake this project ID.
   --mount-path <path>        Override default '/admin/ai'.
-  --no-migrate               Skip running migrations.
-  --no-hook                  Skip pre-commit hook installation.
-  --no-instrumentation       Skip writing/patching Next.js instrumentation.ts.
-  --no-scan                  Skip the initial regex prompt scan (manifest stays empty until you run 'gravel manifest --update').
-  --no-deep-scan             Skip the LLM-assisted deep scan (also skipped while not implemented).
-  --no-test-trace            Skip test trace.
+  --no-migrate               (legacy alias for --no-traces; still honoured)
+  --no-hook                  Skip the pre-commit hook even when --prompts is on.
+  --no-instrumentation       Skip writing instrumentation.ts even when --traces is on.
+  --no-scan                  (legacy; the Prompts pillar runs the scan as a unit)
+  --no-deep-scan             Skip the LLM-assisted deep scan (placeholder).
+  --no-test-trace            Skip test trace (placeholder).
 
 Docs: https://gravel.artanis.ai/docs
 Issues: https://github.com/artanis-ai/gravel/issues
@@ -79,11 +84,24 @@ async function main(): Promise<void> {
   const { cmd, flags } = parse(process.argv.slice(2))
 
   switch (cmd) {
-    case 'init':
+    case 'init': {
+      // Pillar resolution: explicit --prompts / --no-prompts wins,
+      // otherwise leave undefined so the wizard asks (or defaults yes
+      // in non-interactive). Same for traces.
+      const pillarFlag = (
+        on: keyof typeof flags,
+        off: keyof typeof flags,
+      ): boolean | undefined => {
+        if (flags[on] === true) return true
+        if (flags[off] === true) return false
+        return undefined
+      }
       await runWizard({
         apiKey: typeof flags['api-key'] === 'string' ? flags['api-key'] : undefined,
         project: typeof flags.project === 'string' ? flags.project : undefined,
         mountPath: typeof flags['mount-path'] === 'string' ? flags['mount-path'] : undefined,
+        prompts: pillarFlag('prompts', 'no-prompts'),
+        traces: pillarFlag('traces', 'no-traces'),
         yes: !!flags.yes || !!flags.y,
         nonInteractive: !!flags['non-interactive'],
         noMigrate: !!flags['no-migrate'],
@@ -94,6 +112,7 @@ async function main(): Promise<void> {
         noTestTrace: !!flags['no-test-trace'],
       })
       break
+    }
 
     case 'manifest':
       if (flags.check) await runManifestCheck()

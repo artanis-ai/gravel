@@ -383,6 +383,20 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
   // Samples — one row per LLM call. Reads gravel_samples + feedback.
   'GET /api/samples': async ({ request, db }) => {
     const url = new URL(request.url)
+    // Pre-check tables. The dashboard's OnboardingCard handles the
+    // empty-tracing case; bouncing here keeps the SQL layer from
+    // throwing "relation does not exist" on installs that took
+    // prompts-only.
+    const { gravelTablesExist } = await import('../db/index.js')
+    if (!(await gravelTablesExist(db))) {
+      return json({
+        samples: [],
+        total: 0,
+        page: 1,
+        page_size: 20,
+        _onboarding: { tablesExist: false },
+      })
+    }
     const { listSamples } = await import('../samples/query.js')
     const result = await listSamples(db, {
       env: url.searchParams.get('env') ?? undefined,
@@ -404,11 +418,88 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
   },
   'GET /api/samples/:id': async ({ request, db }) => {
     const sampleId = new URL(request.url).pathname.split('/').pop()!
+    const { gravelTablesExist } = await import('../db/index.js')
+    if (!(await gravelTablesExist(db))) return json({ error: 'tables-missing' }, 404)
     const { getSampleDetail } = await import('../samples/query.js')
     const detail = await getSampleDetail(db, sampleId)
     if (!detail) return json({ error: 'not-found' }, 404)
     return json(detail)
   },
+  // Onboarding status — drives the dashboard's OnboardingCard so it
+  // can show the right next-action prompt per pillar (prompts vs
+  // traces vs github-app). Doesn't 401 unauthed callers; the
+  // dashboard renders read-only state for view-as users too.
+  'GET /api/onboarding/status': async ({ db }) => {
+    const status = {
+      prompts: { manifestExists: false, promptCount: 0, hookInstalled: false },
+      traces: { tablesExist: false, sampleCount: 0, hasFeedback: false },
+      githubApp: { connected: false, repoOwner: null as string | null, repoName: null as string | null },
+    }
+
+    // Manifest (always cwd-local, no DB).
+    try {
+      const { readManifest } = await import('../manifest/io.js')
+      const m = await readManifest(process.cwd())
+      status.prompts.manifestExists = true
+      status.prompts.promptCount = m.prompts.length
+    } catch {
+      /* no manifest yet */
+    }
+    try {
+      const { promises: fs } = await import('node:fs')
+      const { join } = await import('node:path')
+      await fs.stat(join(process.cwd(), '.git', 'hooks', 'pre-commit'))
+      status.prompts.hookInstalled = true
+    } catch {
+      /* no hook */
+    }
+
+    // Tables.
+    const { gravelTablesExist } = await import('../db/index.js')
+    status.traces.tablesExist = await gravelTablesExist(db)
+    if (status.traces.tablesExist) {
+      try {
+        const { sql } = await import('drizzle-orm')
+        if (db.dialect === 'postgres') {
+          const drz = db.drizzle as { execute: (q: unknown) => Promise<unknown> }
+          const r = (await drz.execute(
+            sql`SELECT count(*)::int AS c FROM gravel_samples`,
+          )) as { rows?: Array<{ c: number }> } | Array<{ c: number }>
+          const rows = Array.isArray(r) ? r : (r.rows ?? [])
+          status.traces.sampleCount = rows[0]?.c ?? 0
+          const fb = (await drz.execute(
+            sql`SELECT 1 FROM gravel_feedback LIMIT 1`,
+          )) as { rows?: unknown[] } | unknown[]
+          const fbRows = Array.isArray(fb) ? fb : (fb.rows ?? [])
+          status.traces.hasFeedback = fbRows.length > 0
+        } else {
+          const drz = db.drizzle as { all: (q: unknown) => unknown[] }
+          const rows = drz.all(sql`SELECT count(*) AS c FROM gravel_samples`) as Array<{ c: number }>
+          status.traces.sampleCount = rows[0]?.c ?? 0
+          const fb = drz.all(sql`SELECT 1 FROM gravel_feedback LIMIT 1`) as unknown[]
+          status.traces.hasFeedback = fb.length > 0
+        }
+      } catch {
+        /* counts are nice-to-have; ignore */
+      }
+    }
+
+    // GH App install state — read-through to the CP-cached value.
+    try {
+      const { getGhInstallState } = await import('../github/project-state.js')
+      const gh = await getGhInstallState()
+      if (gh) {
+        status.githubApp.connected = true
+        status.githubApp.repoOwner = gh.repoOwner
+        status.githubApp.repoName = gh.repoName
+      }
+    } catch {
+      /* CP outage — treat as disconnected */
+    }
+
+    return json(status)
+  },
+
   'POST /api/samples/:id/feedback': async ({ request, db, authed }) => {
     if (!authed) return json({ error: 'unauthorized' }, 401)
     const sampleId = new URL(request.url).pathname.split('/').slice(-2, -1)[0]!

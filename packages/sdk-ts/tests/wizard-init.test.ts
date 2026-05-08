@@ -136,4 +136,77 @@ describe('runWizard', () => {
     expect(summary.apiKey).toBeNull()
     expect(summary.projectId).toBeNull()
   })
+
+  it('prompts-only pillar: no migrate, no instrumentation, manifest scanned', async () => {
+    const cwd = await mkSandbox()
+    // Plant a prompt file so the manifest scan picks it up. The fast-scan
+    // walks conventional dirs (prompts/, templates/, etc.) for .md/.txt.
+    await fs.mkdir(join(cwd, 'prompts'), { recursive: true })
+    await fs.writeFile(join(cwd, 'prompts', 'system.md'), 'You are a careful assistant.')
+
+    const summary = await runWizard({
+      cwd,
+      prompts: true,
+      traces: false,
+      noHook: true,
+      noDeepScan: true,
+      noTestTrace: true,
+    })
+
+    expect(summary.pillars.prompts).toBe(true)
+    expect(summary.pillars.traces).toBe(false)
+    expect(summary.ranBootstrap).toBe(false)
+    // Manifest got written.
+    const manifest = JSON.parse(await fs.readFile(join(cwd, '.artanis/manifest.json'), 'utf8'))
+    expect(manifest.prompts.length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('traces-only pillar: no manifest, no hook, no scan side-effects', async () => {
+    const cwd = await mkSandbox()
+    await fs.writeFile(join(cwd, 'system.md'), 'You are a careful assistant.')
+
+    const summary = await runWizard({
+      cwd,
+      prompts: false,
+      traces: true,
+      noMigrate: true, // Avoid actually trying to bootstrap (no DATABASE_URL).
+      noInstrumentation: true,
+      noDeepScan: true,
+      noTestTrace: true,
+    })
+
+    expect(summary.pillars.prompts).toBe(false)
+    expect(summary.pillars.traces).toBe(true)
+    // Manifest should NOT have been touched.
+    let manifestExists = true
+    try {
+      await fs.stat(join(cwd, '.artanis/manifest.json'))
+    } catch {
+      manifestExists = false
+    }
+    expect(manifestExists).toBe(false)
+  })
+
+  it('neither pillar: exits cleanly with empty summary, no .env writes', async () => {
+    const cwd = await mkSandbox()
+
+    const summary = await runWizard({
+      cwd,
+      prompts: false,
+      traces: false,
+      noDeepScan: true,
+      noTestTrace: true,
+    })
+
+    expect(summary.pillars).toEqual({ dashboard: false, prompts: false, traces: false })
+    expect(summary.passwordGenerated).toBeNull()
+    expect(summary.mountedRoute).toBeNull()
+    let envExists = true
+    try {
+      await fs.stat(join(cwd, '.env.local'))
+    } catch {
+      envExists = false
+    }
+    expect(envExists).toBe(false)
+  })
 })

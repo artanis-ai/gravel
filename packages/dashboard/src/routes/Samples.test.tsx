@@ -54,23 +54,54 @@ function makeSamples(n: number): SamplesResponse {
   }
 }
 
+// Default mocks for the auxiliary endpoints the page also fetches
+// (auth/me, onboarding/status). Test-specific responses for the main
+// data fetches are layered on top.
+function withDefaults(samples: unknown): (path: string) => unknown {
+  return (path: string) => {
+    if (path === '/api/auth/me') {
+      return { user: { id: 'localhost', firstName: 'Developer', role: 'admin' } }
+    }
+    if (path === '/api/onboarding/status') {
+      // Tests assume tracing is fully wired so the OnboardingCard
+      // doesn't render any "click to set up" copy on top of the list.
+      return {
+        prompts: { manifestExists: true, promptCount: 5, hookInstalled: true },
+        traces: { tablesExist: true, sampleCount: 100, hasFeedback: true },
+        githubApp: { connected: true, repoOwner: 'acme', repoName: 'app' },
+      }
+    }
+    return samples
+  }
+}
+
 describe('Samples list', () => {
   it('renders the empty state when no samples are returned', async () => {
     mockedGet.mockImplementation(async (path: string) => {
-      if (path === '/api/auth/me') {
-        return { user: { id: 'localhost', firstName: 'Developer', role: 'admin' } }
+      const empty: SamplesResponse = { samples: [], total: 0, page: 1, page_size: 20 }
+      // Override traces to reflect "tables exist but no samples yet"
+      // so the OnboardingCard renders the "trigger an LLM call" step
+      // instead of being absent.
+      if (path === '/api/onboarding/status') {
+        return {
+          prompts: { manifestExists: true, promptCount: 0, hookInstalled: false },
+          traces: { tablesExist: true, sampleCount: 0, hasFeedback: false },
+          githubApp: { connected: false, repoOwner: null, repoName: null },
+        }
       }
-      return { samples: [], total: 0, page: 1, page_size: 20 } satisfies SamplesResponse
+      return withDefaults(empty)(path)
     })
     renderRoute(<SamplesPage />)
     expect(await screen.findByText(/no outputs yet/i)).toBeInTheDocument()
     // Developer-only hint visible because auth/me reports localhost.
-    expect(await screen.findByText(/gravel doctor/i)).toBeInTheDocument()
+    // Both the DeveloperNote and the OnboardingCard mention gravel doctor —
+    // we just need at least one.
+    expect((await screen.findAllByText(/gravel doctor/i)).length).toBeGreaterThan(0)
     expect(screen.getByText(/visible only on localhost/i)).toBeInTheDocument()
   })
 
   it('renders rows when samples are returned', async () => {
-    mockedGet.mockResolvedValue(makeSamples(3))
+    mockedGet.mockImplementation(async (path: string) => withDefaults(makeSamples(3))(path))
     renderRoute(<SamplesPage />)
     await waitFor(() => expect(screen.getAllByText('chat.completions.create')).toHaveLength(3))
     const paginationNav = screen.getByLabelText(/pagination/i)
@@ -78,19 +109,24 @@ describe('Samples list', () => {
   })
 
   it('refetches when a filter changes', async () => {
-    mockedGet.mockResolvedValue(makeSamples(1))
+    mockedGet.mockImplementation(async (path: string) => withDefaults(makeSamples(1))(path))
     const user = userEvent.setup()
     renderRoute(<SamplesPage />)
     await screen.findAllByText('chat.completions.create')
-    const initial = mockedGet.mock.calls.length
+    const samplesCallCount = () =>
+      mockedGet.mock.calls.filter((c) => String(c[0]).startsWith('/api/samples')).length
+    const initial = samplesCallCount()
 
     await user.type(screen.getByLabelText(/filter by environment/i), 'prod')
 
     await waitFor(() => {
-      const lastCall = mockedGet.mock.calls.at(-1)?.[0] as string | undefined
-      expect(lastCall).toContain('env=prod')
+      const lastSamplesCall = mockedGet.mock.calls
+        .map((c) => String(c[0]))
+        .filter((p) => p.startsWith('/api/samples'))
+        .at(-1)
+      expect(lastSamplesCall).toContain('env=prod')
     })
-    expect(mockedGet.mock.calls.length).toBeGreaterThan(initial)
+    expect(samplesCallCount()).toBeGreaterThan(initial)
   })
 })
 
@@ -122,7 +158,7 @@ describe('Sample detail', () => {
   }
 
   it('renders input + output and submits feedback', async () => {
-    mockedGet.mockResolvedValue(makeDetail())
+    mockedGet.mockImplementation(async (path: string) => withDefaults(makeDetail())(path))
     mockedPost.mockResolvedValue({ ok: true })
 
     const user = userEvent.setup()

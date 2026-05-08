@@ -19,6 +19,37 @@ export interface Database {
   close(): Promise<void>
 }
 
+/**
+ * Lightweight probe: are the gravel_* tables present? Returns false on
+ * any error (table missing, DB unreachable, etc) — callers use this to
+ * gate the Outputs UI and the onboarding-status endpoint, both of
+ * which need to handle "user hasn't run `gravel init --traces` yet"
+ * gracefully.
+ */
+export async function gravelTablesExist(db: Database): Promise<boolean> {
+  try {
+    const { sql } = await import('drizzle-orm')
+    if (db.dialect === 'postgres') {
+      const drz = db.drizzle as { execute: (q: unknown) => Promise<unknown> }
+      // Use to_regclass instead of a SELECT against gravel_samples so we
+      // don't poison the connection on missing-table errors.
+      const result = (await drz.execute(
+        sql`SELECT to_regclass('public.gravel_samples') AS t`,
+      )) as { rows?: Array<{ t: string | null }> } | Array<{ t: string | null }>
+      const rows = Array.isArray(result) ? result : (result.rows ?? [])
+      return Boolean(rows[0] && rows[0].t)
+    }
+    // SQLite
+    const drz = db.drizzle as { all: (q: unknown) => unknown[] }
+    const rows = drz.all(
+      sql`SELECT name FROM sqlite_master WHERE type='table' AND name='gravel_samples'`,
+    ) as Array<{ name: string }>
+    return rows.length > 0
+  } catch {
+    return false
+  }
+}
+
 export function detectDialect(url: string): DatabaseDialect {
   if (url.startsWith('postgres://') || url.startsWith('postgresql://')) {
     return 'postgres'
