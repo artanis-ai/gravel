@@ -52,7 +52,7 @@ export async function mountDashboardRoute(
     case 'fastapi':
       return await mountFastApi(cwd, mountPath)
     case 'django':
-      return printDjangoInstructions(mountPath)
+      return await mountDjango(cwd, mountPath)
     case 'express':
       return printExpressInstructions(mountPath)
     default:
@@ -126,37 +126,222 @@ export default createGravelHandler({ config })
 }
 
 async function mountFastApi(cwd: string, mountPath: string): Promise<MountResult> {
-  const file = join(cwd, 'gravel_route.py')
-  if (await pathExists(file)) await safeBackup(file)
+  // 1. Write the per-app router file the customer's main.py imports.
+  const routeFile = join(cwd, 'gravel_route.py')
+  if (await pathExists(routeFile)) await safeBackup(routeFile)
   await fs.writeFile(
-    file,
+    routeFile,
     `from artanis_gravel.fastapi import create_gravel_router
 from gravel_config import config
 
 router = create_gravel_router(config=config)
 `,
   )
-  // BLOCKER: AST-edit main.py to add `app.include_router(router, prefix='${mountPath}')`.
-  // For now, print the line to add.
-  return { path: file, mode: 'created' }
+
+  // 2. Patch the customer's main.py / app.py to include our router.
+  // Conventional locations, in priority order. Stops at the first match
+  // so we don't write the same line into multiple candidate files.
+  const candidates = ['main.py', 'app.py', 'src/main.py', 'src/app.py', 'app/main.py']
+  for (const rel of candidates) {
+    const file = join(cwd, rel)
+    if (!(await pathExists(file))) continue
+    const original = await fs.readFile(file, 'utf8')
+    if (/from\s+gravel_route\s+import\s+router\s+as\s+gravel_router/.test(original)) {
+      // Already mounted (re-running the wizard). Idempotent — leave alone.
+      return { path: rel, mode: 'updated' }
+    }
+    if (!/\bFastAPI\s*\(/.test(original)) continue
+    await safeBackup(file)
+    const patched = patchFastApiMain(original, mountPath)
+    if (patched === original) {
+      // Couldn't find a safe insertion point; fall through to the
+      // copy-paste instruction printout so the customer isn't blocked.
+      printFastApiInstructions(rel, mountPath)
+      return { path: rel, mode: 'manual-instructions' }
+    }
+    await fs.writeFile(file, patched)
+    return { path: rel, mode: 'updated' }
+  }
+  // No main.py / app.py found — fall back to instructions.
+  printFastApiInstructions('main.py', mountPath)
+  return { path: routeFile, mode: 'manual-instructions' }
 }
 
-function printDjangoInstructions(mountPath: string): MountResult {
-  // BLOCKER: locate the project's root urls.py and AST-add the include.
-  // For v0, we print instructions.
+/**
+ * Add the gravel router import + include_router call to a FastAPI
+ * entry file. Returns the original string unchanged if no safe edit
+ * point is found (caller surfaces this as a manual-instructions
+ * fallback). Idempotent: a second pass over the patched output is a
+ * no-op.
+ *
+ * The strategy:
+ *  - Insert the import on the first line after the existing
+ *    `from fastapi import ...` (or top of file if absent).
+ *  - Insert the include_router call on the line after `app = FastAPI(…)`,
+ *    which is the only place the wizard knows for sure that `app`
+ *    exists. (Anywhere later risks running before app is defined.)
+ *
+ * If the file has more than one FastAPI() construction, only the
+ * first is patched — surfacing this as ambiguous would just block the
+ * customer; they can rerun the wizard against the right entry, or
+ * paste manually.
+ */
+export function patchFastApiMain(source: string, mountPath: string): string {
+  if (/from\s+gravel_route\s+import\s+router\s+as\s+gravel_router/.test(source)) return source
+  const importLine = 'from gravel_route import router as gravel_router\n'
+  const includeLine = `app.include_router(gravel_router, prefix='${mountPath}')\n`
+
+  // Inject import after the last `from fastapi …` import block, or at the
+  // top if there is none.
+  let withImport = source
+  const fastapiImportRe = /^from\s+fastapi\s+import\s+[^\n]+\n/gm
+  const matches = [...source.matchAll(fastapiImportRe)]
+  if (matches.length > 0) {
+    const last = matches[matches.length - 1]!
+    const insertAt = (last.index ?? 0) + last[0].length
+    withImport = source.slice(0, insertAt) + importLine + source.slice(insertAt)
+  } else {
+    withImport = importLine + source
+  }
+
+  // Inject include_router after the first `app = FastAPI(…)` line. We
+  // tolerate balanced parens on the same line (the common case); for
+  // multi-line FastAPI() calls, fall back to copy-paste — robustly
+  // matching multi-line calls would need a real parser.
+  const fastapiCtorRe = /^([ \t]*)(\w+)\s*=\s*FastAPI\s*\([^()\n]*\)\s*$/m
+  const m = withImport.match(fastapiCtorRe)
+  if (!m) return source // signal failure: no safe insertion point
+  const appName = m[2]
+  const lineEnd = (m.index ?? 0) + m[0].length
+  // Use the captured app name (might not literally be "app").
+  const include = includeLine.replace(/^app\./, `${appName}.`)
+  return withImport.slice(0, lineEnd) + '\n' + include + withImport.slice(lineEnd)
+}
+
+function printFastApiInstructions(relPath: string, mountPath: string): void {
   // eslint-disable-next-line no-console
   console.log(`
-[gravel] Add the following to your root urls.py:
+[gravel] Couldn't auto-edit ${relPath}. Add these two lines:
+
+    from gravel_route import router as gravel_router
+
+    app.include_router(gravel_router, prefix='${mountPath}')
+`)
+}
+
+async function mountDjango(cwd: string, mountPath: string): Promise<MountResult> {
+  // Find the root urls.py — the one referenced by ROOT_URLCONF in
+  // settings.py. Conventional Django layouts put it at <project>/urls.py.
+  // We try the common candidates; if none match, fall back to printing.
+  const candidates = await findDjangoRootUrls(cwd)
+  for (const file of candidates) {
+    if (!(await pathExists(file))) continue
+    const original = await fs.readFile(file, 'utf8')
+    if (/from\s+artanis_gravel\.django\s+import\s+gravel_urls/.test(original)) {
+      return { path: file.replace(`${cwd}/`, ''), mode: 'updated' }
+    }
+    if (!/\burlpatterns\s*=\s*\[/.test(original)) continue
+    await safeBackup(file)
+    const patched = patchDjangoUrls(original, mountPath)
+    if (patched === original) {
+      printDjangoInstructions(mountPath)
+      return { path: file.replace(`${cwd}/`, ''), mode: 'manual-instructions' }
+    }
+    await fs.writeFile(file, patched)
+    return { path: file.replace(`${cwd}/`, ''), mode: 'updated' }
+  }
+  printDjangoInstructions(mountPath)
+  return { path: '<your urls.py>', mode: 'manual-instructions' }
+}
+
+/** Find candidate `urls.py` files. Project root first, then any
+ * sibling directories that look like a Django project (have settings.py).
+ */
+async function findDjangoRootUrls(cwd: string): Promise<string[]> {
+  const out: string[] = []
+  // <cwd>/urls.py — rare, but possible.
+  out.push(join(cwd, 'urls.py'))
+  // <cwd>/<projectName>/urls.py — the conventional layout.
+  try {
+    const entries = await fs.readdir(cwd, { withFileTypes: true })
+    for (const e of entries) {
+      if (!e.isDirectory()) continue
+      // Skip obvious non-app dirs.
+      if (/^(node_modules|\.git|\.venv|venv|env|__pycache__|migrations|static)$/.test(e.name)) continue
+      const projectUrls = join(cwd, e.name, 'urls.py')
+      const settings = join(cwd, e.name, 'settings.py')
+      if (await pathExists(settings)) out.push(projectUrls)
+    }
+  } catch {
+    /* unreadable dir — skip */
+  }
+  return out
+}
+
+/**
+ * Add the gravel include to a Django root urls.py. Returns the
+ * original unchanged if no safe edit point was found.
+ *
+ * Strategy:
+ *  - Insert `from django.urls import path, include` (idempotent — only
+ *    if `include` isn't already imported).
+ *  - Insert `from artanis_gravel.django import gravel_urls`.
+ *  - Insert the include `path(...)` as the FIRST entry of urlpatterns.
+ *    First-not-last because /admin/ai is a prefix; placing it after a
+ *    catch-all swallows it.
+ */
+export function patchDjangoUrls(source: string, mountPath: string): string {
+  if (/from\s+artanis_gravel\.django\s+import\s+gravel_urls/.test(source)) return source
+
+  // Ensure `path, include` are imported from django.urls. The default
+  // settings.py / urls.py imports just `path`; we extend it.
+  let patched = source
+  const djangoUrlsImportRe = /^from\s+django\.urls\s+import\s+([^\n]+)$/m
+  const m = patched.match(djangoUrlsImportRe)
+  if (m) {
+    const names = m[1]!.split(',').map((s) => s.trim())
+    if (!names.includes('include')) {
+      const newNames = [...names, 'include'].join(', ')
+      patched = patched.replace(djangoUrlsImportRe, `from django.urls import ${newNames}`)
+    }
+  } else {
+    // No django.urls import at all — insert one at the top.
+    patched = `from django.urls import path, include\n` + patched
+  }
+
+  // Add gravel import right after the django.urls import block.
+  const importLine = `from artanis_gravel.django import gravel_urls\n`
+  const afterImports = patched.match(/^from\s+django\.urls\s+import[^\n]+\n/m)
+  if (afterImports) {
+    const insertAt = (afterImports.index ?? 0) + afterImports[0].length
+    patched = patched.slice(0, insertAt) + importLine + patched.slice(insertAt)
+  } else {
+    patched = importLine + patched
+  }
+
+  // Insert the path() at the start of urlpatterns. We match the literal
+  // `urlpatterns = [` and inject the new entry on the next line.
+  const cleanMount = mountPath.replace(/^\/+|\/+$/g, '')
+  const pathLine = `    path('${cleanMount}/', include(gravel_urls)),\n`
+  const urlpatternsRe = /(urlpatterns\s*=\s*\[\s*\n)/m
+  if (!urlpatternsRe.test(patched)) return source
+  patched = patched.replace(urlpatternsRe, `$1${pathLine}`)
+  return patched
+}
+
+function printDjangoInstructions(mountPath: string): void {
+  // eslint-disable-next-line no-console
+  console.log(`
+[gravel] Couldn't auto-edit your root urls.py. Add the following:
 
     from django.urls import path, include
     from artanis_gravel.django import gravel_urls
 
     urlpatterns = [
-        # ... your existing routes ...
         path('${mountPath.replace(/^\//, '')}/', include(gravel_urls)),
+        # ... your existing routes ...
     ]
 `)
-  return { path: '<your urls.py>', mode: 'manual-instructions' }
 }
 
 function printExpressInstructions(mountPath: string): MountResult {

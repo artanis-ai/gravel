@@ -9,6 +9,7 @@ import { runWizard } from '../wizard/index.js'
 import { runManifestCheck, runManifestUpdate } from './manifest.js'
 import { runDoctor } from './doctor.js'
 import { runMigrate } from './migrate.js'
+import { runDeepScan } from './scan.js'
 
 const HELP = `gravel — embedded prompt management, tracing, and evals.
 
@@ -20,7 +21,8 @@ Commands:
   manifest --check           Verify .artanis/manifest.json is in sync (used by hook).
   manifest --update          Regenerate .artanis/manifest.json from working tree.
   manifest --list            Print human-readable summary of current manifest.
-  scan --deep                Run deep LLM scan locally (NOT YET IMPLEMENTED).
+  scan --deep                Run LLM-assisted prompt detection (uses OPENAI_API_KEY).
+                             --print-only inspects without writing the manifest.
   migrate                    Apply pending DB migrations (uses bootstrap.ts in v0).
   doctor                     Diagnostic: DB, manifest, hook, tracing.
   help                       Show this message.
@@ -105,8 +107,8 @@ async function main(): Promise<void> {
 
     case 'scan':
       if (flags.deep) {
-        console.error('[gravel] Deep scan not yet implemented. Tracking in gravel-cloud/docs/blockers.md.')
-        process.exit(1)
+        await runDeepScan({ printOnly: !!flags['print-only'] })
+        break
       }
       console.error('scan: pass --deep')
       process.exit(2)

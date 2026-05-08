@@ -264,7 +264,7 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
   },
   'POST /api/prompts/submit': async ({ request, db, authed }) => {
     if (!authed) return json({ error: 'unauthorized' }, 401)
-    let body: { title?: unknown; description?: unknown }
+    let body: { title?: unknown; description?: unknown; submitterName?: unknown }
     try {
       body = (await request.json().catch(() => ({}))) as typeof body
     } catch {
@@ -306,6 +306,13 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
     const { submitDrafts, SubmitError } = await import('../prompts/submit.js')
     const { draftBranchFor } = await import('../prompts/drafts.js')
     try {
+      // submitterName comes from the dashboard form. Falls back to the
+      // host's getUser() firstName when the field is left blank, which
+      // mostly only happens for non-interactive callers.
+      const submitterName =
+        typeof body.submitterName === 'string' && body.submitterName.trim()
+          ? body.submitterName.trim()
+          : authed.firstName
       const result = await submitDrafts({
         db,
         repoRoot: process.cwd(),
@@ -315,7 +322,7 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
         repoName: ghState.repoName,
         title: typeof body.title === 'string' ? body.title : undefined,
         description: typeof body.description === 'string' ? body.description : undefined,
-        deFirstName: authed.firstName,
+        deFirstName: submitterName,
       })
       return json({ ok: true, pr: result })
     } catch (err) {

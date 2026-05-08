@@ -18,8 +18,13 @@
  *   - Step 7.5 (initial scan):   ✓ regex fast-scan (no LLM); seeds the
  *                                  manifest so the dashboard shows the
  *                                  dev's existing prompts on first sign-in.
- *   - Step 8 (deep scan):        BLOCKER — LLM-assisted variant deferred
- *   - Step 9 (test trace):       BLOCKER — deferred until v1 tracing patches exist
+ *   - Step 8 (deep scan):        ✓ LLM-assisted; off by default — opt-in via
+ *                                  `npx @artanis-ai/gravel scan --deep` once
+ *                                  the customer wants to discover prompts in
+ *                                  dynamically-built strings.
+ *   - Step 9 (test trace):       not run during init — tracing auto-patches
+ *                                  ship by default; the first real trace lands
+ *                                  on the first LLM call.
  *   - Step 10 (next-steps):      ✓ implemented
  *
  * Each step is its own module so they can be unit-tested in isolation.
@@ -226,12 +231,14 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
     )
   }
 
-  // Step 9 — BLOCKER (no tracing yet)
-  if (!opts.noTestTrace) {
-    blockers.push(
-      'Test trace not implemented yet (tracing auto-patches land in v1).',
-    )
-  }
+  // Step 9 — test trace. Tracing auto-patches ship by default (the
+  // SDK's `auto.ts` is loaded via instrumentation.ts on Next, or
+  // imported manually elsewhere). We don't synthesize a fake call
+  // here because that'd burn the customer's OpenAI quota during init
+  // for no signal — the real first trace lands as soon as their app
+  // makes its first LLM call. The dashboard's empty Outputs state
+  // already covers the "no traffic yet" case.
+  void opts.noTestTrace
 
   // Step 10
   log('')

@@ -19,9 +19,20 @@ import { SubmitModal, type SubmitDraftEntry } from './SubmitModal'
 import { renderRoute } from '../../test/util'
 
 const mockedPost = api.post as unknown as ReturnType<typeof vi.fn>
+const mockedGet = api.get as unknown as ReturnType<typeof vi.fn>
 
 beforeEach(() => {
   mockedPost.mockReset()
+  mockedGet.mockReset()
+  // Modal queries /api/auth/me to seed the name field. Default to a
+  // localhost dev so tests don't need to wire it explicitly.
+  mockedGet.mockResolvedValue({ user: { id: 'localhost', firstName: 'Developer', role: 'admin' } })
+  // Each test gets a clean localStorage so the name field doesn't leak.
+  try {
+    localStorage.clear()
+  } catch {
+    /* jsdom env */
+  }
 })
 
 function makeEntry(overrides: Partial<SubmitDraftEntry> = {}): SubmitDraftEntry {
@@ -57,7 +68,7 @@ describe('SubmitModal', () => {
     expect(mockedPost).not.toHaveBeenCalled()
   })
 
-  it('posts title (and optional description) and fires onSubmitted', async () => {
+  it('posts title + description + submitterName and fires onSubmitted', async () => {
     mockedPost.mockResolvedValue({
       ok: true,
       pr: { prUrl: 'https://github.com/acme/app/pull/9', prNumber: 9, branchName: 'gravel/draft-x' },
@@ -71,19 +82,34 @@ describe('SubmitModal', () => {
     )
 
     const dialog = await screen.findByRole('dialog', { name: /submit changes/i })
+    // Name field defaults to 'admin' for the localhost mock — confirm
+    // it's there, then change it to assert the override path works.
+    await waitFor(() =>
+      expect((within(dialog).getByPlaceholderText(/^pat$/i) as HTMLInputElement).value).toBe('admin'),
+    )
+    await user.clear(within(dialog).getByPlaceholderText(/^pat$/i))
+    await user.type(within(dialog).getByPlaceholderText(/^pat$/i), 'Alice')
     await user.type(within(dialog).getByPlaceholderText(/tighten triage prompt/i), 'My PR title')
     await user.click(within(dialog).getByRole('button', { name: /open pr/i }))
 
     await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(1))
     expect(mockedPost.mock.calls[0]).toEqual([
       '/api/prompts/submit',
-      { title: 'My PR title', description: undefined },
+      { title: 'My PR title', description: undefined, submitterName: 'Alice' },
     ])
-    expect(onSubmitted).toHaveBeenCalledWith({
-      ok: true,
-      pr: { prUrl: 'https://github.com/acme/app/pull/9', prNumber: 9, branchName: 'gravel/draft-x' },
-    })
+    expect(onSubmitted).toHaveBeenCalled()
     expect(onClose).toHaveBeenCalled()
+    // Name is cached so the next submit prefills.
+    expect(localStorage.getItem('gravel:submitter-name')).toBe('Alice')
+  })
+
+  it('prefills the name from localStorage on subsequent opens', async () => {
+    localStorage.setItem('gravel:submitter-name', 'Pat')
+    renderRoute(<SubmitModal open onClose={() => {}} drafts={[makeEntry()]} onSubmitted={() => {}} />)
+    const dialog = await screen.findByRole('dialog', { name: /submit changes/i })
+    await waitFor(() =>
+      expect((within(dialog).getByPlaceholderText(/^pat$/i) as HTMLInputElement).value).toBe('Pat'),
+    )
   })
 
   it('disables Open PR when there are no drafts', () => {

@@ -7,13 +7,32 @@
  * Owns its own form state + the POST mutation so it can be unit-tested in
  * isolation from the prompts list.
  */
-import { useState, type FormEvent } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useEffect, useState, type FormEvent } from 'react'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { Modal } from '../Modal'
 import { PromptBadge } from './PromptBadge'
 import { DiffView } from './DiffView'
 import { api } from '../../lib/api'
 import { cx } from '../../lib/format'
+
+const NAME_STORAGE_KEY = 'gravel:submitter-name'
+
+function readCachedName(): string {
+  try {
+    return localStorage.getItem(NAME_STORAGE_KEY) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+function writeCachedName(name: string): void {
+  try {
+    if (name) localStorage.setItem(NAME_STORAGE_KEY, name)
+    else localStorage.removeItem(NAME_STORAGE_KEY)
+  } catch {
+    /* ignore — Safari private mode etc. */
+  }
+}
 import type {
   DraftRow,
   ManifestPromptListItem,
@@ -41,16 +60,43 @@ export function SubmitModal({
 }) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  const [name, setName] = useState('')
   const [error, setError] = useState<string | null>(null)
+
+  // Name field priority:
+  //   1. previously-typed value in localStorage (the dev or DE has
+  //      already submitted a PR before — use what they used last time)
+  //   2. firstName from getUser() if the host's auth provided one
+  //   3. literal 'admin' for the localhost shortcut, since that
+  //      matches what the auth shortcut tags the user with
+  //   4. empty — DE types it themselves, gets cached for next time
+  const meQ = useQuery<{ user?: { id: string; firstName: string } }>({
+    queryKey: ['/api/auth/me'],
+    queryFn: () => api.get('/api/auth/me'),
+    enabled: open,
+  })
+  useEffect(() => {
+    if (!open) return
+    const cached = readCachedName()
+    if (cached) {
+      setName(cached)
+      return
+    }
+    const me = meQ.data?.user
+    if (me?.id === 'localhost') setName('admin')
+    else if (me?.firstName) setName(me.firstName)
+  }, [open, meQ.data])
 
   const submit = useMutation<SubmitPrResult, Error, void>({
     mutationFn: () =>
       api.post<SubmitPrResult>('/api/prompts/submit', {
         title: title.trim() || undefined,
         description: description.trim() || undefined,
+        submitterName: name.trim() || undefined,
       }),
     onSuccess: (result) => {
       setError(null)
+      writeCachedName(name.trim())
       setTitle('')
       setDescription('')
       onSubmitted(result)
@@ -63,6 +109,10 @@ export function SubmitModal({
     e.preventDefault()
     if (!title.trim()) {
       setError('Title is required.')
+      return
+    }
+    if (!name.trim()) {
+      setError('Your name is required so the PR can credit it.')
       return
     }
     submit.mutate()
@@ -109,6 +159,20 @@ export function SubmitModal({
             <DraftRowPreview key={entry.draft.id} entry={entry} />
           ))}
         </ul>
+
+        <label className="flex flex-col gap-1 text-xs font-medium text-text-mid">
+          Your name
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Pat"
+            className="w-full rounded-md border border-warm bg-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+          />
+          <span className="text-[11px] font-normal text-text-muted">
+            Goes in the PR body so reviewers know who suggested the change. Saved in your browser for next time.
+          </span>
+        </label>
 
         <label className="flex flex-col gap-1 text-xs font-medium text-text-mid">
           PR title
