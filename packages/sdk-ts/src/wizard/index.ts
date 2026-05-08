@@ -28,6 +28,11 @@
  *   - Step 10 (next-steps):      ✓ implemented
  *
  * Each step is its own module so they can be unit-tested in isolation.
+ *
+ * UI: clack-style rail rendered by wizard/ui.ts. On a TTY, prompts are
+ * branded (warm sandstone) with a braille spinner during long async
+ * steps; on non-TTY (CI / pipes), every helper degrades to a plain line
+ * so logs stay greppable.
  */
 import { detect } from './detect.js'
 import { generateConfigFile } from './config-file.js'
@@ -39,6 +44,19 @@ import { fastScan } from '../manifest/scan.js'
 import { readManifest, writeManifest } from '../manifest/io.js'
 import { resolveControlPlaneUrl } from './oauth.js'
 import { confirm } from './prompt.js'
+import {
+  c,
+  done,
+  failure,
+  header,
+  info,
+  note,
+  panel,
+  spinner,
+  step,
+  success,
+  warn,
+} from './ui.js'
 
 export type WizardAuthMode = 'local' | 'flags'
 
@@ -80,18 +98,23 @@ export interface WizardSummary {
 export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary> {
   const cwd = opts.cwd ?? process.cwd()
   const blockers: string[] = []
+  const mountPath = opts.mountPath ?? '/admin/ai'
+
+  header('Gravel install', 'embedded prompt management for AI engineering teams')
 
   // Step 1
   const detection = await detect(cwd)
-  log(`Detected ${detection.language}, ${detection.framework}, pkg=${detection.packageManager}, db=${detection.database.driver}, auth=${detection.auth}`)
+  step('Detect project')
+  note(
+    `${c.bold(detection.framework)} · ${detection.language} · pkg=${detection.packageManager} · db=${detection.database.driver} · auth=${detection.auth}`,
+  )
+  success('Stack identified')
   if (detection.nextHasBothRouters) {
     const warning =
-      `[gravel] This project has BOTH ${detection.nextAppDir}/ and pages/ directories — ` +
-      `you're mid-migration. The wizard mounted the dashboard under the App Router ` +
-      `(${detection.nextAppDir}/admin/ai/[[...slug]]/route.ts). If you'd rather mount it ` +
-      `under pages/ instead, delete the app-router file and run \`gravel init\` again with ` +
-      `--mount-path/--framework or hand-mount per gravel.artanis.ai/docs/install.`
-    log(warning)
+      `This project has BOTH ${detection.nextAppDir}/ and pages/ — mid-migration. ` +
+      `Mounted under the App Router (${detection.nextAppDir}/admin/ai/[[...slug]]/route.ts). ` +
+      `Re-run with --framework or hand-mount per gravel.artanis.ai/docs/install if you want pages/ instead.`
+    warn(warning)
     blockers.push(warning)
   }
 
@@ -146,44 +169,54 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
   }
 
   // Step 5 — mount + framework config patches.
-  const wantMount = await ask(
-    `[gravel] Mount the dashboard at ${opts.mountPath ?? '/admin/ai'} and write gravel.config.ts? ` +
-      (detection.framework.startsWith('next-')
-        ? `(Also patches next.config + adds instrumentation.ts to bootstrap tracing.)`
-        : ''),
-    true,
-  )
+  const mountQuestion =
+    `Mount the dashboard at ${c.bold(mountPath)} and write gravel.config.ts?` +
+    (detection.framework.startsWith('next-')
+      ? c.dim(' (Also patches next.config + adds instrumentation.ts.)')
+      : '')
+  const wantMount = await ask(mountQuestion, true)
   let mountedRoute = null as Awaited<ReturnType<typeof mountDashboardRoute>>
   if (wantMount) {
-    mountedRoute = await mountDashboardRoute(detection, cwd, opts.mountPath ?? '/admin/ai', {
-      noInstrumentation: opts.noInstrumentation === true,
-    })
-    await generateConfigFile(detection, cwd, { mountPath: opts.mountPath ?? '/admin/ai' })
+    const sp = spinner('Wiring dashboard mount + config files…')
+    try {
+      mountedRoute = await mountDashboardRoute(detection, cwd, mountPath, {
+        noInstrumentation: opts.noInstrumentation === true,
+      })
+      await generateConfigFile(detection, cwd, { mountPath })
+      sp.stop(`Mounted ${c.bold(mountPath)}; wrote gravel.config.ts`)
+    } catch (e) {
+      sp.fail(`Mount failed: ${(e as Error).message}`)
+      blockers.push(`Mount failed: ${(e as Error).message}`)
+    }
   } else {
     blockers.push(
-      'Mount step skipped — run `npx @artanis-ai/gravel init` again with --yes (or pass nothing) to mount the dashboard.',
+      'Mount step skipped — re-run `npx @artanis-ai/gravel init` to mount the dashboard.',
     )
   }
 
-  // Step 6 — DB schema. Destructive (creates 13 tables in the user's DB).
+  // Step 6 — DB schema. Two tables (gravel_samples, gravel_feedback)
+  // since the 2026-05-08 simplification.
   let ranBootstrap = false
   const dbDriver = detection.database.driver
   const dbDest =
     dbDriver === 'postgres'
-      ? `Postgres at ${detection.database.envVar ?? 'DATABASE_URL'}`
+      ? `Postgres at ${c.bold(detection.database.envVar ?? 'DATABASE_URL')}`
       : dbDriver === 'sqlite'
-        ? `SQLite (${detection.database.envVar ?? 'DATABASE_URL'})`
+        ? `SQLite (${c.bold(detection.database.envVar ?? 'DATABASE_URL')})`
         : 'your configured DATABASE_URL'
   if (!opts.noMigrate) {
     const wantMigrate = await ask(
-      `[gravel] Create 2 gravel_* tables (gravel_samples, gravel_feedback) in ${dbDest}? (idempotent CREATE TABLE IF NOT EXISTS)`,
+      `Create 2 gravel_* tables (${c.bold('gravel_samples')}, ${c.bold('gravel_feedback')}) in ${dbDest}? ${c.dim('(idempotent CREATE TABLE IF NOT EXISTS)')}`,
       true,
     )
     if (wantMigrate) {
+      const sp = spinner('Bootstrapping schema…')
       try {
         await runBootstrap(cwd)
         ranBootstrap = true
+        sp.stop('Schema ready (2 tables)')
       } catch (e) {
+        sp.fail(`Bootstrap failed: ${(e as Error).message}`)
         blockers.push(`Schema bootstrap failed: ${(e as Error).message}. Re-run \`npx @artanis-ai/gravel migrate\`.`)
       }
     } else {
@@ -197,14 +230,18 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
   let installedHook = null as { mode: string; path?: string } | null
   if (!opts.noHook && detection.hasGit) {
     const wantHook = await ask(
-      `[gravel] Install a pre-commit hook to keep .artanis/manifest.json in sync? (Reversible: ${
-        detection.hasGit ? 'edit/remove .git/hooks/pre-commit or your .husky/.pre-commit-config.yaml' : 'n/a'
-      })`,
+      `Install a pre-commit hook to keep ${c.bold('.artanis/manifest.json')} in sync with the repo? ${c.dim('(removable via .git/hooks/pre-commit)')}`,
       true,
     )
     if (wantHook) {
-      const result = await installHook(cwd)
-      installedHook = { mode: result.mode, path: result.path }
+      const sp = spinner('Installing pre-commit hook…')
+      try {
+        const result = await installHook(cwd)
+        installedHook = { mode: result.mode, path: result.path }
+        sp.stop(`Hook installed (${result.mode})`)
+      } catch (e) {
+        sp.fail(`Hook install failed: ${(e as Error).message}`)
+      }
     }
   }
 
@@ -214,12 +251,17 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
   // first sign in, instead of an empty list with CLI advice.
   let initialScan: { promptCount: number; added: number } | null = null
   if (!opts.noScan) {
+    const sp = spinner('Scanning repo for prompts…')
     try {
       const current = await readManifest(cwd)
       const result = await fastScan(cwd, current)
       await writeManifest(cwd, result.manifest)
       initialScan = { promptCount: result.manifest.prompts.length, added: result.added }
+      sp.stop(
+        `Manifest seeded: ${c.bold(String(initialScan.promptCount))} prompt(s) found (+${initialScan.added} new)`,
+      )
     } catch (e) {
+      sp.fail(`Initial scan failed: ${(e as Error).message}`)
       blockers.push(`Initial manifest scan failed: ${(e as Error).message}. Run \`npx @artanis-ai/gravel manifest --update\` once resolved.`)
     }
   }
@@ -240,18 +282,22 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
   // already covers the "no traffic yet" case.
   void opts.noTestTrace
 
-  // Step 10
-  log('')
-  log('Gravel skeleton installed. Next:')
+  // Step 10 — next-steps panel.
+  const nextSteps: string[] = []
   if (initialScan) {
-    log(`  Manifest: ${initialScan.promptCount} prompt(s) detected (+${initialScan.added} new).`)
+    nextSteps.push(`${c.dim('●')} ${c.bold(String(initialScan.promptCount))} prompt(s) detected (+${initialScan.added} new)`)
   }
-  log(`  1. Visit ${opts.mountPath ?? '/admin/ai'} in your app and log in (admin password is in your .env).`)
-  log(`  2. Install the Gravel GitHub App on the repo where prompt PRs should land:`)
-  log(`     https://github.com/apps/gravel-bot/installations/new`)
-  log(`     (or click "Install GitHub App" inside the dashboard — same flow, with a return URL.)`)
-  log(`  3. Edit your getUser callback in gravel.config.ts to match your auth.`)
-  log(`  4. Read https://gravel.artanis.ai/docs`)
+  nextSteps.push(`${c.brand('1.')} Visit ${c.bold(mountPath)} in your app — admin password is in ${c.bold('.env.local')}`)
+  nextSteps.push(`${c.brand('2.')} Install the Gravel GitHub App: ${c.cyan('https://github.com/apps/gravel-bot/installations/new')}`)
+  nextSteps.push(`${c.brand('3.')} Edit ${c.bold('gravel.config.ts')} ${c.dim('→ getUser callback')} to match your auth`)
+  nextSteps.push(`${c.brand('4.')} Read the docs: ${c.cyan('https://gravel.artanis.ai/docs')}`)
+  panel('Next steps', nextSteps)
+
+  if (blockers.length > 0) {
+    failure(`${blockers.length} item(s) need follow-up:`)
+    for (const b of blockers) note(`• ${b}`)
+  }
+  done('Gravel skeleton installed.')
 
   return {
     detection,
@@ -269,7 +315,7 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
   }
 }
 
-function log(msg: string): void {
-  // eslint-disable-next-line no-console
-  console.log(msg)
-}
+// `info` and `success` are imported above; keep void references so
+// tree-shake doesn't drop them when callers only use a subset.
+void info
+void success

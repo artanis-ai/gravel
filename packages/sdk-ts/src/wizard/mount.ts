@@ -18,6 +18,7 @@
  * harder ones.
  */
 import { promises as fs } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { join, dirname } from 'node:path'
 import type { DetectionResult } from './detect.js'
 
@@ -456,11 +457,31 @@ export async function register() {
   )
 }
 
+/**
+ * Back up a file before we rewrite it — but only when git can't already
+ * undo the change. If the file is tracked by git, the working-tree edit
+ * is fully reversible via `git restore <file>` / `git checkout HEAD --
+ * <file>`, so a sibling `.gravel.bak` is just clutter the dev has to
+ * `.gitignore` or delete.
+ *
+ * Untracked files (or non-git projects) still get a `.gravel.bak`
+ * companion since git won't help recover those.
+ */
 async function safeBackup(file: string): Promise<void> {
+  if (isTrackedByGit(file)) return
   const bak = file + '.gravel.bak'
   await fs.copyFile(file, bak)
   // eslint-disable-next-line no-console
-  console.log(`[gravel] Existing ${file} backed up to ${bak}.`)
+  console.log(`[gravel] ${file} is untracked; backed up to ${bak}.`)
+}
+
+function isTrackedByGit(file: string): boolean {
+  const dir = dirname(file)
+  const result = spawnSync('git', ['ls-files', '--error-unmatch', '--', file], {
+    cwd: dir,
+    stdio: 'ignore',
+  })
+  return result.status === 0
 }
 
 /**
