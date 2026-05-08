@@ -2,13 +2,14 @@
  * Tiny TUI helpers for the install wizard. Zero deps, ANSI-only, falls
  * back to plain text whenever stdout isn't a TTY (or `NO_COLOR` is set).
  *
- * Layout idiom is clack-style — a left rail of `│` lines threads the
- * sequence of steps, with `◆` marking the active step, `◇` the resolved
- * one, `✓` / `✗` / `▲` for explicit terminal states. A braille spinner
- * stands in for `◆` while a step is doing async work.
+ * Design (2026-05-08 v2): the wizard speaks to the user like a teacher
+ * walking through a notebook — short paragraphs (`say`), step headings,
+ * bullet results, pause-for-enter checkpoints. We dropped the
+ * clack-style left rail and the boxed Next-steps panel — both made the
+ * install feel like a build log instead of a guided setup.
  *
  * Tests run in non-TTY contexts where every helper degrades to a plain
- * console.log — assertions over wizard output keep working.
+ * console line — assertions over wizard output keep working.
  */
 
 const HAS_COLOR =
@@ -37,142 +38,78 @@ export const c = {
   gray: wrap(90, 39),
   /** Warm sandstone — matches the gravel.artanis.ai landing accent. */
   brand: wrap('38;5;215', 39),
-  inverse: wrap(7, 27),
-}
-
-export const sym = {
-  active: '◆',
-  done: '◇',
-  ok: '✓',
-  fail: '✗',
-  warn: '▲',
-  rail: '│',
-  end: '└',
-  start: '┌',
 }
 
 const out = process.stdout
-
 function write(s: string): void {
   out.write(s)
 }
 
-/** Top-of-wizard banner. Drops to a single bold line when colour is off. */
-export function header(title: string, subtitle?: string): void {
-  if (!HAS_COLOR) {
-    write(`${title}${subtitle ? ' — ' + subtitle : ''}\n\n`)
-    return
-  }
-  const pad = '  '
+/** Top-of-wizard greeting. */
+export function welcome(title: string, subtitle?: string): void {
   write('\n')
-  write(`${pad}${c.brand(c.bold('▸'))} ${c.bold(title)}`)
-  if (subtitle) write(`  ${c.dim(subtitle)}`)
+  write(`${c.brand(c.bold(title))}\n`)
+  if (subtitle) write(`${c.dim(subtitle)}\n`)
   write('\n')
-  write(`${pad}${c.dim('─'.repeat(Math.max(8, title.length + (subtitle?.length ?? 0) + 5)))}\n`)
-  write(`${c.dim(sym.rail)}\n`)
 }
 
-/** Active step heading — a question or a "starting X" announcement. */
-export function step(title: string): void {
+/** A "Step N of M — Title" heading with a divider underneath. */
+export function stepHeader(num: number, total: number, title: string): void {
   if (!HAS_COLOR) {
-    write(`> ${title}\n`)
+    write(`\nStep ${num} of ${total} — ${title}\n${'─'.repeat(40)}\n\n`)
     return
   }
-  write(`${c.brand(sym.active)}  ${c.bold(title)}\n${c.dim(sym.rail)}\n`)
+  const headLine = `${c.brand(`Step ${num} of ${total}`)}  ${c.bold(title)}`
+  const divLen = visibleLen(headLine)
+  write('\n' + headLine + '\n' + c.dim('─'.repeat(divLen)) + '\n\n')
 }
 
-/**
- * Major section heading. The wizard splits its work into three
- * pillars (Dashboard, Prompts, Traces); each opens with one of these.
- * `tag` shows up to the right of the title (e.g. "skipped" / "already
- * configured").
- */
-export function section(num: number, title: string, description?: string, tag?: string): void {
-  if (!HAS_COLOR) {
-    write(`\n## ${num}. ${title}${tag ? ' (' + tag + ')' : ''}\n`)
-    if (description) write(`   ${description}\n`)
-    return
-  }
-  write('\n')
-  const tagPart = tag ? `  ${c.dim(c.italic('— ' + tag))}` : ''
-  write(`${c.brand(c.bold(`▸ ${num}.`))} ${c.bold(title)}${tagPart}\n`)
-  if (description) write(`${c.dim('   ' + description)}\n`)
-  write(`${c.dim(sym.rail)}\n`)
+/** A paragraph of conversational text. Wraps naturally on the terminal. */
+export function say(text: string): void {
+  write(text + '\n\n')
 }
 
-/** A line of supporting context under the current rail. */
-export function info(text: string): void {
-  if (!HAS_COLOR) {
-    write(`  ${text}\n`)
-    return
-  }
-  write(`${c.dim(sym.rail)}  ${text}\n${c.dim(sym.rail)}\n`)
-}
-
-export function success(text: string): void {
-  if (!HAS_COLOR) {
-    write(`  ✓ ${text}\n`)
-    return
-  }
-  write(`${c.green(sym.ok)}  ${text}\n${c.dim(sym.rail)}\n`)
-}
-
-export function warn(text: string): void {
-  if (!HAS_COLOR) {
-    write(`  ! ${text}\n`)
-    return
-  }
-  write(`${c.yellow(sym.warn)}  ${c.yellow(text)}\n${c.dim(sym.rail)}\n`)
-}
-
-export function failure(text: string): void {
-  if (!HAS_COLOR) {
-    write(`  x ${text}\n`)
-    return
-  }
-  write(`${c.red(sym.fail)}  ${c.red(text)}\n${c.dim(sym.rail)}\n`)
-}
-
-/** Rail-prefixed continuation line (no terminal symbol). */
+/** A subtle aside. */
 export function note(text: string): void {
-  if (!HAS_COLOR) {
-    write(`  ${text}\n`)
-    return
-  }
-  write(`${c.dim(sym.rail)}  ${c.dim(text)}\n`)
+  write(`${c.dim(text)}\n`)
 }
 
-/** Closing line for the wizard. */
+export type BulletKind = 'ok' | 'fail' | 'warn' | 'skip' | 'plain' | 'info'
+
+const BULLET_SYMBOL: Record<BulletKind, string> = {
+  ok: '✓',
+  fail: '✗',
+  warn: '▲',
+  skip: '·',
+  plain: '·',
+  info: '·',
+}
+
+/** A single-line result under a step. Indented two spaces. */
+export function bullet(text: string, kind: BulletKind = 'plain'): void {
+  const sym = BULLET_SYMBOL[kind]
+  if (!HAS_COLOR) {
+    write(`  ${sym} ${text}\n`)
+    return
+  }
+  const colored =
+    kind === 'ok'
+      ? c.green(sym)
+      : kind === 'fail'
+        ? c.red(sym)
+        : kind === 'warn'
+          ? c.yellow(sym)
+          : kind === 'skip'
+            ? c.dim(sym)
+            : kind === 'info'
+              ? c.brand(sym)
+              : c.dim(sym)
+  write(`  ${colored} ${text}\n`)
+}
+
+/** Final closing line. */
 export function done(text: string): void {
-  if (!HAS_COLOR) {
-    write(`\n${text}\n`)
-    return
-  }
-  write(`${c.brand(sym.end)}  ${c.bold(text)}\n\n`)
-}
-
-/**
- * A boxed multi-line callout. Used for the final "Next steps" panel.
- * Lines may contain ANSI codes — width is computed off visible text.
- */
-export function panel(title: string, lines: string[]): void {
-  if (!HAS_COLOR) {
-    write(`\n${title}\n`)
-    for (const l of lines) write(`  ${l}\n`)
-    write('\n')
-    return
-  }
-  const visibleLen = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '').length
-  const inner = Math.max(visibleLen(title), ...lines.map(visibleLen))
-  const pad = (s: string) => s + ' '.repeat(inner - visibleLen(s))
-  const top = c.dim('╭') + c.dim('─'.repeat(inner + 2)) + c.dim('╮')
-  const mid = c.dim('├') + c.dim('─'.repeat(inner + 2)) + c.dim('┤')
-  const bot = c.dim('╰') + c.dim('─'.repeat(inner + 2)) + c.dim('╯')
-  write(`${top}\n`)
-  write(`${c.dim('│')} ${c.bold(pad(title))} ${c.dim('│')}\n`)
-  write(`${mid}\n`)
-  for (const l of lines) write(`${c.dim('│')} ${pad(l)} ${c.dim('│')}\n`)
-  write(`${bot}\n\n`)
+  write(`\n${c.bold(text)}\n\n`)
 }
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
@@ -183,14 +120,14 @@ export interface Spinner {
 }
 
 /**
- * Braille spinner that occupies a single line under the rail. Falls back
- * to a static "… message" line when stdout isn't a TTY. Always stops with
- * a ✓ or ✗ on the same line.
+ * Braille spinner that occupies a single line. Indented two spaces to
+ * match `bullet()`. Always replaces itself with a ✓ or ✗ on the same
+ * line. Falls back to a static "  · message…" line on non-TTY.
  */
 export function spinner(initial: string): Spinner {
   if (!HAS_TTY) {
     const trimmed = initial.replace(/…$/, '')
-    write(`  ${trimmed}…\n`)
+    write(`  · ${trimmed}…\n`)
     return {
       stop(msg = initial) {
         write(`  ✓ ${msg}\n`)
@@ -202,8 +139,7 @@ export function spinner(initial: string): Spinner {
   }
   let i = 0
   let label = initial
-  const render = () =>
-    `${c.brand(SPINNER_FRAMES[i] ?? '·')}  ${label}\x1b[K`
+  const render = () => `  ${c.brand(SPINNER_FRAMES[i] ?? '·')} ${label}\x1b[K`
   write(render())
   const id = setInterval(() => {
     i = (i + 1) % SPINNER_FRAMES.length
@@ -213,29 +149,22 @@ export function spinner(initial: string): Spinner {
     stop(msg = label) {
       clearInterval(id)
       label = msg
-      write(`\r${c.green(sym.ok)}  ${msg}\x1b[K\n${c.dim(sym.rail)}\n`)
+      write(`\r  ${c.green('✓')} ${msg}\x1b[K\n`)
     },
     fail(msg = label) {
       clearInterval(id)
       label = msg
-      write(`\r${c.red(sym.fail)}  ${c.red(msg)}\x1b[K\n${c.dim(sym.rail)}\n`)
+      write(`\r  ${c.red('✗')} ${c.red(msg)}\x1b[K\n`)
     },
   }
 }
 
-/**
- * Render the user's resolved answer to a confirm() prompt. Replaces the
- * preceding question line with a dim summary so the rail stays uncluttered.
- */
-export function rewriteAnswer(question: string, answer: string): void {
-  if (!HAS_COLOR) {
-    write(`  -> ${answer}\n`)
-    return
-  }
-  // Cursor up two (rail line + question line), clear both, redraw.
-  write('\x1b[2A\r\x1b[J')
-  write(`${c.dim(sym.done)}  ${c.dim(question)} ${c.dim('—')} ${c.dim(answer)}\n${c.dim(sym.rail)}\n`)
+function visibleLen(s: string): number {
+  return s.replace(/\x1b\[[0-9;]*m/g, '').length
 }
 
 /** Whether this run is rendering a live TTY (used by callers to gate prompts). */
 export const isInteractiveTTY = HAS_TTY
+
+/** Whether output is colourised (used by tests + the prompt module). */
+export const isColorized = HAS_COLOR

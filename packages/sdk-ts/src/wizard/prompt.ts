@@ -1,20 +1,22 @@
 /**
- * Stdin Y/n prompt helper. Used by the wizard to ask for consent before
- * destructive actions (creating tables, modifying configs, etc).
+ * Stdin prompt helpers. Used by the wizard's per-pillar conversation.
  *
- * Convention: returns the user's choice (true/false). When stdin is not
- * a TTY (CI / piped / agent contexts), the default value is returned —
- * caller decides whether default-yes or default-no is right.
+ * Two shapes:
+ *   - `confirm()` — Y/n, default-yes. Single inline line, e.g.
+ *     `Continue? [Y/n] ` with the user's typed answer immediately
+ *     after.
+ *   - `askText()` — free-form text. Used for "which prompts to skip?"
+ *     style follow-ups.
+ *   - `pressEnter()` — pause for the user to look at something
+ *     (e.g. open the dashboard) and hit Enter when ready.
  *
- * The visual treatment is the clack-style rail: an active diamond + the
- * question, then a `│  ` input rail under it. After the user answers,
- * the two lines are rewritten as a single dim summary so the wizard's
- * trail stays clean. See `wizard/ui.ts` for the underlying helpers.
+ * On non-TTY (CI / piped / agent contexts), `confirm` returns the
+ * default and `pressEnter` is a no-op so the wizard runs unattended.
  *
  * Test seam: pass `input` / `output` / `isTTY` to override.
  */
 import { createInterface } from 'node:readline'
-import { c, rewriteAnswer, sym } from './ui.js'
+import { c, isColorized } from './ui.js'
 
 export interface ConfirmOptions {
   /** Default answer when the user just presses Enter (or stdin is not a TTY). */
@@ -27,9 +29,6 @@ export interface ConfirmOptions {
   output?: NodeJS.WritableStream
 }
 
-const HAS_COLOR =
-  (process.stdout as NodeJS.WriteStream).isTTY === true && !process.env.NO_COLOR
-
 export async function confirm(question: string, opts: ConfirmOptions = {}): Promise<boolean> {
   const defaultYes = opts.defaultYes ?? true
   const input = opts.input ?? process.stdin
@@ -38,25 +37,73 @@ export async function confirm(question: string, opts: ConfirmOptions = {}): Prom
   if (!isTTY) return defaultYes
 
   const yn = defaultYes ? '[Y/n]' : '[y/N]'
-  // Two-line layout: question with the active diamond on top, input
-  // prompt with the rail below. We then collapse both into one dim
-  // summary line via rewriteAnswer().
-  const headLine = HAS_COLOR
-    ? `${c.brand(sym.active)}  ${c.bold(question)} ${c.dim(yn)}\n`
-    : `${question} ${yn}\n`
-  const railPrompt = HAS_COLOR ? `${c.dim(sym.rail)}  ` : '> '
+  const promptText = isColorized
+    ? `${question} ${c.dim(yn)} `
+    : `${question} ${yn} `
 
-  output.write(headLine)
   const rl = createInterface({ input, output })
   try {
     const answer = await new Promise<string>((resolve) => {
-      rl.question(railPrompt, (a) => resolve(a.trim().toLowerCase()))
+      rl.question(promptText, (a) => resolve(a.trim().toLowerCase()))
     })
-    const result = answer === '' ? defaultYes : answer.startsWith('y')
-    if (HAS_COLOR && output === process.stdout) {
-      rewriteAnswer(`${question} ${yn}`, result ? 'yes' : 'no')
-    }
-    return result
+    if (answer === '') return defaultYes
+    return answer.startsWith('y')
+  } finally {
+    rl.close()
+  }
+}
+
+export interface AskTextOptions {
+  isTTY?: boolean
+  input?: NodeJS.ReadableStream
+  output?: NodeJS.WritableStream
+  /** Default returned on non-TTY or empty answer. */
+  defaultValue?: string
+}
+
+export async function askText(question: string, opts: AskTextOptions = {}): Promise<string> {
+  const input = opts.input ?? process.stdin
+  const output = opts.output ?? process.stdout
+  const isTTY = opts.isTTY ?? (process.stdin as NodeJS.ReadStream).isTTY === true
+  const defaultValue = opts.defaultValue ?? ''
+  if (!isTTY) return defaultValue
+
+  const rl = createInterface({ input, output })
+  try {
+    const answer = await new Promise<string>((resolve) => {
+      rl.question(question + ' ', (a) => resolve(a.trim()))
+    })
+    return answer || defaultValue
+  } finally {
+    rl.close()
+  }
+}
+
+export interface PressEnterOptions {
+  isTTY?: boolean
+  input?: NodeJS.ReadableStream
+  output?: NodeJS.WritableStream
+}
+
+/**
+ * Pause until the user hits Enter. No-op on non-TTY so the wizard
+ * runs unattended in CI / scripted installs.
+ */
+export async function pressEnter(
+  message = 'Press Enter to continue',
+  opts: PressEnterOptions = {},
+): Promise<void> {
+  const input = opts.input ?? process.stdin
+  const output = opts.output ?? process.stdout
+  const isTTY = opts.isTTY ?? (process.stdin as NodeJS.ReadStream).isTTY === true
+  if (!isTTY) return
+
+  const promptText = isColorized ? `${c.dim(message)} ` : `${message} `
+  const rl = createInterface({ input, output })
+  try {
+    await new Promise<void>((resolve) => {
+      rl.question(promptText, () => resolve())
+    })
   } finally {
     rl.close()
   }

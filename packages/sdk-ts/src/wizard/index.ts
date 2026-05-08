@@ -2,41 +2,25 @@
  * Wizard entry point. Walks the user through install per
  * gravel-cloud/docs/spec/wizard.md §2.
  *
- * Structure (2026-05-08 refresh): the wizard is three sections, two
- * of which are independently skippable:
+ * Tone (2026-05-08 v3): the wizard speaks to the user one step at a
+ * time. Three pillars (Dashboard / Prompts / Traces); each is its
+ * own conversation:
  *
- *   1. Dashboard — mount the embedded admin UI + write
- *      gravel.config.ts + .env password. Always runs if the user
- *      takes either of the next two pillars (it's the surface they
- *      land in).
- *   2. Prompts — manifest scan + pre-commit hook. The wedge: lets
- *      domain experts edit prompts and ship PRs. Needs no DB.
- *   3. Traces — DB tables + auto-instrumentation hooks. Captures
- *      LLM calls so the Outputs tab fills with real data.
+ *   1. Explain what's about to happen.
+ *   2. Confirm.
+ *   3. Do it (with a spinner if it takes any time).
+ *   4. Tell the user what they should see, and where.
+ *   5. Pause until they hit Enter — gives them time to actually look
+ *      at the result before the next pillar starts.
  *
- * Either pillar can be skipped now and added later by re-running
- * `gravel init --prompts` / `--traces`. The wizard inspects existing
- * state on each run and shows an "already configured" tag instead of
- * re-asking for things that are done.
+ * The Prompts pillar verifies its scan results before continuing —
+ * Mallet-style: show what we found, let the user confirm or trim, and
+ * offer a deeper LLM-assisted scan if the regex pass missed code-
+ * embedded prompts.
  *
- * UI: clack-style rail rendered by wizard/ui.ts. On a TTY, prompts are
- * branded with a braille spinner during long async steps; on non-TTY
- * (CI / pipes), every helper degrades to a plain line so logs stay
- * greppable.
- *
- * Step status:
- *   - Step 1 detect:           ✓ ./detect.ts
- *   - Step 2 auth:             ✓ LOCAL — no CLI sign-in. Dashboard handles
- *                                cloud auth on first cloud-feature click.
- *   - Step 3 install SDK:      ✓ assumed (caller is invoking gravel)
- *   - Step 4 .env:             ✓ writeEnvAdditions
- *   - Step 5 mount:            ✓ mountDashboardRoute (Next/FastAPI/Django + generics)
- *   - Step 6 schema:           ✓ runBootstrap — only fires if `traces` pillar selected
- *   - Step 7 pre-commit hook:  ✓ installHook — only if `prompts` pillar selected
- *   - Step 7.5 manifest scan:  ✓ fastScan — only if `prompts` pillar selected
- *   - Step 8 deep scan:        ⚠ blocker — gravel scan --deep, opt-in
- *   - Step 9 test trace:       not run during init — auto-patches handle the first real call
- *   - Step 10 next-steps:      ✓ panel
+ * The Traces pillar pre-flights the DB connection before asking
+ * "create tables?" — a yes to that question shouldn't surface as an
+ * authentication error two lines later.
  */
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
@@ -45,24 +29,22 @@ import { generateConfigFile } from './config-file.js'
 import { mountDashboardRoute, installNextTracingHooks } from './mount.js'
 import { writeEnvAdditions, generatePassword } from './env.js'
 import { runBootstrap } from './migrate.js'
+import { probeDatabase } from './db-test.js'
 import { installHook } from '../manifest/hook.js'
 import { fastScan } from '../manifest/scan.js'
 import { readManifest, writeManifest } from '../manifest/io.js'
+import type { Manifest, ManifestPrompt } from '../manifest/types.js'
 import { resolveControlPlaneUrl } from './oauth.js'
-import { confirm } from './prompt.js'
+import { askText, confirm, pressEnter } from './prompt.js'
 import {
+  bullet,
   c,
   done,
-  failure,
-  header,
-  info,
   note,
-  panel,
-  section,
+  say,
   spinner,
-  step,
-  success,
-  warn,
+  stepHeader,
+  welcome,
 } from './ui.js'
 
 export type WizardAuthMode = 'local' | 'flags'
@@ -117,8 +99,6 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
   const blockers: string[] = []
   const mountPath = opts.mountPath ?? '/admin/ai'
 
-  header('Gravel install', 'embedded prompt management for AI engineering teams')
-
   // Step 1 — detect.
   const detection = await detect(cwd)
 
@@ -142,280 +122,539 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
     if (!interactive) return defaultYes
     return await confirm(question, { defaultYes })
   }
+  const pause = async (msg?: string): Promise<void> => {
+    if (!interactive) return
+    await pressEnter(msg)
+  }
 
-  // Inspect existing state so re-runs can show "already configured" tags
-  // instead of re-asking the same questions.
+  // Inspect existing state so re-runs can announce "already configured"
+  // instead of clobbering files.
   const state = await inspectState(cwd, detection)
 
-  // ── Pick pillars ──
-  // Resolution order, per pillar:
-  //   1. Explicit opts.prompts / opts.traces if set (CLI flags).
-  //   2. Legacy --no-{migrate,hook,scan,instrumentation} flags map onto
-  //      the new pillars.
-  //   3. Interactive ask (default-yes for both pillars; the wizard's
-  //      pitch is "the dashboard works for both prompts and traces").
-  //   4. Non-interactive default: yes for both — matches the prior
-  //      behaviour where omitting all flags set everything up.
-  step('Detect project')
-  note(
-    `${c.bold(detection.framework)} · ${detection.language} · pkg=${detection.packageManager} · db=${detection.database.driver} · auth=${detection.auth}`,
-  )
-  if (state.mountExists) note(c.dim('• dashboard mount file already present'))
-  if (state.manifestExists) note(c.dim(`• manifest exists (${state.promptCount} prompt(s))`))
-  if (state.tablesLikelyExist) note(c.dim('• gravel_* tables likely present (DATABASE_URL set)'))
-  success('Stack identified')
-
-  if (detection.nextHasBothRouters) {
-    const warning =
-      `This project has BOTH ${detection.nextAppDir}/ and pages/ — mid-migration. ` +
-      `Mounted under the App Router (${detection.nextAppDir}/admin/ai/[[...slug]]/route.ts). ` +
-      `Re-run with --framework or hand-mount per gravel.artanis.ai/docs/install if you want pages/ instead.`
-    warn(warning)
-    blockers.push(warning)
-  }
-
-  // Pillar 1 (prompts): the wedge. Defaults to yes.
-  let wantPrompts: boolean
-  if (typeof opts.prompts === 'boolean') {
-    wantPrompts = opts.prompts
-  } else if (opts.noHook === true && opts.noScan === true) {
-    wantPrompts = false
-  } else if (state.manifestExists && state.hookInstalled) {
-    // Fully set up — don't re-ask, don't re-run. Skip cleanly.
-    wantPrompts = false
-    note(c.dim(`Prompts pillar already configured — skipping.`))
-  } else {
-    wantPrompts = await ask(
-      `Set up ${c.bold('Prompts')}? ${c.dim('(manifest scan + DE editor at /admin/ai)')}`,
-      true,
-    )
-  }
-
-  // Pillar 2 (traces): defaults to yes.
-  let wantTraces: boolean
-  if (typeof opts.traces === 'boolean') {
-    wantTraces = opts.traces
-  } else if (opts.noMigrate === true && opts.noInstrumentation === true) {
-    wantTraces = false
-  } else if (state.tablesLikelyExist && state.instrumentationExists) {
-    wantTraces = false
-    note(c.dim(`Traces pillar already configured — skipping.`))
-  } else {
-    wantTraces = await ask(
-      `Set up ${c.bold('Traces')}? ${c.dim('(2 DB tables + auto-instrumentation for OpenAI/Anthropic/etc)')}`,
-      true,
-    )
-  }
-
-  if (!wantPrompts && !wantTraces) {
-    info('Nothing to set up. Re-run `gravel init --prompts` or `gravel init --traces` when you want one.')
-    return {
+  // Early exit: both pillars explicitly off via flags. Skip everything,
+  // including the dashboard mount — there's nothing for it to host.
+  if (opts.prompts === false && opts.traces === false) {
+    return summary({
       detection,
-      installedSdk: false,
-      wroteConfig: false,
+      password: null,
       mountedRoute: null,
       ranBootstrap: false,
       installedHook: null,
-      passwordGenerated: null,
       controlPlane,
       blockers,
       projectId,
       apiKey,
       authMode,
       pillars: { dashboard: false, prompts: false, traces: false },
-    }
-  }
-
-  // ── Section 1: Dashboard ──
-  // Always runs if at least one pillar was selected. .env, mount route,
-  // gravel.config.ts. The mount step calls into installNextTracingHooks
-  // when the traces pillar is on.
-  section(
-    1,
-    'Dashboard',
-    `Mount /admin/ai, write gravel.config.ts, generate the admin password.`,
-  )
-  const password = generatePassword()
-  const envVars: Record<string, string> = { GRAVEL_ADMIN_PASSWORD: password }
-  if (projectId) envVars.GRAVEL_PROJECT_ID = projectId
-  if (apiKey) envVars.GRAVEL_API_KEY = apiKey
-  await writeEnvAdditions(cwd, envVars)
-  note(c.dim(`GRAVEL_ADMIN_PASSWORD written to .env.local (${authMode} mode)`))
-
-  let mountedRoute = null as Awaited<ReturnType<typeof mountDashboardRoute>>
-  const sp1 = spinner('Wiring dashboard mount + config files…')
-  try {
-    mountedRoute = await mountDashboardRoute(detection, cwd, mountPath, {
-      withTracingDeps: wantTraces && opts.noInstrumentation !== true,
     })
-    await generateConfigFile(detection, cwd, { mountPath })
-    sp1.stop(`Mounted ${c.bold(mountPath)}; wrote gravel.config.ts`)
-  } catch (e) {
-    sp1.fail(`Mount failed: ${(e as Error).message}`)
-    blockers.push(`Mount failed: ${(e as Error).message}`)
   }
 
-  // ── Section 2: Prompts ──
-  let initialScan: { promptCount: number; added: number } | null = null
-  let installedHook = null as { mode: string; path?: string } | null
-  if (wantPrompts) {
-    section(
-      2,
-      'Prompts',
-      'Find prompts in your repo and surface them in the dashboard for editing.',
+  welcome(
+    'Gravel install',
+    'embedded prompt management for AI engineering teams',
+  )
+  say(
+    `Detected ${c.bold(detection.framework)} (${detection.language}, ${detection.packageManager}, db=${detection.database.driver}). I'll walk you through three things — you can skip any.`,
+  )
+  if (detection.nextHasBothRouters) {
+    bullet(
+      `Heads-up: this project has both ${detection.nextAppDir}/ and pages/. I'll mount under the App Router. Re-run with --framework or hand-mount per gravel.artanis.ai/docs/install if you want pages/ instead.`,
+      'warn',
     )
+    say('')
+  }
 
-    const sp2 = spinner('Scanning repo for prompts…')
+  // Resolve which pillars to attempt. Flags take priority; otherwise
+  // we ask at each section so the user can see the previous result
+  // before deciding on the next one.
+  const wantPromptsResolved =
+    typeof opts.prompts === 'boolean'
+      ? opts.prompts
+      : opts.noHook === true && opts.noScan === true
+        ? false
+        : null // null = ask at the section
+  const wantTracesResolved =
+    typeof opts.traces === 'boolean'
+      ? opts.traces
+      : opts.noMigrate === true && opts.noInstrumentation === true
+        ? false
+        : null
+
+  // ── Step 1 of 3 — Dashboard ──
+  // Always required if either pillar is selected. We can't know that
+  // upfront when the user hasn't been asked yet, so we run the dashboard
+  // step optimistically — if the user declines all pillars after that
+  // we'll have written a few harmless files (mount route, password,
+  // gravel.config.ts). Tradeoff worth taking for the simpler flow.
+  stepHeader(1, 3, 'Dashboard')
+  say(
+    `First I'll mount an embedded admin UI at ${c.bold(mountPath)}. This is where ` +
+      `your domain experts open Gravel — they'll see prompts to edit and (later) ` +
+      `LLM outputs to review. I'll also write a ${c.bold('gravel.config.ts')} so you can ` +
+      `wire up your own ${c.bold('getUser')} callback later.`,
+  )
+  let dashboardWritten = false
+  let mountedRoute = null as Awaited<ReturnType<typeof mountDashboardRoute>>
+  let password: string | null = null
+  if (state.mountExists && state.envHasPassword) {
+    bullet(`Already wired up. Skipping.`, 'skip')
+    note(`(Re-run with a clean .env.local + ${mountFilePath(detection)} removed if you want to start over.)`)
+    say('')
+    dashboardWritten = true
+  } else {
+    const wantMount = await ask('Continue?', true)
+    if (!wantMount) {
+      bullet('Skipped. Nothing else can run without the dashboard.', 'skip')
+      return summary({
+        detection,
+        password: null,
+        mountedRoute: null,
+        ranBootstrap: false,
+        installedHook: null,
+        controlPlane,
+        blockers,
+        projectId,
+        apiKey,
+        authMode,
+        pillars: { dashboard: false, prompts: false, traces: false },
+      })
+    }
+    password = generatePassword()
+    const envVars: Record<string, string> = { GRAVEL_ADMIN_PASSWORD: password }
+    if (projectId) envVars.GRAVEL_PROJECT_ID = projectId
+    if (apiKey) envVars.GRAVEL_API_KEY = apiKey
+    await writeEnvAdditions(cwd, envVars)
+    const sp = spinner('Mounting dashboard…')
     try {
-      const current = await readManifest(cwd)
-      const result = await fastScan(cwd, current)
-      await writeManifest(cwd, result.manifest)
-      initialScan = { promptCount: result.manifest.prompts.length, added: result.added }
-      sp2.stop(
-        `Manifest seeded: ${c.bold(String(initialScan.promptCount))} prompt(s) found (+${initialScan.added} new)`,
-      )
+      mountedRoute = await mountDashboardRoute(detection, cwd, mountPath, {
+        // Defer instrumentation to step 3 so the prompts-only path
+        // doesn't drop dead-code into the user's repo.
+        withTracingDeps: false,
+      })
+      await generateConfigFile(detection, cwd, { mountPath })
+      sp.stop(`Wrote ${describeMount(detection, mountPath)} + gravel.config.ts`)
+      bullet(`Admin password saved to .env.local`, 'ok')
+      dashboardWritten = true
     } catch (e) {
-      sp2.fail(`Initial scan failed: ${(e as Error).message}`)
-      blockers.push(`Initial manifest scan failed: ${(e as Error).message}. Run \`npx @artanis-ai/gravel manifest --update\` once resolved.`)
-    }
-
-    if (detection.hasGit && opts.noHook !== true) {
-      const wantHook = await ask(
-        `Install a pre-commit hook to keep ${c.bold('.artanis/manifest.json')} in sync? ${c.dim('(removable via .git/hooks/pre-commit)')}`,
-        true,
-      )
-      if (wantHook) {
-        const sp3 = spinner('Installing pre-commit hook…')
-        try {
-          const result = await installHook(cwd)
-          installedHook = { mode: result.mode, path: result.path }
-          sp3.stop(`Hook installed (${result.mode})`)
-        } catch (e) {
-          sp3.fail(`Hook install failed: ${(e as Error).message}`)
-        }
-      }
+      sp.fail(`Mount failed: ${(e as Error).message}`)
+      blockers.push(`Mount failed: ${(e as Error).message}`)
     }
   }
 
-  // ── Section 3: Traces ──
-  let ranBootstrap = false
-  if (wantTraces) {
-    section(
-      3,
-      'Traces',
-      'Auto-trace LLM calls into 2 tables in your database (gravel_samples, gravel_feedback).',
+  if (dashboardWritten) {
+    say('')
+    say(
+      `When your dev server's running, open ${c.cyan('http://localhost:3000' + mountPath)} ` +
+        `and log in with the password from ${c.bold('.env.local')}.`,
     )
+    await pause('Press Enter once you can see the dashboard (or Enter to skip ahead)')
+  }
 
-    if (opts.noMigrate !== true) {
-      const dbDriver = detection.database.driver
-      const dbDest =
-        dbDriver === 'postgres'
-          ? `Postgres at ${c.bold(detection.database.envVar ?? 'DATABASE_URL')}`
-          : dbDriver === 'sqlite'
-            ? `SQLite (${c.bold(detection.database.envVar ?? 'DATABASE_URL')})`
-            : 'your configured DATABASE_URL'
-      const wantMigrate = await ask(
-        `Create 2 tables (${c.bold('gravel_samples')}, ${c.bold('gravel_feedback')}) in ${dbDest}? ${c.dim('(idempotent)')}`,
-        true,
-      )
-      if (wantMigrate) {
-        const sp4 = spinner('Bootstrapping schema…')
-        try {
-          await runBootstrap(cwd)
-          ranBootstrap = true
-          sp4.stop('Schema ready (2 tables)')
-        } catch (e) {
-          sp4.fail(`Bootstrap failed: ${(e as Error).message}`)
-          blockers.push(`Schema bootstrap failed: ${(e as Error).message}. Re-run \`npx @artanis-ai/gravel migrate\`.`)
+  // ── Step 2 of 3 — Prompts ──
+  let promptsRan = false
+  let installedHook = null as { mode: string; path?: string } | null
+  if (wantPromptsResolved !== false) {
+    stepHeader(2, 3, 'Prompts')
+    say(
+      `Now I'll scan your repo for prompt files (${c.bold('.md')} / ${c.bold('.txt')} ` +
+        `under ${c.bold('prompts/')}, ${c.bold('templates/')}, etc.) and write a manifest. ` +
+        `Your team edits these from the dashboard; nothing is sent anywhere — no DB needed.`,
+    )
+    const wantPrompts =
+      wantPromptsResolved === true ? true : await ask('Continue?', true)
+    if (!wantPrompts) {
+      bullet('Skipped. Run `gravel init --prompts` later.', 'skip')
+    } else {
+      const manifest = await runScanAndVerify(cwd, ask, askInteractiveText(interactive))
+      if (manifest) {
+        promptsRan = true
+        if (detection.hasGit && opts.noHook !== true && !state.hookInstalled) {
+          say('')
+          say(
+            `Optional: install a pre-commit hook so the manifest stays in sync ` +
+              `with your repo (so when you change a prompt file, the manifest ` +
+              `updates automatically).`,
+          )
+          const wantHook = await ask('Install the hook?', true)
+          if (wantHook) {
+            const sp = spinner('Installing pre-commit hook…')
+            try {
+              const result = await installHook(cwd)
+              installedHook = { mode: result.mode, path: result.path }
+              sp.stop(`Hook installed (${result.mode})`)
+            } catch (e) {
+              sp.fail(`Hook install failed: ${(e as Error).message}`)
+            }
+          }
+        } else if (state.hookInstalled) {
+          bullet('Pre-commit hook already installed', 'skip')
         }
-      } else {
-        blockers.push(
-          'Schema migration skipped — run `npx @artanis-ai/gravel migrate` before starting your app.',
+        say('')
+        say(
+          `Open the ${c.bold('Prompts')} tab in the dashboard and try editing one. ` +
+            `Drafts pile up locally — to actually open a PR you'll need the ` +
+            `Gravel GitHub App, but the dashboard walks you through that when you ` +
+            `click ${c.bold('Submit changes')}.`,
         )
-      }
-    }
-
-    // If the dashboard mount ran above with `withTracingDeps: false` (because
-    // we didn't yet know they wanted traces — e.g. mount was earlier or
-    // failed), run the tracing hooks now. Idempotent.
-    if (
-      detection.framework.startsWith('next-') &&
-      opts.noInstrumentation !== true &&
-      !state.instrumentationExists
-    ) {
-      const sp5 = spinner('Installing instrumentation.ts + next.config externals…')
-      try {
-        await installNextTracingHooks(cwd, {
-          srcLayout: detection.nextAppDir === 'src/app',
-        })
-        sp5.stop('Tracing hooks installed')
-      } catch (e) {
-        sp5.fail(`Tracing hook install failed: ${(e as Error).message}`)
-        blockers.push(`Could not install instrumentation.ts: ${(e as Error).message}`)
+        await pause()
       }
     }
   }
 
-  // ── Step 8 — deep scan still pending (placeholder). ──
-  if (wantPrompts && !opts.noDeepScan) {
-    blockers.push(
-      'LLM-assisted deep scan not implemented yet (the regex fast-scan ran above). When available, run `npx @artanis-ai/gravel scan --deep` to catch dynamically-built prompts.',
+  // ── Step 3 of 3 — Traces ──
+  let ranBootstrap = false
+  let tracesAttempted = false
+  if (wantTracesResolved !== false) {
+    stepHeader(3, 3, 'Traces')
+    say(
+      `Last step: capture every LLM call your app makes. I'll add ${c.bold('two tables')} to ` +
+        `your database (gravel_samples, gravel_feedback) and turn on auto-tracing for ` +
+        `OpenAI, Anthropic, LangChain, Vercel AI, and raw fetch. Your team will see ` +
+        `the calls in the ${c.bold('Outputs')} tab.`,
     )
+    const wantTraces =
+      wantTracesResolved === true ? true : await ask('Continue?', true)
+    if (!wantTraces) {
+      bullet('Skipped. Run `gravel init --traces` later.', 'skip')
+    } else {
+      tracesAttempted = true
+      if (opts.noMigrate === true) {
+        bullet('Schema bootstrap skipped (--no-migrate)', 'skip')
+        // Still install the tracing hooks if Next.
+        await maybeInstallTracingHooks(detection, cwd, opts, state)
+      } else {
+        const proceed = await runTracesPillar(cwd, ask, detection, opts, state)
+        if (proceed.ranBootstrap) ranBootstrap = true
+        if (proceed.skipped) {
+          bullet(proceed.skipped, 'skip')
+        }
+      }
+    }
   }
 
-  void opts.noTestTrace
-
-  // ── Next-steps panel ──
-  const nextSteps: string[] = []
-  if (initialScan) {
-    nextSteps.push(`${c.dim('●')} ${c.bold(String(initialScan.promptCount))} prompt(s) in manifest (+${initialScan.added} new)`)
-  }
-  nextSteps.push(`${c.brand('1.')} Open ${c.bold(mountPath)} in your app — admin password is in ${c.bold('.env.local')}`)
-  if (wantPrompts) {
-    nextSteps.push(`${c.brand('2.')} Click a prompt → edit → submit. The dashboard will walk you through installing the GitHub App.`)
-  }
-  if (wantTraces) {
-    nextSteps.push(
-      `${c.brand(wantPrompts ? '3.' : '2.')} Trigger an LLM call from your app — auto-tracing is on. Outputs tab will fill in.`,
+  // ── Closing summary ──
+  say('')
+  done('Done.')
+  bullet(
+    `Dashboard at ${c.cyan('http://localhost:3000' + mountPath)} (password in .env.local)`,
+    'ok',
+  )
+  if (promptsRan) {
+    const m = await readManifestSafe(cwd)
+    bullet(
+      `Prompts: ${m?.prompts.length ?? 0} in manifest${installedHook ? ', hook installed' : ''}`,
+      'ok',
     )
+  } else if (wantPromptsResolved === false) {
+    bullet('Prompts: skipped (re-run with `gravel init --prompts`)', 'skip')
   }
-  nextSteps.push(`${c.brand('•')} Docs: ${c.cyan('https://gravel.artanis.ai/docs')}`)
-  panel('Next steps', nextSteps)
-
-  if (blockers.length > 0) {
-    failure(`${blockers.length} item(s) need follow-up:`)
-    for (const b of blockers) note(`• ${b}`)
+  if (ranBootstrap) {
+    bullet('Traces: tables created, auto-tracing wired up', 'ok')
+  } else if (wantTracesResolved === false) {
+    bullet('Traces: skipped (re-run with `gravel init --traces`)', 'skip')
   }
-  done('Gravel skeleton installed.')
+  say('')
+  say(`Docs: ${c.cyan('https://gravel.artanis.ai/docs')}`)
 
-  return {
+  return summary({
     detection,
-    installedSdk: false,
-    wroteConfig: true,
+    password,
     mountedRoute,
     ranBootstrap,
     installedHook,
-    passwordGenerated: password,
     controlPlane,
     blockers,
     projectId,
     apiKey,
     authMode,
-    pillars: { dashboard: true, prompts: wantPrompts, traces: wantTraces },
+    pillars: { dashboard: dashboardWritten, prompts: promptsRan, traces: tracesAttempted },
+  })
+}
+
+// ─── Pillar helpers ───────────────────────────────────────────────────────
+
+/**
+ * Mallet-style scan + verify: run the regex fast-scan, show the
+ * results, let the user confirm or trim, and offer a deeper LLM scan
+ * if the fast pass came up short or missed embedded code prompts.
+ *
+ * Returns the final manifest (already written to disk) on success,
+ * null if the user bailed.
+ */
+async function runScanAndVerify(
+  cwd: string,
+  ask: (q: string, defaultYes?: boolean) => Promise<boolean>,
+  askTextFn: (q: string, def?: string) => Promise<string>,
+): Promise<Manifest | null> {
+  const sp = spinner('Scanning repo for prompts…')
+  let manifest: Manifest
+  let added: number
+  try {
+    const current = await readManifest(cwd)
+    const result = await fastScan(cwd, current)
+    manifest = result.manifest
+    added = result.added
+    sp.stop(`Found ${manifest.prompts.length} prompt(s) (+${added} new)`)
+  } catch (e) {
+    sp.fail(`Scan failed: ${(e as Error).message}`)
+    return null
+  }
+
+  // Show what we found.
+  if (manifest.prompts.length === 0) {
+    say('')
+    say(
+      `I didn't find any ${c.bold('.md')} / ${c.bold('.txt')} prompts in conventional ` +
+        `directories. They might be embedded in code as string literals — that needs ` +
+        `the deeper LLM-assisted scan (see ${c.bold('gravel scan --deep')} when implemented). ` +
+        `For now you can also commit a prompt file (e.g. ${c.bold('prompts/system.md')}) and ` +
+        `re-run.`,
+    )
+    await writeManifest(cwd, manifest)
+    return manifest
+  }
+
+  say('')
+  say(`Here's what I found:`)
+  for (let i = 0; i < manifest.prompts.length; i++) {
+    const p = manifest.prompts[i]!
+    bullet(`${i + 1}. ${formatPromptEntry(p)}`, 'plain')
+  }
+  say('')
+  const looksRight = await ask('Look right?', true)
+  if (!looksRight) {
+    say('')
+    say(
+      `Tell me which to drop (comma-separated numbers, or ${c.bold('all')} to clear). ` +
+        `Press Enter to keep them all.`,
+    )
+    const answer = await askTextFn('Drop:', '')
+    if (answer.trim().length > 0) {
+      const trimmed = applyDrop(manifest.prompts, answer)
+      manifest = { ...manifest, prompts: trimmed.kept }
+      if (trimmed.dropped.length > 0) {
+        bullet(`Dropped ${trimmed.dropped.length} entry(ies)`, 'ok')
+      }
+    }
+  }
+
+  // Offer the deeper scan as a hint-only opt-in (the LLM-assisted path
+  // isn't implemented yet — see CLI's `gravel scan --deep`). The
+  // question still surfaces because users with code-embedded prompts
+  // will want to know it exists.
+  say('')
+  say(
+    `If your prompts are embedded in code (string literals, template ` +
+      `strings), the regex scan above won't catch them. A deeper LLM-assisted ` +
+      `scan can — runs locally with your own LLM key, code never leaves your ` +
+      `machine.`,
+  )
+  const wantDeep = await ask('Run a deeper scan now?', false)
+  if (wantDeep) {
+    bullet(
+      `${c.bold('gravel scan --deep')} isn't implemented yet — coming soon. Run it once available.`,
+      'warn',
+    )
+  } else {
+    note(`(Run ${c.bold('npx @artanis-ai/gravel scan --deep')} later if you change your mind.)`)
+  }
+
+  await writeManifest(cwd, manifest)
+  bullet(
+    `Manifest written: ${manifest.prompts.length} prompt(s) (.artanis/manifest.json)`,
+    'ok',
+  )
+  return manifest
+}
+
+function applyDrop(
+  prompts: ManifestPrompt[],
+  answer: string,
+): { kept: ManifestPrompt[]; dropped: ManifestPrompt[] } {
+  const trimmed = answer.trim().toLowerCase()
+  if (trimmed === 'all') {
+    return { kept: [], dropped: prompts.slice() }
+  }
+  const indices = new Set<number>()
+  for (const part of trimmed.split(/[,\s]+/).filter(Boolean)) {
+    const n = Number.parseInt(part, 10)
+    if (Number.isFinite(n) && n >= 1 && n <= prompts.length) {
+      indices.add(n - 1)
+    }
+  }
+  const kept: ManifestPrompt[] = []
+  const dropped: ManifestPrompt[] = []
+  prompts.forEach((p, i) => (indices.has(i) ? dropped.push(p) : kept.push(p)))
+  return { kept, dropped }
+}
+
+function formatPromptEntry(p: ManifestPrompt): string {
+  if (p.type === 'embedded') {
+    const tag = p.varName ? ` ${c.dim('(' + p.varName + ')')}` : ''
+    return `${c.bold(p.path)}${tag} ${c.dim(`@ L${p.lineStart}`)}`
+  }
+  return c.bold(p.path)
+}
+
+/**
+ * Runs the Traces pillar: probe the DB, decide whether to bootstrap,
+ * install Next.js tracing hooks. Returns whether bootstrap actually
+ * ran and (optionally) a "skipped because X" reason for the summary.
+ */
+async function runTracesPillar(
+  cwd: string,
+  ask: (q: string, defaultYes?: boolean) => Promise<boolean>,
+  detection: Awaited<ReturnType<typeof detect>>,
+  opts: WizardOptions,
+  state: InspectedState,
+): Promise<{ ranBootstrap: boolean; skipped?: string }> {
+  // Pre-flight the DB so we don't ask "create tables?" then fail.
+  const sp = spinner('Checking DATABASE_URL…')
+  const probe = await probeDatabase(cwd)
+  let ranBootstrap = false
+  if (probe.kind === 'no-url') {
+    sp.fail('No DATABASE_URL detected in .env / .env.local')
+    say('')
+    say(
+      `Set ${c.bold('DATABASE_URL')} in ${c.bold('.env.local')} and re-run ` +
+        `${c.bold('gravel init --traces')} when you're ready. The dashboard's ` +
+        `Outputs tab will keep nudging you until tables exist.`,
+    )
+    return { ranBootstrap: false, skipped: 'No DATABASE_URL — fix .env.local and run `gravel init --traces`.' }
+  }
+  if (probe.kind === 'placeholder') {
+    sp.fail(`DATABASE_URL still has placeholder credentials`)
+    note(`  ${probe.url}`)
+    say('')
+    say(
+      `That URL looks like a tutorial default. Swap in real credentials in ` +
+        `${c.bold('.env.local')} and re-run ${c.bold('gravel init --traces')}.`,
+    )
+    return { ranBootstrap: false, skipped: 'DATABASE_URL has placeholder credentials.' }
+  }
+  if (probe.kind === 'connect-failed') {
+    const headline =
+      probe.reason === 'auth'
+        ? `Couldn't connect: ${probe.message.trim()}`
+        : probe.reason === 'host'
+          ? `Couldn't reach the database: ${probe.message.trim()}`
+          : `Couldn't connect: ${probe.message.trim()}`
+    sp.fail(headline)
+    say('')
+    if (probe.reason === 'auth') {
+      say(`Looks like a credentials problem. Fix ${c.bold('.env.local')} and re-run.`)
+    } else if (probe.reason === 'host') {
+      say(`Is the database reachable? Try ${c.bold('psql "$DATABASE_URL"')} from your shell.`)
+    }
+    const skipNow = await ask('Skip Traces for now and continue?', true)
+    if (skipNow) {
+      return {
+        ranBootstrap: false,
+        skipped: `DB unreachable — fix and re-run \`gravel init --traces\`.`,
+      }
+    }
+    return { ranBootstrap: false, skipped: 'DB unreachable.' }
+  }
+
+  sp.stop(`Connected to ${probe.dialect} OK`)
+  // Already-bootstrapped detection: skip the create-tables question
+  // entirely if both tables already exist.
+  if (await tablesAlreadyExist(probe.url, probe.dialect)) {
+    bullet('gravel_* tables already exist. Skipping CREATE.', 'skip')
+  } else {
+    const wantMigrate = await ask(
+      `Create the two gravel_* tables now? ${c.dim('(idempotent CREATE TABLE IF NOT EXISTS)')}`,
+      true,
+    )
+    if (wantMigrate) {
+      const sp2 = spinner('Bootstrapping schema…')
+      try {
+        await runBootstrap(cwd)
+        ranBootstrap = true
+        sp2.stop('Two gravel_* tables ready')
+      } catch (e) {
+        sp2.fail(`Bootstrap failed: ${(e as Error).message}`)
+        return {
+          ranBootstrap: false,
+          skipped: `Bootstrap failed (${(e as Error).message}). Re-run with \`gravel migrate\`.`,
+        }
+      }
+    } else {
+      return {
+        ranBootstrap: false,
+        skipped: 'Tables not created — run `gravel migrate` later.',
+      }
+    }
+  }
+
+  await maybeInstallTracingHooks(detection, cwd, opts, state)
+  say('')
+  say(
+    `Trigger an LLM call from your app — auto-tracing's on, so the call ` +
+      `lands in the ${c.bold('Outputs')} tab as soon as it completes.`,
+  )
+  return { ranBootstrap }
+}
+
+async function maybeInstallTracingHooks(
+  detection: Awaited<ReturnType<typeof detect>>,
+  cwd: string,
+  opts: WizardOptions,
+  state: InspectedState,
+): Promise<void> {
+  if (!detection.framework.startsWith('next-')) return
+  if (opts.noInstrumentation === true) return
+  if (state.instrumentationExists) {
+    bullet('instrumentation.ts already present', 'skip')
+    return
+  }
+  const sp = spinner('Wiring instrumentation.ts + next.config externals…')
+  try {
+    await installNextTracingHooks(cwd, {
+      srcLayout: detection.nextAppDir === 'src/app',
+    })
+    sp.stop('Tracing hooks installed')
+  } catch (e) {
+    sp.fail(`Tracing hook install failed: ${(e as Error).message}`)
   }
 }
+
+async function tablesAlreadyExist(url: string, dialect: 'postgres' | 'sqlite'): Promise<boolean> {
+  try {
+    const { openDatabase, gravelTablesExist } = await import('../db/index.js')
+    const db = await openDatabase({ url })
+    try {
+      return await gravelTablesExist(db)
+    } finally {
+      await db.close()
+    }
+  } catch {
+    return false
+  }
+}
+
+async function readManifestSafe(cwd: string): Promise<Manifest | null> {
+  try {
+    return await readManifest(cwd)
+  } catch {
+    return null
+  }
+}
+
+function askInteractiveText(
+  interactive: boolean,
+): (q: string, def?: string) => Promise<string> {
+  return (q, def) => (interactive ? askText(q, { defaultValue: def }) : Promise.resolve(def ?? ''))
+}
+
+// ─── State inspection + helpers ──────────────────────────────────────────
 
 interface InspectedState {
   mountExists: boolean
   manifestExists: boolean
   promptCount: number
   hookInstalled: boolean
-  /**
-   * Best-effort: we can't probe the user's DB during `init` (no
-   * connection on a dry run, may not be reachable in CI), so this is a
-   * proxy — DATABASE_URL is set AND the user previously ran the wizard.
-   */
-  tablesLikelyExist: boolean
+  envHasPassword: boolean
   instrumentationExists: boolean
 }
 
@@ -431,6 +670,13 @@ async function inspectState(
       return false
     }
   }
+  const readText = async (rel: string): Promise<string | null> => {
+    try {
+      return await fs.readFile(join(cwd, rel), 'utf8')
+    } catch {
+      return null
+    }
+  }
 
   const manifestExists = await exists('.artanis/manifest.json')
   let promptCount = 0
@@ -440,7 +686,7 @@ async function inspectState(
       const parsed = JSON.parse(raw) as { prompts?: unknown[] }
       promptCount = Array.isArray(parsed.prompts) ? parsed.prompts.length : 0
     } catch {
-      /* ignore — manifest is malformed; treat as empty */
+      /* malformed → treat as empty */
     }
   }
 
@@ -457,17 +703,68 @@ async function inspectState(
   const hookInstalled = await exists('.git/hooks/pre-commit')
   const instrumentationExists =
     (await exists('instrumentation.ts')) || (await exists('src/instrumentation.ts'))
-  const tablesLikelyExist = Boolean(detection.database.envVar) && manifestExists
+  const envFiles = await Promise.all(['.env.local', '.env'].map(readText))
+  const envBody = envFiles.filter(Boolean).join('\n')
+  const envHasPassword = /GRAVEL_ADMIN_PASSWORD=/.test(envBody)
 
   return {
     mountExists,
     manifestExists,
     promptCount,
     hookInstalled,
-    tablesLikelyExist,
+    envHasPassword,
     instrumentationExists,
   }
 }
 
-void info
-void success
+function describeMount(detection: Awaited<ReturnType<typeof detect>>, mountPath: string): string {
+  if (detection.framework === 'next-app-router') {
+    const dir = detection.nextAppDir === 'src/app' ? 'src/app' : 'app'
+    return `${dir}${mountPath}/[[...slug]]/route.ts`
+  }
+  if (detection.framework === 'next-pages-router') {
+    return `pages${mountPath}/[[...slug]].ts`
+  }
+  if (detection.framework === 'fastapi') return 'gravel_route.py'
+  return 'mount file'
+}
+
+function mountFilePath(detection: Awaited<ReturnType<typeof detect>>): string {
+  if (detection.framework === 'next-app-router') {
+    const dir = detection.nextAppDir === 'src/app' ? 'src/app' : 'app'
+    return `${dir}/admin/ai/[[...slug]]/route.ts`
+  }
+  if (detection.framework === 'next-pages-router') return 'pages/admin/ai/[[...slug]].ts'
+  if (detection.framework === 'fastapi') return 'gravel_route.py'
+  return 'mount file'
+}
+
+function summary(args: {
+  detection: Awaited<ReturnType<typeof detect>>
+  password: string | null
+  mountedRoute: WizardSummary['mountedRoute']
+  ranBootstrap: boolean
+  installedHook: WizardSummary['installedHook']
+  controlPlane: string
+  blockers: string[]
+  projectId: string | null
+  apiKey: string | null
+  authMode: WizardAuthMode
+  pillars: WizardSummary['pillars']
+}): WizardSummary {
+  return {
+    detection: args.detection,
+    installedSdk: false,
+    wroteConfig: args.pillars.dashboard,
+    mountedRoute: args.mountedRoute,
+    ranBootstrap: args.ranBootstrap,
+    installedHook: args.installedHook,
+    passwordGenerated: args.password,
+    controlPlane: args.controlPlane,
+    blockers: args.blockers,
+    projectId: args.projectId,
+    apiKey: args.apiKey,
+    authMode: args.authMode,
+    pillars: args.pillars,
+  }
+}
