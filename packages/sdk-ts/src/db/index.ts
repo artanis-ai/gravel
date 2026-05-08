@@ -26,7 +26,8 @@ export interface Database {
  * which need to handle "user hasn't run `gravel init --traces` yet"
  * gracefully.
  */
-export async function gravelTablesExist(db: Database): Promise<boolean> {
+export async function gravelTablesExist(db: Database | null): Promise<boolean> {
+  if (!db) return false
   try {
     const { sql } = await import('drizzle-orm')
     if (db.dialect === 'postgres') {

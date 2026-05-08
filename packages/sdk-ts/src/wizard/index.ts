@@ -202,9 +202,12 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
   let dashboardWritten = false
   let mountedRoute = null as Awaited<ReturnType<typeof mountDashboardRoute>>
   let password: string | null = null
+  // Where the admin password actually lives. For re-runs we already
+  // know from inspectState; for fresh writes writeEnvAdditions tells us.
+  let envFile: EnvFile = state.envFileWithPassword ?? '.env.local'
   if (state.mountExists && state.envHasPassword) {
     bullet(`Already wired up at ${c.bold(mountPath)}. Skipping.`, 'skip')
-    note(`(Re-run with a clean .env.local + ${mountFilePath(detection)} removed if you want to start over.)`)
+    note(`(Re-run with a clean ${envFile} + ${mountFilePath(detection)} removed if you want to start over.)`)
     say('')
     dashboardWritten = true
   } else {
@@ -224,7 +227,8 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
     const envVars: Record<string, string> = { GRAVEL_ADMIN_PASSWORD: password }
     if (projectId) envVars.GRAVEL_PROJECT_ID = projectId
     if (apiKey) envVars.GRAVEL_API_KEY = apiKey
-    await writeEnvAdditions(cwd, envVars)
+    const envWrite = await writeEnvAdditions(cwd, envVars)
+    envFile = envWrite.file
     const sp = spinner('Mounting dashboard…')
     try {
       mountedRoute = await mountDashboardRoute(detection, cwd, mountPath, {
@@ -234,7 +238,7 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
       })
       await generateConfigFile(detection, cwd, { mountPath })
       sp.stop(`Wrote ${describeMount(detection, mountPath)} + gravel.config.ts`)
-      bullet(`Admin password saved to .env.local`, 'ok')
+      bullet(`Admin password saved to ${envFile}`, 'ok')
       dashboardWritten = true
     } catch (e) {
       sp.fail(`Mount failed: ${(e as Error).message}`)
@@ -246,7 +250,7 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
     say('')
     say(
       `When your dev server's running, open ${c.cyan('http://localhost:3000' + mountPath)} ` +
-        `and log in with the password from ${c.bold('.env.local')}.`,
+        `and log in with the password from ${c.bold(envFile)}.`,
     )
     await pause('Press Enter once you can see the dashboard (or Enter to skip ahead)')
   }
@@ -342,7 +346,7 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
   say('')
   done('Done.')
   bullet(
-    `Dashboard at ${c.cyan('http://localhost:3000' + mountPath)} (password in .env.local)`,
+    `Dashboard at ${c.cyan('http://localhost:3000' + mountPath)} (password in ${envFile})`,
     'ok',
   )
   if (promptsRan) {
@@ -913,12 +917,15 @@ function askInteractiveText(
 
 // ─── State inspection + helpers ──────────────────────────────────────────
 
+type EnvFile = '.env.local' | '.env'
+
 interface InspectedState {
   mountExists: boolean
   manifestExists: boolean
   promptCount: number
   hookInstalled: boolean
   envHasPassword: boolean
+  envFileWithPassword: EnvFile | null
   instrumentationExists: boolean
 }
 
@@ -967,16 +974,26 @@ async function inspectState(
   const hookInstalled = await exists('.git/hooks/pre-commit')
   const instrumentationExists =
     (await exists('instrumentation.ts')) || (await exists('src/instrumentation.ts'))
-  const envFiles = await Promise.all(['.env.local', '.env'].map(readText))
-  const envBody = envFiles.filter(Boolean).join('\n')
-  const envHasPassword = /GRAVEL_ADMIN_PASSWORD=/.test(envBody)
+  // Find which env file (if any) holds the existing admin password,
+  // so re-runs can refer to the actual file the user touches rather
+  // than always assuming .env.local. Order matches writeEnvAdditions's
+  // preference: .env.local first, then .env.
+  const envLocal = await readText('.env.local')
+  const envPlain = await readText('.env')
+  const envFileWithPassword: '.env.local' | '.env' | null =
+    envLocal && /GRAVEL_ADMIN_PASSWORD=/.test(envLocal)
+      ? '.env.local'
+      : envPlain && /GRAVEL_ADMIN_PASSWORD=/.test(envPlain)
+        ? '.env'
+        : null
 
   return {
     mountExists,
     manifestExists,
     promptCount,
     hookInstalled,
-    envHasPassword,
+    envHasPassword: envFileWithPassword !== null,
+    envFileWithPassword,
     instrumentationExists,
   }
 }

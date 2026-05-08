@@ -26,7 +26,13 @@ import { getVersionInfo } from './version.js'
 
 interface RouteCtx {
   config: ResolvedGravelConfig
-  db: Database
+  /**
+   * Null when the customer hasn't wired DATABASE_URL (prompts-only
+   * install). Routes that need it must handle null and degrade
+   * gracefully — see /api/samples + /api/onboarding/status for the
+   * pattern.
+   */
+  db: Database | null
   request: Request
   grRequest: GravelRequest
   path: string
@@ -386,7 +392,17 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
     // Pre-check tables. The dashboard's OnboardingCard handles the
     // empty-tracing case; bouncing here keeps the SQL layer from
     // throwing "relation does not exist" on installs that took
-    // prompts-only.
+    // prompts-only — and from crashing entirely when no DATABASE_URL
+    // is configured (db === null).
+    if (!db) {
+      return json({
+        samples: [],
+        total: 0,
+        page: 1,
+        page_size: 20,
+        _onboarding: { tablesExist: false, dbConfigured: false },
+      })
+    }
     const { gravelTablesExist } = await import('../db/index.js')
     if (!(await gravelTablesExist(db))) {
       return json({
@@ -394,7 +410,7 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
         total: 0,
         page: 1,
         page_size: 20,
-        _onboarding: { tablesExist: false },
+        _onboarding: { tablesExist: false, dbConfigured: true },
       })
     }
     const { listSamples } = await import('../samples/query.js')
@@ -418,6 +434,7 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
   },
   'GET /api/samples/:id': async ({ request, db }) => {
     const sampleId = new URL(request.url).pathname.split('/').pop()!
+    if (!db) return json({ error: 'tables-missing' }, 404)
     const { gravelTablesExist } = await import('../db/index.js')
     if (!(await gravelTablesExist(db))) return json({ error: 'tables-missing' }, 404)
     const { getSampleDetail } = await import('../samples/query.js')
@@ -454,10 +471,12 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
       /* no hook */
     }
 
-    // Tables.
+    // Tables. `db` is null when no DATABASE_URL is configured (the
+    // prompts-only install path); gravelTablesExist handles that, but
+    // the count queries below need a non-null db.
     const { gravelTablesExist } = await import('../db/index.js')
     status.traces.tablesExist = await gravelTablesExist(db)
-    if (status.traces.tablesExist) {
+    if (status.traces.tablesExist && db) {
       try {
         const { sql } = await import('drizzle-orm')
         if (db.dialect === 'postgres') {
@@ -502,6 +521,7 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
 
   'POST /api/samples/:id/feedback': async ({ request, db, authed }) => {
     if (!authed) return json({ error: 'unauthorized' }, 401)
+    if (!db) return json({ error: 'tables-missing' }, 503)
     const sampleId = new URL(request.url).pathname.split('/').slice(-2, -1)[0]!
     let body: { score?: unknown; comment?: unknown; correction?: unknown }
     try {

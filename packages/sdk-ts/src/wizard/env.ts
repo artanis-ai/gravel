@@ -15,11 +15,24 @@ export function generatePassword(): string {
   return out
 }
 
-export async function writeEnvAdditions(cwd: string, vars: Record<string, string>): Promise<void> {
-  // Prefer .env.local (Next convention) if present, else .env
+/**
+ * Append Gravel env vars to whatever env file the project already
+ * uses, never clobbering existing keys. Returns the basename of the
+ * file we wrote to (`.env.local` or `.env`), which the wizard surfaces
+ * back to the user — saying "saved to .env.local" was wrong when the
+ * project only had a `.env` and we appended there.
+ */
+export async function writeEnvAdditions(
+  cwd: string,
+  vars: Record<string, string>,
+): Promise<{ file: '.env.local' | '.env' }> {
+  // Prefer .env.local (Next convention) if present, else .env. Default
+  // for fresh projects is .env.local since that's what the typical
+  // Next.js / Vite install expects.
   const localPath = join(cwd, '.env.local')
   const fallback = join(cwd, '.env')
   let target = localPath
+  let basename: '.env.local' | '.env' = '.env.local'
   let existing = ''
   try {
     existing = await fs.readFile(localPath, 'utf8')
@@ -27,8 +40,10 @@ export async function writeEnvAdditions(cwd: string, vars: Record<string, string
     try {
       existing = await fs.readFile(fallback, 'utf8')
       target = fallback
+      basename = '.env'
     } catch {
       target = localPath
+      basename = '.env.local'
     }
   }
 
@@ -42,4 +57,5 @@ export async function writeEnvAdditions(cwd: string, vars: Record<string, string
     const sep = existing.endsWith('\n') ? '' : existing.length > 0 ? '\n' : ''
     await fs.writeFile(target, existing + sep + lines.join('\n') + '\n')
   }
+  return { file: basename }
 }

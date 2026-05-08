@@ -19,11 +19,35 @@ export interface CreateHandlerOpts {
 
 let cachedDb: Database | null = null
 let cachedConfig: ResolvedGravelConfig | null = null
+let dbOpenAttempted = false
+let dbOpenError: Error | null = null
 
-async function ensureDb(config: ResolvedGravelConfig): Promise<Database> {
+/**
+ * Lazily open the customer's DB. Returns null when no DATABASE_URL is
+ * set OR when the configured URL fails to open. This is by design:
+ * customers who installed only the Prompts pillar (no traces) will
+ * have no DB, and every request would otherwise 500 in `openDatabase`
+ * before even reaching its route handler. Routes that need the DB
+ * check for null and degrade gracefully (Outputs renders an empty
+ * "set up traces" state, etc.).
+ */
+async function ensureDb(config: ResolvedGravelConfig): Promise<Database | null> {
   if (cachedDb) return cachedDb
-  cachedDb = await openDatabase(config.database)
-  return cachedDb
+  if (dbOpenAttempted) return null
+  dbOpenAttempted = true
+  if (!config.database?.url) return null
+  try {
+    cachedDb = await openDatabase(config.database)
+    return cachedDb
+  } catch (e) {
+    dbOpenError = e as Error
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[gravel] could not open DB (${dbOpenError.message}). Outputs/feedback ` +
+        `routes will report unavailable until DATABASE_URL is reachable.`,
+    )
+    return null
+  }
 }
 
 /**
