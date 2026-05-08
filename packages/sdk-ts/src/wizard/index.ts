@@ -15,7 +15,10 @@
  *                                  generic frameworks print copy-paste instructions
  *   - Step 6 (schema migrate):   ✓ uses src/db/bootstrap.ts (idempotent CREATE TABLE)
  *   - Step 7 (pre-commit hook):  ✓ implemented via src/manifest/hook.ts
- *   - Step 8 (deep scan):        BLOCKER — deferred until LLM-shellout helpers exist
+ *   - Step 7.5 (initial scan):   ✓ regex fast-scan (no LLM); seeds the
+ *                                  manifest so the dashboard shows the
+ *                                  dev's existing prompts on first sign-in.
+ *   - Step 8 (deep scan):        BLOCKER — LLM-assisted variant deferred
  *   - Step 9 (test trace):       BLOCKER — deferred until v1 tracing patches exist
  *   - Step 10 (next-steps):      ✓ implemented
  *
@@ -27,6 +30,8 @@ import { mountDashboardRoute } from './mount.js'
 import { writeEnvAdditions, generatePassword } from './env.js'
 import { runBootstrap } from './migrate.js'
 import { installHook } from '../manifest/hook.js'
+import { fastScan } from '../manifest/scan.js'
+import { readManifest, writeManifest } from '../manifest/io.js'
 import { resolveControlPlaneUrl } from './oauth.js'
 import { confirm } from './prompt.js'
 
@@ -41,6 +46,7 @@ export interface WizardOptions {
   noMigrate?: boolean
   noHook?: boolean
   noInstrumentation?: boolean
+  noScan?: boolean
   noDeepScan?: boolean
   noTestTrace?: boolean
   /** Skip interactive prompts even on a TTY — assume yes for everything. */
@@ -197,10 +203,26 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
     }
   }
 
-  // Step 8 — BLOCKER
+  // Step 7.5 — initial manifest scan. Regex-based; no LLM required.
+  // Same code path as `gravel manifest --update`; running it here means
+  // the dashboard shows the dev's existing prompts the moment they
+  // first sign in, instead of an empty list with CLI advice.
+  let initialScan: { promptCount: number; added: number } | null = null
+  if (!opts.noScan) {
+    try {
+      const current = await readManifest(cwd)
+      const result = await fastScan(cwd, current)
+      await writeManifest(cwd, result.manifest)
+      initialScan = { promptCount: result.manifest.prompts.length, added: result.added }
+    } catch (e) {
+      blockers.push(`Initial manifest scan failed: ${(e as Error).message}. Run \`npx @artanis-ai/gravel manifest --update\` once resolved.`)
+    }
+  }
+
+  // Step 8 — deep (LLM-assisted) scan: BLOCKER until shellout helpers exist.
   if (!opts.noDeepScan) {
     blockers.push(
-      'Deep prompt scan not implemented yet. Run `npx @artanis-ai/gravel scan --deep` later when available.',
+      'LLM-assisted deep scan not implemented yet (the regex fast-scan ran above). When available, run `npx @artanis-ai/gravel scan --deep` to catch dynamically-built prompts.',
     )
   }
 
@@ -214,6 +236,9 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
   // Step 10
   log('')
   log('Gravel skeleton installed. Next:')
+  if (initialScan) {
+    log(`  Manifest: ${initialScan.promptCount} prompt(s) detected (+${initialScan.added} new).`)
+  }
   log(`  1. Visit ${opts.mountPath ?? '/admin/ai'} in your app and log in (admin password is in your .env).`)
   log(`  2. Install the Gravel GitHub App on the repo where prompt PRs should land:`)
   log(`     https://github.com/apps/gravel-bot/installations/new`)

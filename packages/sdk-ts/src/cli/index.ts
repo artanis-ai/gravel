@@ -41,7 +41,8 @@ Init flags:
   --no-migrate               Skip running migrations.
   --no-hook                  Skip pre-commit hook installation.
   --no-instrumentation       Skip writing/patching Next.js instrumentation.ts.
-  --no-deep-scan             Skip deep scan (also skipped while not implemented).
+  --no-scan                  Skip the initial regex prompt scan (manifest stays empty until you run 'gravel manifest --update').
+  --no-deep-scan             Skip the LLM-assisted deep scan (also skipped while not implemented).
   --no-test-trace            Skip test trace.
 
 Docs: https://gravel.artanis.ai/docs
@@ -86,6 +87,7 @@ async function main(): Promise<void> {
         noMigrate: !!flags['no-migrate'],
         noHook: !!flags['no-hook'],
         noInstrumentation: !!flags['no-instrumentation'],
+        noScan: !!flags['no-scan'],
         noDeepScan: !!flags['no-deep-scan'],
         noTestTrace: !!flags['no-test-trace'],
       })
