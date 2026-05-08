@@ -18,7 +18,6 @@
  *     llm/function/span — see schema + spec §3).
  */
 import { randomUUID } from 'node:crypto'
-import { eq } from 'drizzle-orm'
 import type { ResolvedGravelConfig } from '../types.js'
 import { openDatabase, type Database } from '../db/index.js'
 import { gravelContext } from './context.js'
