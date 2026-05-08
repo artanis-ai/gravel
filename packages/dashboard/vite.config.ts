@@ -1,6 +1,7 @@
 /// <reference types="vitest" />
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { gravelDevHandler } from './src/dev/in-process-handler.js'
 
 /**
  * Two build targets share this config:
@@ -11,19 +12,23 @@ import react from '@vitejs/plugin-react'
  *      `_assets/<id>` route. `base: './'` keeps asset URLs relative so
  *      the SDK can rewrite them under any `mountPath`.
  *
- *   2. `vite` / `pnpm dev` — standalone HMR dev server on :5173 for
- *      iterating on the dashboard UI. API calls + the mount-path
- *      window global are proxied/stubbed so the SPA talks to a real
- *      gravel handler running in a host fixture (default port 3000)
- *      without a full SDK + Next rebuild loop. Override the host port
- *      via `GRAVEL_DEV_HOST_PORT=3001`. See packages/dashboard/README
- *      for the full workflow.
+ *   2. `vite` / `pnpm dev` — standalone HMR dev server on :5173. The
+ *      `gravelDevHandler` plugin mounts the SDK handler in-process
+ *      via Vite middleware, so every `/admin/ai/api/*` request hits
+ *      real SDK code without a separate Next/Express fixture
+ *      running. Full HMR for the SPA, zero infra to start. Set
+ *      `GRAVEL_DEV_DATABASE_URL=file:./gravel.dev.db` to enable
+ *      traces; default is prompts-only.
  */
-const HOST_PORT = process.env.GRAVEL_DEV_HOST_PORT ?? '3000'
 const MOUNT_PATH = process.env.GRAVEL_DEV_MOUNT_PATH ?? '/admin/ai'
 
 export default defineConfig(({ command }) => ({
-  plugins: [react()],
+  plugins: [
+    react(),
+    // Only mount the in-process handler during `vite` / `vite serve`.
+    // For production builds the handler comes from the host app.
+    ...(command === 'serve' ? [gravelDevHandler({ mountPath: MOUNT_PATH })] : []),
+  ],
   // Build: relative URLs so the SDK can rewrite assets under any mount
   // path at request time. Dev: serve under MOUNT_PATH so assets resolve
   // correctly when the gravel handler redirects to ${mountPath}/ after
@@ -43,58 +48,9 @@ export default defineConfig(({ command }) => ({
   },
   server: {
     port: 5173,
-    // Proxy gravel API calls through to the running host fixture.
-    // Preserves session cookies (the gravel handler issues cookies
-    // scoped to the mount path; Vite forwards them transparently).
-    proxy: {
-      [`${MOUNT_PATH}/api`]: {
-        target: `http://localhost:${HOST_PORT}`,
-        changeOrigin: false,
-        ws: false,
-        // When the host fixture isn't running, the default Vite
-        // behaviour is to return an opaque 503 — the SPA shows
-        // raw "Failed to load" errors and the dev wastes 20
-        // minutes thinking the SDK is broken. Surface a clear
-        // JSON error instead, with the actual port we tried and
-        // a hint about GRAVEL_DEV_HOST_PORT.
-        configure(proxy) {
-          proxy.on('error', (err, _req, res) => {
-            // eslint-disable-next-line no-console
-            console.error(
-              `\n[gravel-dashboard] proxy → http://localhost:${HOST_PORT} failed: ${err.message}`,
-            )
-            // eslint-disable-next-line no-console
-            console.error(
-              `  Start a host fixture on port ${HOST_PORT}, or run vite with ` +
-                `GRAVEL_DEV_HOST_PORT=<your-port> to point at a different one.\n`,
-            )
-            // `res` here is a Node ServerResponse (Vite's middleware).
-            // Send a JSON 502 so fetch().then(r=>r.json()) doesn't
-            // explode in the SPA, and any onError handler upstream
-            // gets a clear shape to render.
-            const r = res as unknown as {
-              writableEnded?: boolean
-              setHeader?: (k: string, v: string) => void
-              statusCode?: number
-              end?: (body?: string) => void
-            }
-            if (r.writableEnded) return
-            r.setHeader?.('content-type', 'application/json')
-            r.statusCode = 502
-            r.end?.(
-              JSON.stringify({
-                error: 'gravel-host-unreachable',
-                port: HOST_PORT,
-                message:
-                  `The Gravel host (e.g. your Next/Express app embedding the SDK) ` +
-                  `isn't responding on port ${HOST_PORT}. Start it, or set ` +
-                  `GRAVEL_DEV_HOST_PORT=<your-port> when running vite.`,
-              }),
-            )
-          })
-        },
-      },
-    },
+    // No proxy — the gravelDevHandler plugin (above) mounts the SDK
+    // handler in-process so Vite serves the dashboard SPA AND the
+    // /api/* routes from the same Node process.
   },
   test: {
     environment: 'jsdom',
