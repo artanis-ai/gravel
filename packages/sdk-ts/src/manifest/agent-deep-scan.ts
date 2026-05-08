@@ -22,6 +22,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import { join, sep, relative } from 'node:path'
 import { generatePromptId, hashPrompt } from './hash.js'
+import { lineToCharOffset } from './offsets.js'
 import type { Manifest, ManifestPromptEmbedded } from './types.js'
 
 export type AgentName = 'claude' | 'codex'
@@ -344,9 +345,9 @@ async function enrich(
   }
   // Compute char offsets from the line range. Gravel's manifest stores
   // half-open [charStart, charEnd) into the raw file content.
-  const charStart = lineToCharOffset(text, f.lineStart - 1, /* atStart */ true)
+  const charStart = lineToCharOffset(text, f.lineStart - 1)
   if (charStart < 0) return null
-  const charEnd = lineToCharOffset(text, f.lineEnd, /* atStart */ true)
+  const charEnd = lineToCharOffset(text, f.lineEnd)
   if (charEnd <= charStart) return null
   const slice = text.slice(charStart, charEnd)
   const rel = relative(repoRoot, abs).split(sep).join('/')
@@ -363,20 +364,3 @@ async function enrich(
   }
 }
 
-/**
- * Returns the character offset of the start of line `lineIndex`
- * (0-indexed). If `atStart` is false, returns the offset just AFTER
- * the trailing newline of that line.
- */
-function lineToCharOffset(text: string, lineIndex: number, _atStart: boolean): number {
-  if (lineIndex < 0) return -1
-  let line = 0
-  let i = 0
-  while (i < text.length) {
-    if (line === lineIndex) return i
-    if (text[i] === '\n') line++
-    i++
-  }
-  if (line === lineIndex) return i
-  return -1
-}

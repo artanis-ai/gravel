@@ -32,6 +32,8 @@ import { runBootstrap } from './migrate.js'
 import { probeDatabase } from './db-test.js'
 import { installHook } from '../manifest/hook.js'
 import { fastScan } from '../manifest/scan.js'
+import { generatePromptId, hashPrompt } from '../manifest/hash.js'
+import { lineToCharOffset } from '../manifest/offsets.js'
 import { readManifest, writeManifest } from '../manifest/io.js'
 import {
   agentDeepScan,
@@ -377,12 +379,24 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
 // ─── Pillar helpers ───────────────────────────────────────────────────────
 
 /**
- * Mallet-style scan + verify: run the regex fast-scan, show the
- * results, let the user confirm or trim, and offer a deeper LLM scan
- * if the fast pass came up short or missed embedded code prompts.
+ * Mallet-style scan + verify, walked one entry at a time.
+ *
+ * Flow:
+ *   1. Run the regex fast-scan.
+ *   2. For each finding, show its content and ask "Accept?" — denied
+ *      entries are dropped before they ever land in the manifest.
+ *   3. Ask "Did I find everything?". If yes, write + done.
+ *   4. If no, loop:
+ *        [a] agent search   — delegate to claude / codex; new findings
+ *                             go through the same per-entry accept loop
+ *        [m] manual entry   — file path + optional line range, validated
+ *        [d] done           — exit the loop, write
+ *      until the user signals done. Loops as many times as needed
+ *      (`--yes` / `--non-interactive` short-circuits to "found
+ *      everything", since there's no human to drive the loop).
  *
  * Returns the final manifest (already written to disk) on success,
- * null if the user bailed.
+ * null if the user bailed before any prompts landed.
  */
 async function runScanAndVerify(
   cwd: string,
@@ -392,99 +406,75 @@ async function runScanAndVerify(
 ): Promise<Manifest | null> {
   const sp = spinner('Scanning repo for prompts…')
   let manifest: Manifest
-  let added: number
   try {
     const current = await readManifest(cwd)
     const result = await fastScan(cwd, current)
     manifest = result.manifest
-    added = result.added
-    sp.stop(`Found ${manifest.prompts.length} prompt(s) (+${added} new)`)
+    sp.stop(`Found ${manifest.prompts.length} prompt(s)`)
   } catch (e) {
     sp.fail(`Scan failed: ${(e as Error).message}`)
     return null
   }
 
-  // Show what we found, if anything.
-  if (manifest.prompts.length === 0) {
+  // Per-entry accept/deny on whatever fast-scan turned up.
+  const fastScanFindings = manifest.prompts.slice()
+  manifest = { ...manifest, prompts: [] }
+  if (fastScanFindings.length > 0) {
     say('')
-    say(
-      `I didn't find any ${c.bold('.md')} / ${c.bold('.txt')} prompts in conventional ` +
-        `directories. If your prompts live in code (string literals, template strings), ` +
-        `the deep scan below should pick them up.`,
-    )
-  } else {
-    say('')
-    say(`Here's what I found:`)
-    for (let i = 0; i < manifest.prompts.length; i++) {
-      const p = manifest.prompts[i]!
-      bullet(`${i + 1}. ${formatPromptEntry(p)}`, 'plain')
+    say(`Let me walk through each one:`)
+    for (let i = 0; i < fastScanFindings.length; i++) {
+      const p = fastScanFindings[i]!
+      const kept = await reviewPrompt(cwd, p, i + 1, fastScanFindings.length, ask)
+      if (kept) manifest.prompts.push(p)
     }
-    say('')
-    const looksRight = await ask('Look right?', true)
-    if (!looksRight) {
-      say('')
-      say(
-        `Tell me which to drop (comma-separated numbers, or ${c.bold('all')} to clear). ` +
-          `Press Enter to keep them all.`,
-      )
-      const answer = await askTextFn('Drop:', '')
-      if (answer.trim().length > 0) {
-        const trimmed = applyDrop(manifest.prompts, answer)
-        manifest = { ...manifest, prompts: trimmed.kept }
-        if (trimmed.dropped.length > 0) {
-          bullet(`Dropped ${trimmed.dropped.length} entry(ies)`, 'ok')
-        }
-      }
-    }
+    manifest.prompts.sort(byPath)
   }
 
-  // Offer the deeper scan, adapting copy to whatever local agent is
-  // actually installed. The agent uses Read/Grep/Glob to navigate the
-  // repo and emits structured findings — code never leaves the
-  // machine. If neither agent is installed, hint at the install URLs.
-  if (opts.skipDeepScan) {
-    await writeManifest(cwd, manifest)
-    return manifest
-  }
-  say('')
-  say(
-    `If your prompts are embedded in code (string literals, template ` +
-      `strings), the regex scan above won't catch them. A deeper scan can — ` +
-      `delegated to a coding agent on this machine.`,
-  )
-  const agents = detectAgents()
-  const chosen = await pickAgent(agents)
-  if (chosen) {
-    const sp = spinner(`Scanning with ${agentLabel(chosen)} (this can take a minute)…`)
-    try {
-      const result = await agentDeepScan(cwd, manifest, chosen)
-      manifest = result.manifest
-      if (result.newFindings.length > 0) {
-        sp.stop(`${agentLabel(chosen)} found ${result.newFindings.length} new prompt(s)`)
-        for (const f of result.newFindings) {
-          bullet(`+ ${formatPromptEntry(f)}`, 'plain')
-        }
-      } else {
-        sp.stop(`${agentLabel(chosen)} found nothing new`)
+  // ── "Did I find everything?" loop ──
+  // Only enter on a TTY (skipDeepScan flag for tests / --no-deep-scan
+  // / non-interactive runs). Manual entries always need a human.
+  while (!opts.skipDeepScan) {
+    say('')
+    const foundEverything = await ask(
+      manifest.prompts.length > 0
+        ? `Did I find everything?`
+        : `I haven't found any prompts. Want to add some manually or run a deeper search?`,
+      manifest.prompts.length > 0,
+    )
+    if (foundEverything) break
+
+    say('')
+    const choice = (
+      await askTextFn(
+        `What now? ${c.bold('[a]')}gent search · ${c.bold('[m]')}anual entry · ${c.bold('[d]')}one`,
+        'd',
+      )
+    )
+      .trim()
+      .toLowerCase()
+
+    if (choice.startsWith('a')) {
+      const before = manifest.prompts.length
+      manifest = (await runAgentSearchAndReview(cwd, ask, manifest)) ?? manifest
+      if (manifest.prompts.length === before) {
+        // No new entries (either agent found nothing, no agent
+        // installed, or all findings rejected). Loop again — user can
+        // try manual now or call it done.
+        continue
       }
-      if (result.errors.length > 0) {
-        for (const err of result.errors.slice(0, 3)) {
-          note(`  agent note: ${err}`)
+    } else if (choice.startsWith('m')) {
+      const entry = await addPromptInteractive(cwd, ask, askTextFn)
+      if (entry) {
+        manifest = {
+          ...manifest,
+          prompts: [...manifest.prompts, entry].sort(byPath),
         }
+        bullet(`Added ${formatPromptEntry(entry)}`, 'ok')
       }
-    } catch (e) {
-      sp.fail(`Deep scan failed: ${(e as Error).message}`)
+    } else {
+      // `d` (or anything else) — explicit done.
+      break
     }
-  } else if (!agents.claude && !agents.codex) {
-    note(
-      `(No coding agent detected. Install ${c.bold('Claude Code')} (${c.cyan('https://claude.com/code')}) ` +
-        `or ${c.bold('Codex')} (${c.cyan('https://github.com/openai/codex')}) and re-run, ` +
-        `or run ${c.bold('npx @artanis-ai/gravel scan --deep')} once you do.)`,
-    )
-  } else {
-    note(
-      `(Run ${c.bold('npx @artanis-ai/gravel scan --deep')} later if you change your mind.)`,
-    )
   }
 
   await writeManifest(cwd, manifest)
@@ -493,67 +483,239 @@ async function runScanAndVerify(
     'ok',
   )
   return manifest
+}
 
-  async function pickAgent(
-    available: { claude: boolean; codex: boolean },
-  ): Promise<AgentName | null> {
-    if (available.claude && available.codex) {
-      const useClaude = await ask(
-        `I see ${c.bold('Claude Code')} and ${c.bold('Codex')} installed. Use Claude Code? ${c.dim('(n = Codex)')}`,
-        true,
+/**
+ * Show one prompt + a content snippet, ask the user to accept/deny.
+ * Defaults to accept since false-positives from the scan are easier to
+ * skim past than a missed prompt is to recover from.
+ */
+async function reviewPrompt(
+  cwd: string,
+  p: ManifestPrompt,
+  index: number,
+  total: number,
+  ask: (q: string, defaultYes?: boolean) => Promise<boolean>,
+): Promise<boolean> {
+  say('')
+  say(`${c.brand(`(${index}/${total})`)} ${formatPromptEntry(p)}`)
+  const preview = await previewPrompt(cwd, p)
+  if (preview) note(`     ${preview}`)
+  return await ask('  Keep this one?', true)
+}
+
+async function previewPrompt(cwd: string, p: ManifestPrompt): Promise<string | null> {
+  const abs = join(cwd, ...p.path.split('/'))
+  let text: string
+  try {
+    text = await fs.readFile(abs, 'utf8')
+  } catch {
+    return null
+  }
+  const slice = p.type === 'embedded' ? text.slice(p.charStart, p.charEnd) : text
+  return c.dim('"' + truncate(slice.trim().replace(/\s+/g, ' '), 100) + '"')
+}
+
+function truncate(s: string, n: number): string {
+  return s.length <= n ? s : s.slice(0, n) + '…'
+}
+
+/**
+ * Delegate the scan to a locally-installed agent. Same picker as
+ * before, but new findings now go through `reviewPrompt` so the user
+ * can accept/deny each one before it lands in the manifest.
+ */
+async function runAgentSearchAndReview(
+  cwd: string,
+  ask: (q: string, defaultYes?: boolean) => Promise<boolean>,
+  manifest: Manifest,
+): Promise<Manifest | null> {
+  const agents = detectAgents()
+  const chosen = await pickAgent(agents, ask)
+  if (!chosen) {
+    if (!agents.claude && !agents.codex) {
+      note(
+        `(No coding agent detected. Install ${c.bold('Claude Code')} (${c.cyan('https://claude.com/code')}) ` +
+          `or ${c.bold('Codex')} (${c.cyan('https://github.com/openai/codex')}) and re-run, ` +
+          `or run ${c.bold('npx @artanis-ai/gravel scan --deep')} once you do.)`,
       )
-      return useClaude ? 'claude' : 'codex'
-    }
-    if (available.claude) {
-      // Default-no on the agent delegation: it spawns a sub-process
-      // that can take 30s+ and runs against the user's agent quota /
-      // session. Explicit consent feels right here — even on --yes.
-      const ok = await ask(
-        `I see ${c.bold('Claude Code')} installed. Delegate the scan to it?`,
-        false,
-      )
-      return ok ? 'claude' : null
-    }
-    if (available.codex) {
-      const ok = await ask(
-        `I see ${c.bold('Codex')} installed. Delegate the scan to it?`,
-        false,
-      )
-      return ok ? 'codex' : null
     }
     return null
   }
+  const label = agentLabel(chosen)
+  const sp = spinner(`Scanning with ${label} (this can take a minute)…`)
+  let result: Awaited<ReturnType<typeof agentDeepScan>>
+  try {
+    result = await agentDeepScan(cwd, manifest, chosen)
+    sp.stop(`${label} returned ${result.newFindings.length} new finding(s)`)
+  } catch (e) {
+    sp.fail(`Deep scan failed: ${(e as Error).message}`)
+    return null
+  }
+  if (result.errors.length > 0) {
+    for (const err of result.errors.slice(0, 3)) note(`  agent note: ${err}`)
+  }
+  if (result.newFindings.length === 0) return manifest
+
+  // Same per-entry review applies to agent findings.
+  const accepted = manifest.prompts.slice()
+  for (let i = 0; i < result.newFindings.length; i++) {
+    const f = result.newFindings[i]!
+    const keep = await reviewPrompt(cwd, f, i + 1, result.newFindings.length, ask)
+    if (keep) accepted.push(f)
+  }
+  return { ...manifest, prompts: accepted.sort(byPath) }
+}
+
+async function pickAgent(
+  available: { claude: boolean; codex: boolean },
+  ask: (q: string, defaultYes?: boolean) => Promise<boolean>,
+): Promise<AgentName | null> {
+  if (available.claude && available.codex) {
+    const useClaude = await ask(
+      `I see ${c.bold('Claude Code')} and ${c.bold('Codex')} installed. Use Claude Code? ${c.dim('(n = Codex)')}`,
+      true,
+    )
+    return useClaude ? 'claude' : 'codex'
+  }
+  if (available.claude) {
+    // Default-no on the agent delegation: it spawns a sub-process
+    // that can take 30s+ and runs against the user's agent quota /
+    // session. Explicit consent feels right here — even on --yes.
+    const ok = await ask(
+      `I see ${c.bold('Claude Code')} installed. Delegate the scan to it?`,
+      false,
+    )
+    return ok ? 'claude' : null
+  }
+  if (available.codex) {
+    const ok = await ask(
+      `I see ${c.bold('Codex')} installed. Delegate the scan to it?`,
+      false,
+    )
+    return ok ? 'codex' : null
+  }
+  return null
 }
 
 function agentLabel(a: AgentName): string {
   return a === 'claude' ? 'Claude Code' : 'Codex'
 }
 
-function applyDrop(
-  prompts: ManifestPrompt[],
-  answer: string,
-): { kept: ManifestPrompt[]; dropped: ManifestPrompt[] } {
-  const trimmed = answer.trim().toLowerCase()
-  if (trimmed === 'all') {
-    return { kept: [], dropped: prompts.slice() }
+/**
+ * Manual single-prompt entry. Path is required + must exist; line
+ * range is optional (omit → whole file is the prompt). Char offsets
+ * are computed from the line range automatically.
+ */
+async function addPromptInteractive(
+  cwd: string,
+  ask: (q: string, defaultYes?: boolean) => Promise<boolean>,
+  askTextFn: (q: string, def?: string) => Promise<string>,
+): Promise<ManifestPrompt | null> {
+  say('')
+  const rawPath = (await askTextFn(`File path ${c.dim('(relative to repo root)')}:`, '')).trim()
+  if (!rawPath) {
+    bullet('No path given — cancelled.', 'skip')
+    return null
   }
-  const indices = new Set<number>()
-  for (const part of trimmed.split(/[,\s]+/).filter(Boolean)) {
-    const n = Number.parseInt(part, 10)
-    if (Number.isFinite(n) && n >= 1 && n <= prompts.length) {
-      indices.add(n - 1)
+  const path = rawPath.replace(/\\/g, '/')
+  const abs = join(cwd, ...path.split('/'))
+  let text: string
+  try {
+    text = await fs.readFile(abs, 'utf8')
+  } catch {
+    bullet(`No such file: ${path}`, 'fail')
+    return null
+  }
+
+  const wholeFile = await ask(`Is the whole file the prompt?`, true)
+  if (wholeFile) {
+    return {
+      id: generatePromptId(path),
+      type: 'file',
+      path,
+      hash: hashPrompt(text),
     }
   }
-  const kept: ManifestPrompt[] = []
-  const dropped: ManifestPrompt[] = []
-  prompts.forEach((p, i) => (indices.has(i) ? dropped.push(p) : kept.push(p)))
-  return { kept, dropped }
+
+  // Embedded path: ask for line range (optional char range too).
+  say('')
+  say(`OK, embedded prompt. Tell me where in the file it lives.`)
+  const startStr = (await askTextFn(`Start line (1-indexed):`, '')).trim()
+  const endStr = (await askTextFn(`End line (inclusive):`, '')).trim()
+  const lineStart = Number.parseInt(startStr, 10)
+  const lineEnd = Number.parseInt(endStr, 10)
+  if (
+    !Number.isFinite(lineStart) ||
+    !Number.isFinite(lineEnd) ||
+    lineStart < 1 ||
+    lineEnd < lineStart
+  ) {
+    bullet(`Invalid line range: ${startStr || '?'}–${endStr || '?'}`, 'fail')
+    return null
+  }
+
+  // Char range: default to the line range; user can override.
+  const lineCharStart = lineToCharOffset(text, lineStart - 1)
+  const lineCharEnd = lineToCharOffset(text, lineEnd)
+  if (lineCharStart < 0 || lineCharEnd < 0 || lineCharEnd <= lineCharStart) {
+    bullet('Line range is past the end of the file', 'fail')
+    return null
+  }
+  const overrideChars = await ask(
+    `Want to narrow it to a specific char range within those lines? ${c.dim('(default: full lines)')}`,
+    false,
+  )
+  let charStart = lineCharStart
+  let charEnd = lineCharEnd
+  if (overrideChars) {
+    const cs = Number.parseInt(
+      (await askTextFn(`Char start (offset into the file, ≥ ${lineCharStart}):`, '')).trim(),
+      10,
+    )
+    const ce = Number.parseInt(
+      (await askTextFn(`Char end (≤ ${lineCharEnd}):`, '')).trim(),
+      10,
+    )
+    if (
+      Number.isFinite(cs) &&
+      Number.isFinite(ce) &&
+      cs >= lineCharStart &&
+      ce <= lineCharEnd &&
+      ce > cs
+    ) {
+      charStart = cs
+      charEnd = ce
+    } else {
+      bullet('Invalid char range — falling back to full lines', 'warn')
+    }
+  }
+
+  const varName = (
+    await askTextFn(`Variable name ${c.dim('(optional, Enter to skip)')}:`, '')
+  ).trim()
+  const slice = text.slice(charStart, charEnd)
+  return {
+    id: generatePromptId(`${path}:${lineStart}:${lineEnd}:${varName}`),
+    type: 'embedded',
+    path,
+    hash: hashPrompt(slice),
+    lineStart,
+    lineEnd,
+    charStart,
+    charEnd,
+    varName: varName || undefined,
+  }
+}
+
+function byPath(a: ManifestPrompt, b: ManifestPrompt): number {
+  return a.path.localeCompare(b.path)
 }
 
 function formatPromptEntry(p: ManifestPrompt): string {
   if (p.type === 'embedded') {
     const tag = p.varName ? ` ${c.dim('(' + p.varName + ')')}` : ''
-    return `${c.bold(p.path)}${tag} ${c.dim(`@ L${p.lineStart}`)}`
+    return `${c.bold(p.path)}${tag} ${c.dim(`@ L${p.lineStart}-${p.lineEnd}`)}`
   }
   return c.bold(p.path)
 }
