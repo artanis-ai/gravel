@@ -23,6 +23,18 @@ let dbOpenAttempted = false
 let dbOpenError: Error | null = null
 
 /**
+ * Test seam — drop module-level state so each test can mount a fresh
+ * handler without inheriting the previous test's config or DB
+ * connection. Production code never calls this.
+ */
+export function _resetHandlerForTests(): void {
+  cachedDb = null
+  cachedConfig = null
+  dbOpenAttempted = false
+  dbOpenError = null
+}
+
+/**
  * Lazily open the customer's DB. Returns null when no DATABASE_URL is
  * set OR when the configured URL fails to open. This is by design:
  * customers who installed only the Prompts pillar (no traces) will

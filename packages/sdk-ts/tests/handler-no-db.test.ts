@@ -15,8 +15,14 @@
  * the customer's app would and exercises the routes that are
  * supposed to work in prompts-only mode.
  */
-import { describe, it, expect } from 'vitest'
-import { createGravelHandler } from '../src/handler/index.js'
+import { describe, it, expect, beforeEach } from 'vitest'
+import { _resetHandlerForTests, createGravelHandler } from '../src/handler/index.js'
+import { _resetGravelTracingForTests } from '../src/tracing/persist.js'
+
+beforeEach(() => {
+  _resetHandlerForTests()
+  _resetGravelTracingForTests()
+})
 
 const PASSWORD = 'test-pass-1234567890abcdef'
 
