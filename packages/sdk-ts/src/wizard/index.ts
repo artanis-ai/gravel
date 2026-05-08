@@ -176,7 +176,7 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
         : 'your configured DATABASE_URL'
   if (!opts.noMigrate) {
     const wantMigrate = await ask(
-      `[gravel] Create 13 gravel_* tables in ${dbDest}? (idempotent CREATE TABLE IF NOT EXISTS)`,
+      `[gravel] Create 2 gravel_* tables (gravel_samples, gravel_feedback) in ${dbDest}? (idempotent CREATE TABLE IF NOT EXISTS)`,
       true,
     )
     if (wantMigrate) {
