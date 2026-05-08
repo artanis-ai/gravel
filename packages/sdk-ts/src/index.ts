@@ -33,8 +33,9 @@ export type {
   JudgeCallOptions,
   JudgeApiResponse,
 } from './judge/client.js'
-export { runEval } from './evals/runner.js'
-export type { EvalRow, EvalResult, RunEvalOptions, RunEvalReturn } from './evals/runner.js'
+// (runEval + the gravel_eval_* tables were removed 2026-05-08; D-Q53.
+// They'll come back when the eval UI ships — judge/client.js stays
+// shippable on its own for callers that want raw judge calls.)
 
 // Analyze (Mallet)
 export { analyzePrompt, AnalyzeError } from './analyze/client.js'

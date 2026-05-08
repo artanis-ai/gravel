@@ -14,7 +14,6 @@ const upsertSpy = vi.fn()
 const listSpy = vi.fn()
 const deleteSpy = vi.fn(async () => {})
 const submitSpy = vi.fn()
-const ensureUserSpy = vi.fn(async () => {})
 const getGhStateSpy = vi.fn()
 const patchGhStateSpy = vi.fn(async () => {})
 const mintTokenSpy = vi.fn()
@@ -40,10 +39,6 @@ vi.mock('../src/prompts/submit.js', async () => {
     submitDrafts: (...a: unknown[]) => submitSpy(...a),
   }
 })
-
-vi.mock('../src/prompts/user-extra.js', () => ({
-  ensureGravelUser: (...a: unknown[]) => ensureUserSpy(...a),
-}))
 
 vi.mock('../src/github/project-state.js', () => ({
   getGhInstallState: (...a: unknown[]) => getGhStateSpy(...a),
@@ -124,7 +119,6 @@ describe('prompt routes', () => {
     listSpy.mockReset()
     deleteSpy.mockClear()
     submitSpy.mockReset()
-    ensureUserSpy.mockClear()
     getGhStateSpy.mockReset()
     patchGhStateSpy.mockClear()
     mintTokenSpy.mockReset()
@@ -168,7 +162,6 @@ describe('prompt routes', () => {
       expect(r.status).toBe(200)
       const body = await r.json()
       expect(body.draftBranch).toMatch(/^gravel\/draft-\d{4}-\d{2}-\d{2}-u1$/)
-      expect(ensureUserSpy).toHaveBeenCalledOnce()
       expect(upsertSpy).toHaveBeenCalledOnce()
       const args = upsertSpy.mock.calls[0]![1] as { promptId: string; newText: string; editorUserId: string }
       expect(args).toMatchObject({ promptId: 'p_d1d2d3d4d5', newText: 'NEW', editorUserId: 'u1' })

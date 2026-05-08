@@ -18,7 +18,7 @@
  * Errors: caught, persisted with status='errored', then re-thrown.
  */
 import { gravelContext } from './context.js'
-import { persistTrace } from './persist.js'
+import { persistSample } from './persist.js'
 
 function isTracingDisabledEnv(): boolean {
   return process.env.GRAVEL_TRACING_DISABLED === '1'
@@ -138,7 +138,7 @@ function wrapCreate(proto: any, methodName: string, opts: WrapOptions): void {
       result = gravelContext.runWithFetchTracingDisabled(() => original.apply(this, args))
     } catch (err) {
       // Sync throw (rare for the OpenAI SDK; defensive).
-      void persistTrace({
+      void persistSample({
         name: opts.name,
         status: 'errored',
         startedAt,
@@ -162,7 +162,7 @@ function wrapCreate(proto: any, methodName: string, opts: WrapOptions): void {
           return teeStream(response, { ...opts, startedAt, model, input })
         }
         const usage = response?.usage
-        void persistTrace({
+        void persistSample({
           name: opts.name,
           status: 'completed',
           startedAt,
@@ -177,7 +177,7 @@ function wrapCreate(proto: any, methodName: string, opts: WrapOptions): void {
         return response
       },
       (err: any) => {
-        void persistTrace({
+        void persistSample({
           name: opts.name,
           status: 'errored',
           startedAt,
@@ -220,7 +220,7 @@ function teeStream(stream: any, ctx: TeeContext): any {
           if (!item.done) {
             collectedChunks.push(item.value)
           } else {
-            void persistTrace({
+            void persistSample({
               name: ctx.name,
               status: 'completed',
               startedAt: ctx.startedAt,
@@ -234,7 +234,7 @@ function teeStream(stream: any, ctx: TeeContext): any {
           }
           return item
         } catch (err) {
-          void persistTrace({
+          void persistSample({
             name: ctx.name,
             status: 'errored',
             startedAt: ctx.startedAt,

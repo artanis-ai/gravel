@@ -65,7 +65,7 @@ vi.mock('@anthropic-ai/sdk', () => ({ default: FakeAnthropic }))
 
 const persistSpy = vi.fn(async () => {})
 vi.mock('../src/tracing/persist.js', () => ({
-  persistTrace: persistSpy,
+  persistSample: persistSpy,
   setGravelTracingConfig: vi.fn(),
   _resetGravelTracingForTests: vi.fn(),
 }))

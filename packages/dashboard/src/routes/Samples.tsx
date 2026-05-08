@@ -1,8 +1,11 @@
 /**
- * Traces — list + detail.
+ * Outputs — list + detail. The dashboard tab the domain expert lands on
+ * to look at AI calls; the tab label is "Outputs", the route is
+ * /samples, and each row in the list is one sample (one input/output
+ * exchange). A multi-step trace is samples sharing a group_id.
  *
- * Spec: gravel-cloud/docs/spec/dashboard.md §5 (`/traces`, `/traces/:id`).
- * Calls `GET /api/traces`, `GET /api/traces/:id`, `POST /api/traces/:id/feedback`.
+ * Spec: gravel-cloud/docs/spec/dashboard.md §5.
+ * Calls `GET /api/samples`, `GET /api/samples/:id`, `POST /api/samples/:id/feedback`.
  */
 import { useMemo, useState, type FormEvent } from 'react'
 import { Link } from 'wouter'
@@ -10,20 +13,16 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import {
   type FeedbackItem,
-  type Observation,
-  type TraceDetailResponse,
-  type TraceListItem,
-  type TraceStatus,
-  type TracesResponse,
-  type DatasetsResponse,
-  type DatasetSummary,
+  type SampleDetailResponse,
+  type SampleListItem,
+  type SampleStatus,
+  type SamplesResponse,
 } from '../lib/types'
 import { EmptyState } from '../components/EmptyState'
 import { DeveloperNote } from '../components/DeveloperNote'
 import { CopyableCode } from '../components/CopyableCode'
 import { SkeletonTable, SkeletonText } from '../components/Skeleton'
 import { Badge } from '../components/Badge'
-import { Modal } from '../components/Modal'
 import { Sheet } from '../components/Sheet'
 import { cx, formatDuration, formatRelative, formatTokens } from '../lib/format'
 
@@ -32,10 +31,10 @@ const PAGE_SIZE = 20
 type SortKey = 'started_at' | 'duration_ms' | 'tokens_in' | 'tokens_out' | 'feedback_count'
 type SortDir = 'asc' | 'desc'
 
-interface TraceFilters {
+interface SampleFilters {
   env: string
   model: string
-  status: '' | TraceStatus
+  status: '' | SampleStatus
   q: string
   from: string
   to: string
@@ -44,11 +43,11 @@ interface TraceFilters {
   sortDir: SortDir
 }
 
-function defaultFilters(): TraceFilters {
+function defaultFilters(): SampleFilters {
   return { env: '', model: '', status: '', q: '', from: '', to: '', page: 1, sortBy: 'started_at', sortDir: 'desc' }
 }
 
-function buildTracesQueryString(f: TraceFilters): string {
+function buildTracesQueryString(f: SampleFilters): string {
   const params = new URLSearchParams()
   if (f.env) params.set('env', f.env)
   if (f.model) params.set('model', f.model)
@@ -61,25 +60,25 @@ function buildTracesQueryString(f: TraceFilters): string {
   return params.toString()
 }
 
-export function TracesPage({ traceId }: { traceId?: string } = {}) {
-  if (traceId) return <TraceDetail traceId={traceId} />
-  return <TracesList />
+export function SamplesPage({ sampleId }: { sampleId?: string } = {}) {
+  if (sampleId) return <SampleDetail sampleId={sampleId} />
+  return <SamplesList />
 }
 
 // ---------- List ----------
 
-function TracesList() {
-  const [filters, setFilters] = useState<TraceFilters>(defaultFilters())
-  const [sheetTraceId, setSheetTraceId] = useState<string | null>(null)
+function SamplesList() {
+  const [filters, setFilters] = useState<SampleFilters>(defaultFilters())
+  const [sheetSampleId, setSheetSampleId] = useState<string | null>(null)
   const queryString = buildTracesQueryString(filters)
-  const path = `/api/traces?${queryString}`
+  const path = `/api/samples?${queryString}`
 
-  const { data, isLoading, isError, error, refetch, isFetching } = useQuery<TracesResponse>({
-    queryKey: ['traces', queryString],
-    queryFn: () => api.get<TracesResponse>(path),
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery<SamplesResponse>({
+    queryKey: ['samples', queryString],
+    queryFn: () => api.get<SamplesResponse>(path),
   })
 
-  function update<K extends keyof TraceFilters>(key: K, value: TraceFilters[K]) {
+  function update<K extends keyof SampleFilters>(key: K, value: SampleFilters[K]) {
     setFilters((prev) => ({ ...prev, [key]: value, page: key === 'page' ? (value as number) : 1 }))
   }
 
@@ -92,9 +91,9 @@ function TracesList() {
     }))
   }
 
-  const tracesUnsorted = data?.traces ?? []
-  const traces = useMemo(() => sortClientSide(tracesUnsorted, filters.sortBy, filters.sortDir), [
-    tracesUnsorted,
+  const samplesUnsorted = data?.samples ?? []
+  const samples = useMemo(() => sortClientSide(samplesUnsorted, filters.sortBy, filters.sortDir), [
+    samplesUnsorted,
     filters.sortBy,
     filters.sortDir,
   ])
@@ -106,14 +105,14 @@ function TracesList() {
   return (
     <div className="space-y-4">
       <DeveloperNote>
-        Traces flow in once the app runs with Gravel tracing on. To diagnose, run{' '}
+        Outputs flow in once the app runs with Gravel tracing on. To diagnose, run{' '}
         <CopyableCode>npx @artanis-ai/gravel doctor</CopyableCode>
         .
       </DeveloperNote>
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex-1 min-w-0">
-          <TracesFilters filters={filters} onChange={update} />
+          <SamplesFilters filters={filters} onChange={update} />
         </div>
         <button
           type="button"
@@ -127,23 +126,23 @@ function TracesList() {
       </div>
 
       {isError ? (
-        <ErrorBox message={(error as Error)?.message ?? 'Failed to load traces.'} onRetry={() => refetch()} />
+        <ErrorBox message={(error as Error)?.message ?? 'Failed to load outputs.'} onRetry={() => refetch()} />
       ) : isLoading ? (
         <div className="rounded-lg border border-warm bg-cream p-4">
           <SkeletonTable rows={8} cols={7} />
         </div>
-      ) : traces.length === 0 ? (
+      ) : samples.length === 0 ? (
         <EmptyState
           title="No outputs yet"
           body="Once your app produces AI output, it'll appear here so you can flag any that need a closer look."
         />
       ) : (
-        <TracesTable
-          traces={traces}
+        <SamplesTable
+          samples={samples}
           sortBy={filters.sortBy}
           sortDir={filters.sortDir}
           onSort={toggleSort}
-          onRowClick={(t) => setSheetTraceId(t.id)}
+          onRowClick={(t) => setSheetSampleId(t.id)}
         />
       )}
 
@@ -159,13 +158,13 @@ function TracesList() {
       )}
 
       <Sheet
-        open={sheetTraceId !== null}
-        onClose={() => setSheetTraceId(null)}
-        title={sheetTraceId ? <SheetTitle traceId={sheetTraceId} /> : 'Output'}
+        open={sheetSampleId !== null}
+        onClose={() => setSheetSampleId(null)}
+        title={sheetSampleId ? <SheetTitle sampleId={sheetSampleId} /> : 'Output'}
         subtitle={
-          sheetTraceId ? (
+          sheetSampleId ? (
             <Link
-              href={`/traces/${sheetTraceId}`}
+              href={`/samples/${sheetSampleId}`}
               className="cursor-pointer underline hover:text-text-dark"
             >
               Open full page
@@ -173,19 +172,19 @@ function TracesList() {
           ) : undefined
         }
       >
-        {sheetTraceId && <TraceDetailBody traceId={sheetTraceId} />}
+        {sheetSampleId && <SampleDetailBody sampleId={sheetSampleId} />}
       </Sheet>
     </div>
   )
 }
 
-function SheetTitle({ traceId }: { traceId: string }) {
+function SheetTitle({ sampleId }: { sampleId: string }) {
   // Read straight from the cached query — avoids a second fetch.
-  const { data } = useQuery<TraceDetailResponse>({
-    queryKey: ['trace', traceId],
-    queryFn: () => api.get<TraceDetailResponse>(`/api/traces/${traceId}`),
+  const { data } = useQuery<SampleDetailResponse>({
+    queryKey: ['sample', sampleId],
+    queryFn: () => api.get<SampleDetailResponse>(`/api/samples/${sampleId}`),
   })
-  return <span className="font-mono text-sm font-medium">{data?.trace.name ?? 'Output'}</span>
+  return <span className="font-mono text-sm font-medium">{data?.sample.name ?? 'Output'}</span>
 }
 
 /**
@@ -193,7 +192,7 @@ function SheetTitle({ traceId }: { traceId: string }) {
  * small for v0; once real sort filters land server-side, wire `sortBy`
  * + `sortDir` into the query string + drop this helper.
  */
-function sortClientSide(rows: TraceListItem[], key: SortKey, dir: SortDir): TraceListItem[] {
+function sortClientSide(rows: SampleListItem[], key: SortKey, dir: SortDir): SampleListItem[] {
   const sign = dir === 'asc' ? 1 : -1
   return [...rows].sort((a, b) => {
     if (key === 'started_at') {
@@ -227,12 +226,12 @@ function RefreshIcon({ spinning }: { spinning: boolean }) {
   )
 }
 
-function TracesFilters({
+function SamplesFilters({
   filters,
   onChange,
 }: {
-  filters: TraceFilters
-  onChange: <K extends keyof TraceFilters>(key: K, value: TraceFilters[K]) => void
+  filters: SampleFilters
+  onChange: <K extends keyof SampleFilters>(key: K, value: SampleFilters[K]) => void
 }) {
   return (
     <div className="grid grid-cols-1 gap-3 rounded-2xl border border-warm bg-cream p-4 sm:grid-cols-2 lg:grid-cols-6">
@@ -259,7 +258,7 @@ function TracesFilters({
       <Field label="Status">
         <select
           value={filters.status}
-          onChange={(e) => onChange('status', e.target.value as TraceFilters['status'])}
+          onChange={(e) => onChange('status', e.target.value as SampleFilters['status'])}
           aria-label="Filter by status"
           className="w-full cursor-pointer rounded-md border border-warm bg-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
         >
@@ -275,7 +274,7 @@ function TracesFilters({
           value={filters.q}
           placeholder="prompt text…"
           onChange={(e) => onChange('q', e.target.value)}
-          aria-label="Search traces"
+          aria-label="Search outputs"
           className="w-full rounded-md border border-warm bg-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
       </Field>
@@ -310,18 +309,18 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   )
 }
 
-function TracesTable({
-  traces,
+function SamplesTable({
+  samples,
   sortBy,
   sortDir,
   onSort,
   onRowClick,
 }: {
-  traces: TraceListItem[]
+  samples: SampleListItem[]
   sortBy: SortKey
   sortDir: SortDir
   onSort: (key: SortKey) => void
-  onRowClick: (t: TraceListItem) => void
+  onRowClick: (t: SampleListItem) => void
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-warm bg-cream">
@@ -339,8 +338,8 @@ function TracesTable({
           </tr>
         </thead>
         <tbody>
-          {traces.map((t) => (
-            <TraceRow key={t.id} trace={t} onClick={() => onRowClick(t)} />
+          {samples.map((s) => (
+            <SampleRow key={s.id} sample={s} onClick={() => onRowClick(s)} />
           ))}
         </tbody>
       </table>
@@ -406,40 +405,40 @@ function SortGlyph({ active, dir }: { active: boolean; dir: SortDir }) {
   )
 }
 
-function TraceRow({ trace, onClick }: { trace: TraceListItem; onClick: () => void }) {
+function SampleRow({ sample, onClick }: { sample: SampleListItem; onClick: () => void }) {
   return (
     <tr
       className="cursor-pointer border-t border-warm/60 hover:bg-warm/40"
       onClick={onClick}
-      data-testid={`trace-row-${trace.id}`}
+      data-testid={`sample-row-${sample.id}`}
     >
-      <td className="whitespace-nowrap px-4 py-2 text-xs text-text-mid">{formatRelative(trace.started_at)}</td>
-      <td className="px-4 py-2 font-mono text-xs text-text-dark">{trace.name}</td>
-      <td className="px-4 py-2 font-mono text-xs text-text-mid">{trace.model ?? '—'}</td>
-      <td className="px-4 py-2 text-xs text-text-mid">{trace.environment ?? '—'}</td>
+      <td className="whitespace-nowrap px-4 py-2 text-xs text-text-mid">{formatRelative(sample.started_at)}</td>
+      <td className="px-4 py-2 font-mono text-xs text-text-dark">{sample.name}</td>
+      <td className="px-4 py-2 font-mono text-xs text-text-mid">{sample.model ?? '—'}</td>
+      <td className="px-4 py-2 text-xs text-text-mid">{sample.environment ?? '—'}</td>
       <td className="whitespace-nowrap px-4 py-2 text-right font-mono text-xs text-text-mid">
-        {formatTokens(trace.tokens_in)} / {formatTokens(trace.tokens_out)}
+        {formatTokens(sample.tokens_in)} / {formatTokens(sample.tokens_out)}
       </td>
       <td className="whitespace-nowrap px-4 py-2 text-right font-mono text-xs text-text-mid">
-        {formatDuration(trace.duration_ms)}
+        {formatDuration(sample.duration_ms)}
       </td>
-      <td className="px-4 py-2"><StatusBadge status={trace.status} /></td>
-      <td className="px-4 py-2"><FeedbackBadge trace={trace} /></td>
+      <td className="px-4 py-2"><StatusBadge status={sample.status} /></td>
+      <td className="px-4 py-2"><FeedbackBadge sample={sample} /></td>
     </tr>
   )
 }
 
-function StatusBadge({ status }: { status: TraceStatus }) {
+function StatusBadge({ status }: { status: SampleStatus }) {
   if (status === 'completed') return <Badge tone="good" icon="✓">ok</Badge>
   if (status === 'errored') return <Badge tone="bad" icon="✕">error</Badge>
   return <Badge tone="info" icon="●">running</Badge>
 }
 
-function FeedbackBadge({ trace }: { trace: TraceListItem }) {
-  if (trace.feedback_count === 0) return <span className="text-xs text-text-muted">—</span>
-  if (trace.feedback_score === 'positive') return <Badge tone="good" icon="↑">{trace.feedback_count}</Badge>
-  if (trace.feedback_score === 'negative') return <Badge tone="bad" icon="↓">{trace.feedback_count}</Badge>
-  return <Badge tone="warn" icon="•">{trace.feedback_count}</Badge>
+function FeedbackBadge({ sample }: { sample: SampleListItem }) {
+  if (sample.feedback_count === 0) return <span className="text-xs text-text-muted">—</span>
+  if (sample.feedback_score === 'positive') return <Badge tone="good" icon="↑">{sample.feedback_count}</Badge>
+  if (sample.feedback_score === 'negative') return <Badge tone="bad" icon="↓">{sample.feedback_count}</Badge>
+  return <Badge tone="warn" icon="•">{sample.feedback_count}</Badge>
 }
 
 /**
@@ -563,29 +562,27 @@ function ErrorBox({ message, onRetry }: { message: string; onRetry: () => void }
 // ---------- Detail ----------
 
 /**
- * Full-page trace detail (`/traces/:id`). Used for direct links / new
+ * Full-page trace detail (`/samples/:id`). Used for direct links / new
  * tab opens. The Outputs list opens the same content in a side sheet
- * via TraceDetailBody so the DE doesn't lose context.
+ * via SampleDetailBody so the DE doesn't lose context.
  */
-function TraceDetail({ traceId }: { traceId: string }) {
+function SampleDetail({ sampleId }: { sampleId: string }) {
   return (
     <div className="space-y-6">
-      <Link href="/traces" className="cursor-pointer text-xs text-text-mid hover:text-text-dark">
+      <Link href="/samples" className="cursor-pointer text-xs text-text-mid hover:text-text-dark">
         ← Back to outputs
       </Link>
-      <TraceDetailBody traceId={traceId} showTitle />
+      <SampleDetailBody sampleId={sampleId} showTitle />
     </div>
   )
 }
 
-function TraceDetailBody({ traceId, showTitle = false }: { traceId: string; showTitle?: boolean }) {
-  const path = `/api/traces/${traceId}`
-  const { data, isLoading, isError, error } = useQuery<TraceDetailResponse>({
-    queryKey: ['trace', traceId],
-    queryFn: () => api.get<TraceDetailResponse>(path),
+function SampleDetailBody({ sampleId, showTitle = false }: { sampleId: string; showTitle?: boolean }) {
+  const path = `/api/samples/${sampleId}`
+  const { data, isLoading, isError, error } = useQuery<SampleDetailResponse>({
+    queryKey: ['sample', sampleId],
+    queryFn: () => api.get<SampleDetailResponse>(path),
   })
-
-  const [addOpen, setAddOpen] = useState(false)
 
   if (isLoading) {
     return (
@@ -600,54 +597,97 @@ function TraceDetailBody({ traceId, showTitle = false }: { traceId: string; show
   if (isError || !data) {
     return (
       <ErrorBox
-        message={(error as Error)?.message ?? 'Trace not found.'}
+        message={(error as Error)?.message ?? 'Sample not found.'}
         onRetry={() => window.location.reload()}
       />
     )
   }
 
-  const { trace, observations, feedback } = data
+  const { sample, feedback, related } = data
 
   return (
     <div className="space-y-5">
       {showTitle && (
         <div className="flex items-baseline justify-between gap-4">
           <h1 className="font-display text-2xl font-semibold text-text-dark">
-            {trace.name}{' '}
-            <span className="font-mono text-sm font-normal text-text-muted">{trace.id}</span>
+            {sample.name}{' '}
+            <span className="font-mono text-sm font-normal text-text-muted">{sample.id}</span>
           </h1>
-          <button
-            type="button"
-            className="cursor-pointer rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-dark"
-            onClick={() => setAddOpen(true)}
-          >
-            Add to dataset
-          </button>
         </div>
       )}
       <div className="grid grid-cols-2 gap-3 text-xs text-text-mid sm:grid-cols-5">
-        <Stat label="Started" value={formatRelative(trace.started_at)} />
-        <Stat label="Duration" value={formatDuration(trace.duration_ms)} />
-        <Stat label="Model" value={trace.model ?? '—'} mono />
-        <Stat label="Status" value={<StatusBadge status={trace.status} />} />
-        <Stat label="Env" value={trace.environment ?? '—'} />
+        <Stat label="Started" value={formatRelative(sample.started_at)} />
+        <Stat label="Duration" value={formatDuration(sample.duration_ms)} />
+        <Stat label="Model" value={sample.model ?? '—'} mono />
+        <Stat label="Status" value={<StatusBadge status={sample.status} />} />
+        <Stat label="Env" value={sample.environment ?? '—'} />
       </div>
 
-      {!showTitle && (
-        <button
-          type="button"
-          className="cursor-pointer rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-dark"
-          onClick={() => setAddOpen(true)}
-        >
-          Add to dataset
-        </button>
+      <PayloadView label="Input" value={sample.input} />
+      <PayloadView label="Output" value={sample.output} />
+      {sample.metadata && Object.keys(sample.metadata).length > 0 && (
+        <PayloadView label="Metadata" value={sample.metadata} />
       )}
 
-      <ObservationsTimeline observations={observations} />
-      <FeedbackPanel traceId={trace.id} feedback={feedback} />
+      {related.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="font-display text-sm font-semibold text-text-dark">
+            Other steps in this trace
+            <span className="ml-2 font-normal text-text-muted">{related.length}</span>
+          </h2>
+          <ul className="divide-y divide-warm rounded-xl border border-warm bg-cream">
+            {related.map((s) => (
+              <li key={s.id} className="px-3 py-2 text-sm">
+                <Link
+                  href={`/samples/${s.id}`}
+                  className="cursor-pointer font-mono text-xs text-text-dark hover:underline"
+                >
+                  {s.name}
+                </Link>
+                <span className="ml-2 text-xs text-text-muted">
+                  {formatRelative(s.started_at)} · {formatDuration(s.duration_ms)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
-      <AddToDatasetModal traceId={trace.id} open={addOpen} onClose={() => setAddOpen(false)} />
+      <FeedbackPanel sampleId={sample.id} feedback={feedback} />
     </div>
+  )
+}
+
+/**
+ * Render a JSON-ish payload (input / output / metadata). Pretty-prints
+ * objects, falls back to raw text otherwise. Collapsed-by-default for
+ * very long values.
+ */
+function PayloadView({ label, value }: { label: string; value: unknown }) {
+  const json = useMemo(() => safeJsonString(value), [value])
+  const big = json.length > 4000
+  const [open, setOpen] = useState(!big)
+  if (value == null || (typeof value === 'object' && Object.keys(value as object).length === 0)) {
+    return null
+  }
+  return (
+    <section className="space-y-2">
+      <div className="flex items-baseline justify-between">
+        <h2 className="font-display text-sm font-semibold text-text-dark">{label}</h2>
+        {big && (
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            className="cursor-pointer text-xs text-text-mid hover:text-text-dark"
+          >
+            {open ? 'Collapse' : 'Expand'}
+          </button>
+        )}
+      </div>
+      <pre className="max-h-96 overflow-auto rounded-xl border border-warm bg-cream px-4 py-3 font-mono text-xs text-text-dark">
+        {open ? json : json.slice(0, 800) + '\n…'}
+      </pre>
+    </section>
   )
 }
 
@@ -660,68 +700,6 @@ function Stat({ label, value, mono }: { label: string; value: React.ReactNode; m
   )
 }
 
-function ObservationsTimeline({ observations }: { observations: Observation[] }) {
-  const sorted = useMemo(
-    () =>
-      [...observations].sort((a, b) => {
-        const at = new Date(a.started_at ?? a.timestamp).getTime()
-        const bt = new Date(b.started_at ?? b.timestamp).getTime()
-        return at - bt
-      }),
-    [observations],
-  )
-
-  if (sorted.length === 0) {
-    return (
-      <section className="rounded-2xl border border-warm bg-cream p-4 text-sm text-text-mid">
-        No observations on this trace.
-      </section>
-    )
-  }
-
-  return (
-    <section className="space-y-3">
-      <h2 className="font-display text-lg font-semibold text-text-dark">Observations</h2>
-      <ol className="space-y-2">
-        {sorted.map((obs) => (
-          <ObservationItem key={obs.id} obs={obs} />
-        ))}
-      </ol>
-    </section>
-  )
-}
-
-function ObservationItem({ obs }: { obs: Observation }) {
-  const [open, setOpen] = useState(obs.type === 'input' || obs.type === 'output')
-  const json = useMemo(() => safeJsonString(obs.data), [obs.data])
-  const tone =
-    obs.type === 'input' ? 'info' : obs.type === 'output' ? 'good' : 'neutral'
-
-  return (
-    <li className="overflow-hidden rounded-xl border border-warm bg-cream">
-      <button
-        type="button"
-        className="flex w-full cursor-pointer items-center justify-between gap-3 px-4 py-2 text-left hover:bg-warm/40"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-      >
-        <span className="flex items-center gap-2">
-          <Badge tone={tone}>{obs.type}</Badge>
-          <span className="text-sm text-text-dark">{obs.name ?? obs.key ?? '—'}</span>
-        </span>
-        <span className="text-xs text-text-muted">
-          {formatRelative(obs.started_at ?? obs.timestamp)} · {open ? 'collapse' : 'expand'}
-        </span>
-      </button>
-      {open && (
-        <pre className="max-h-72 overflow-auto border-t border-warm bg-white px-4 py-2 font-mono text-xs text-text-dark">
-          {json}
-        </pre>
-      )}
-    </li>
-  )
-}
-
 function safeJsonString(value: unknown): string {
   try {
     return JSON.stringify(value, null, 2)
@@ -730,7 +708,7 @@ function safeJsonString(value: unknown): string {
   }
 }
 
-function FeedbackPanel({ traceId, feedback }: { traceId: string; feedback: FeedbackItem[] }) {
+function FeedbackPanel({ sampleId, feedback }: { sampleId: string; feedback: FeedbackItem[] }) {
   const queryClient = useQueryClient()
   const [thumbs, setThumbs] = useState<'up' | 'down' | null>(null)
   const [comment, setComment] = useState('')
@@ -739,7 +717,7 @@ function FeedbackPanel({ traceId, feedback }: { traceId: string; feedback: Feedb
 
   const submit = useMutation<unknown, Error, void>({
     mutationFn: () =>
-      api.post(`/api/traces/${traceId}/feedback`, {
+      api.post(`/api/samples/${sampleId}/feedback`, {
         thumbs,
         comment: comment || null,
         correction: correction || null,
@@ -749,7 +727,7 @@ function FeedbackPanel({ traceId, feedback }: { traceId: string; feedback: Feedb
       setComment('')
       setCorrection('')
       setFormError(null)
-      queryClient.invalidateQueries({ queryKey: ['trace', traceId] })
+      queryClient.invalidateQueries({ queryKey: ['sample', sampleId] })
     },
     onError: (err) => setFormError(err.message),
   })
@@ -854,81 +832,3 @@ function FeedbackPanel({ traceId, feedback }: { traceId: string; feedback: Feedb
   )
 }
 
-function AddToDatasetModal({ traceId, open, onClose }: { traceId: string; open: boolean; onClose: () => void }) {
-  const queryClient = useQueryClient()
-  const { data, isLoading } = useQuery<DatasetsResponse>({
-    queryKey: ['datasets'],
-    queryFn: () => api.get<DatasetsResponse>('/api/datasets'),
-    enabled: open,
-  })
-  const [selected, setSelected] = useState<string | null>(null)
-
-  const add = useMutation<unknown, Error, string>({
-    mutationFn: (datasetId) => api.post(`/api/datasets/${datasetId}/traces`, { trace_ids: [traceId] }),
-    onSuccess: (_d, datasetId) => {
-      queryClient.invalidateQueries({ queryKey: ['dataset', datasetId] })
-      onClose()
-    },
-  })
-
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Add to dataset"
-      footer={
-        <>
-          <button
-            type="button"
-            className="cursor-pointer rounded-lg border border-warm px-3 py-1.5 text-sm hover:bg-warm"
-            onClick={onClose}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            disabled={!selected || add.isPending}
-            className={cx(
-              'rounded-lg px-3 py-1.5 text-sm font-medium text-white',
-              !selected || add.isPending
-                ? 'cursor-not-allowed bg-primary/60'
-                : 'cursor-pointer bg-primary hover:bg-primary-dark',
-            )}
-            onClick={() => selected && add.mutate(selected)}
-          >
-            {add.isPending ? 'Adding…' : 'Add'}
-          </button>
-        </>
-      }
-    >
-      {isLoading ? (
-        <SkeletonText lines={3} />
-      ) : !data || data.datasets.length === 0 ? (
-        <p className="text-sm text-text-mid">
-          No datasets yet. Create one from the{' '}
-          <Link href="/datasets" className="cursor-pointer underline">Datasets</Link> page first.
-        </p>
-      ) : (
-        <ul className="space-y-1">
-          {data.datasets.map((d: DatasetSummary) => (
-            <li key={d.id}>
-              <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 hover:bg-warm">
-                <input
-                  type="radio"
-                  name="dataset"
-                  value={d.id}
-                  checked={selected === d.id}
-                  onChange={() => setSelected(d.id)}
-                  className="cursor-pointer"
-                />
-                <span className="text-sm text-text-dark">{d.name}</span>
-                <span className="text-xs text-text-muted">{d.trace_count} traces</span>
-              </label>
-            </li>
-          ))}
-        </ul>
-      )}
-      {add.isError && <p className="mt-3 text-xs text-primary-dark">{add.error.message}</p>}
-    </Modal>
-  )
-}

@@ -21,7 +21,7 @@
  * swaps this we no-op silently.
  */
 import { gravelContext } from './context.js'
-import { persistTrace } from './persist.js'
+import { persistSample } from './persist.js'
 
 function isTracingDisabledEnv(): boolean {
   return process.env.GRAVEL_TRACING_DISABLED === '1'
@@ -78,7 +78,7 @@ function wrapVercelFn(mod: any, name: string): void {
       // endpoints under the hood; the SDK-level trace is the canonical one.
       result = gravelContext.runWithFetchTracingDisabled(() => original.apply(undefined, args))
     } catch (err) {
-      void persistTrace({
+      void persistSample({
         name: `vercel-ai.${name}`,
         status: 'errored',
         startedAt,
@@ -101,7 +101,7 @@ function wrapVercelFn(mod: any, name: string): void {
           return response
         }
         const usage = response?.usage
-        void persistTrace({
+        void persistSample({
           name: `vercel-ai.${name}`,
           status: 'completed',
           startedAt,
@@ -116,7 +116,7 @@ function wrapVercelFn(mod: any, name: string): void {
         return response
       },
       (err: any) => {
-        void persistTrace({
+        void persistSample({
           name: `vercel-ai.${name}`,
           status: 'errored',
           startedAt,
@@ -157,7 +157,7 @@ function attachStreamObservers(
         name === 'streamObject'
           ? await Promise.resolve(response?.object).catch(() => undefined)
           : undefined
-      void persistTrace({
+      void persistSample({
         name: `vercel-ai.${name}`,
         status: 'completed',
         startedAt: ctx.startedAt,
@@ -170,7 +170,7 @@ function attachStreamObservers(
         output: name === 'streamText' ? { text } : { object },
       })
     } catch (err) {
-      void persistTrace({
+      void persistSample({
         name: `vercel-ai.${name}`,
         status: 'errored',
         startedAt: ctx.startedAt,

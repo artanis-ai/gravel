@@ -14,7 +14,7 @@
  * provider patches (tracing.md §1, §6).
  */
 import { gravelContext } from './context.js'
-import { persistTrace } from './persist.js'
+import { persistSample } from './persist.js'
 
 function isTracingDisabledEnv(): boolean {
   return process.env.GRAVEL_TRACING_DISABLED === '1'
@@ -153,7 +153,7 @@ function patchGlobalFetch(): void {
     }
 
     const finishedAt = new Date()
-    void persistTrace({
+    void persistSample({
       name: shape.name,
       provider: shape.provider,
       status: errorMessage || (response && !response.ok) ? 'errored' : 'completed',

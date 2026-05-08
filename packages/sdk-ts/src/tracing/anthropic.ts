@@ -13,7 +13,7 @@
  * promise to capture the consolidated payload without consuming the stream.
  */
 import { gravelContext } from './context.js'
-import { persistTrace } from './persist.js'
+import { persistSample } from './persist.js'
 
 function isTracingDisabledEnv(): boolean {
   return process.env.GRAVEL_TRACING_DISABLED === '1'
@@ -66,7 +66,7 @@ function wrapMessagesCreate(proto: any): void {
       // duplicate alongside this SDK-level trace.
       result = gravelContext.runWithFetchTracingDisabled(() => original.apply(this, args))
     } catch (err) {
-      void persistTrace({
+      void persistSample({
         name: 'anthropic.messages.create',
         status: 'errored',
         startedAt,
@@ -85,7 +85,7 @@ function wrapMessagesCreate(proto: any): void {
           return teeAnthropicStream(response, { startedAt, model, input: params })
         }
         const usage = response?.usage
-        void persistTrace({
+        void persistSample({
           name: 'anthropic.messages.create',
           status: 'completed',
           startedAt,
@@ -100,7 +100,7 @@ function wrapMessagesCreate(proto: any): void {
         return response
       },
       (err: any) => {
-        void persistTrace({
+        void persistSample({
           name: 'anthropic.messages.create',
           status: 'errored',
           startedAt,
@@ -137,7 +137,7 @@ function wrapMessagesStream(proto: any): void {
         .finalMessage()
         .then((finalMsg: any) => {
           const usage = finalMsg?.usage
-          void persistTrace({
+          void persistSample({
             name: 'anthropic.messages.stream',
             status: 'completed',
             startedAt,
@@ -151,7 +151,7 @@ function wrapMessagesStream(proto: any): void {
           })
         })
         .catch((err: any) => {
-          void persistTrace({
+          void persistSample({
             name: 'anthropic.messages.stream',
             status: 'errored',
             startedAt,
@@ -185,7 +185,7 @@ function teeAnthropicStream(
           if (!item.done) {
             collected.push(item.value)
           } else {
-            void persistTrace({
+            void persistSample({
               name: 'anthropic.messages.create',
               status: 'completed',
               startedAt: ctx.startedAt,
@@ -199,7 +199,7 @@ function teeAnthropicStream(
           }
           return item
         } catch (err) {
-          void persistTrace({
+          void persistSample({
             name: 'anthropic.messages.create',
             status: 'errored',
             startedAt: ctx.startedAt,

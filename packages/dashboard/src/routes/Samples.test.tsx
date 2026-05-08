@@ -1,5 +1,5 @@
 /**
- * Tests for Traces list + detail.
+ * Tests for Outputs (samples) list + detail.
  *
  * The api client is mocked at module level (per `_skill: thorough_tests`).
  */
@@ -19,9 +19,9 @@ vi.mock('../lib/api', () => {
 })
 
 import { api } from '../lib/api'
-import { TracesPage } from './Traces'
+import { SamplesPage } from './Samples'
 import { renderRoute } from '../test/util'
-import type { TraceDetailResponse, TracesResponse } from '../lib/types'
+import type { SampleDetailResponse, SamplesResponse } from '../lib/types'
 
 const mockedGet = api.get as unknown as ReturnType<typeof vi.fn>
 const mockedPost = api.post as unknown as ReturnType<typeof vi.fn>
@@ -31,14 +31,15 @@ beforeEach(() => {
   mockedPost.mockReset()
 })
 
-function makeTraces(n: number): TracesResponse {
+function makeSamples(n: number): SamplesResponse {
   return {
-    traces: Array.from({ length: n }, (_, i) => ({
-      id: `trace_${i}`,
+    samples: Array.from({ length: n }, (_, i) => ({
+      id: `sample_${i}`,
       name: 'chat.completions.create',
       model: 'gpt-4o',
       environment: 'prod',
       status: 'completed' as const,
+      group_id: null,
       started_at: new Date(Date.now() - 60_000).toISOString(),
       completed_at: new Date().toISOString(),
       duration_ms: 1234,
@@ -53,35 +54,33 @@ function makeTraces(n: number): TracesResponse {
   }
 }
 
-describe('Traces list', () => {
-  it('renders the empty state when no traces are returned', async () => {
+describe('Samples list', () => {
+  it('renders the empty state when no samples are returned', async () => {
     mockedGet.mockImplementation(async (path: string) => {
       if (path === '/api/auth/me') {
         return { user: { id: 'localhost', firstName: 'Developer', role: 'admin' } }
       }
-      return { traces: [], total: 0, page: 1, page_size: 20 } satisfies TracesResponse
+      return { samples: [], total: 0, page: 1, page_size: 20 } satisfies SamplesResponse
     })
-    renderRoute(<TracesPage />)
+    renderRoute(<SamplesPage />)
     expect(await screen.findByText(/no outputs yet/i)).toBeInTheDocument()
     // Developer-only hint visible because auth/me reports localhost.
     expect(await screen.findByText(/gravel doctor/i)).toBeInTheDocument()
     expect(screen.getByText(/visible only on localhost/i)).toBeInTheDocument()
   })
 
-  it('renders rows when traces are returned', async () => {
-    mockedGet.mockResolvedValue(makeTraces(3))
-    renderRoute(<TracesPage />)
+  it('renders rows when samples are returned', async () => {
+    mockedGet.mockResolvedValue(makeSamples(3))
+    renderRoute(<SamplesPage />)
     await waitFor(() => expect(screen.getAllByText('chat.completions.create')).toHaveLength(3))
-    // Pagination caption is broken across spans; check the container
-    // has "Showing 1–3 of 3" once whitespace + numbers are flattened.
     const paginationNav = screen.getByLabelText(/pagination/i)
     expect(paginationNav.textContent?.replace(/\s+/g, ' ')).toMatch(/Showing 1.{1,3}3 of 3/i)
   })
 
   it('refetches when a filter changes', async () => {
-    mockedGet.mockResolvedValue(makeTraces(1))
+    mockedGet.mockResolvedValue(makeSamples(1))
     const user = userEvent.setup()
-    renderRoute(<TracesPage />)
+    renderRoute(<SamplesPage />)
     await screen.findAllByText('chat.completions.create')
     const initial = mockedGet.mock.calls.length
 
@@ -95,15 +94,16 @@ describe('Traces list', () => {
   })
 })
 
-describe('Trace detail', () => {
-  function makeDetail(): TraceDetailResponse {
+describe('Sample detail', () => {
+  function makeDetail(): SampleDetailResponse {
     return {
-      trace: {
-        id: 'trace_abc',
+      sample: {
+        id: 'sample_abc',
         name: 'chat.completions.create',
         model: 'gpt-4o',
         environment: 'prod',
         status: 'completed',
+        group_id: null,
         started_at: new Date().toISOString(),
         completed_at: new Date().toISOString(),
         duration_ms: 800,
@@ -112,40 +112,26 @@ describe('Trace detail', () => {
         feedback_count: 0,
         feedback_score: null,
         commit_sha: 'abc',
+        input: { messages: [{ role: 'user', content: 'hi' }] },
+        output: { content: 'hello!' },
         metadata: {},
       },
-      observations: [
-        {
-          id: 'obs_1',
-          trace_id: 'trace_abc',
-          type: 'input',
-          name: 'request',
-          data: { messages: [{ role: 'user', content: 'hi' }] },
-          timestamp: new Date().toISOString(),
-        },
-        {
-          id: 'obs_2',
-          trace_id: 'trace_abc',
-          type: 'output',
-          name: 'response',
-          data: { content: 'hello!' },
-          timestamp: new Date(Date.now() + 1000).toISOString(),
-        },
-      ],
       feedback: [],
+      related: [],
     }
   }
 
-  it('renders observations and submits feedback', async () => {
+  it('renders input + output and submits feedback', async () => {
     mockedGet.mockResolvedValue(makeDetail())
     mockedPost.mockResolvedValue({ ok: true })
 
     const user = userEvent.setup()
-    renderRoute(<TracesPage traceId="trace_abc" />)
+    renderRoute(<SamplesPage sampleId="sample_abc" />)
 
-    expect(await screen.findByText(/observations/i)).toBeInTheDocument()
-    expect(screen.getByText('input')).toBeInTheDocument()
-    expect(screen.getByText('output')).toBeInTheDocument()
+    // Input + Output payloads are rendered as JSON sections.
+    expect(await screen.findByText('Input')).toBeInTheDocument()
+    expect(screen.getByText('Output')).toBeInTheDocument()
+    expect(screen.getByText(/hello!/)).toBeInTheDocument()
 
     // try submitting without thumbs first → inline error
     const form = screen.getByRole('form', { name: /add feedback/i })
@@ -160,7 +146,7 @@ describe('Trace detail', () => {
 
     await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(1))
     const [path, body] = mockedPost.mock.calls[0] as [string, Record<string, unknown>]
-    expect(path).toBe('/api/traces/trace_abc/feedback')
+    expect(path).toBe('/api/samples/sample_abc/feedback')
     expect(body).toEqual({ thumbs: 'down', comment: 'wrong tone', correction: 'should be friendlier' })
   })
 })

@@ -68,10 +68,10 @@ function makeFakeStream(chunks: string[]) {
 
 vi.mock('openai', () => ({ default: FakeOpenAI }))
 
-// Spy on persistTrace.
+// Spy on persistSample.
 const persistSpy = vi.fn(async () => {})
 vi.mock('../src/tracing/persist.js', () => ({
-  persistTrace: persistSpy,
+  persistSample: persistSpy,
   setGravelTracingConfig: vi.fn(),
   _resetGravelTracingForTests: vi.fn(),
 }))

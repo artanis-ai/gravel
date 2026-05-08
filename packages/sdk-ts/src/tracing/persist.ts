@@ -112,11 +112,12 @@ function getEnvironmentName(): string {
 // free-form text column on gravel_traces.)
 
 /**
- * Persist a single trace + its observations. Never throws — tracer failures
- * must not break the user's LLM call. Called from provider patches as
- * `void persistTrace(...)` so the user's call returns before this completes.
+ * Persist a single sample (one LLM call). Never throws — tracer
+ * failures must not break the user's LLM call. Called from provider
+ * patches as `void persistSample(...)` so the user's call returns
+ * before this completes.
  */
-export async function persistTrace(payload: PersistTraceInput): Promise<void> {
+export async function persistSample(payload: PersistTraceInput): Promise<void> {
   try {
     if (gravelContext.isTracingDisabled()) return
     const db = await getDb()
@@ -131,125 +132,60 @@ export async function persistTrace(payload: PersistTraceInput): Promise<void> {
     const outputData =
       scrubOutput && payload.output !== undefined ? scrubOutput(payload.output) : payload.output
 
-    const traceId = randomUUID()
+    const sampleId = randomUUID()
     const durationMs = Math.max(0, payload.finishedAt.getTime() - payload.startedAt.getTime())
 
-    // Merge async-context metadata (spec §4) with normalized provider fields.
-    const baseMetadata: Record<string, unknown> = { ...gravelContext.getMetadata() }
-    if (payload.provider) baseMetadata.provider = payload.provider
-    if (payload.model) baseMetadata.model = payload.model
-    if (payload.tokensInput !== undefined) baseMetadata.tokens_input = payload.tokensInput
-    if (payload.tokensOutput !== undefined) baseMetadata.tokens_output = payload.tokensOutput
+    // Merge async-context metadata (spec §4) with normalized provider
+    // fields. Agent intermediate states + error message land here too —
+    // there's no separate observations table any more (D-Q53 2026-05-08).
+    const metadata: Record<string, unknown> = { ...gravelContext.getMetadata() }
+    if (payload.provider) metadata.provider = payload.provider
+    if (payload.tokensInput !== undefined) metadata.tokens_input = payload.tokensInput
+    if (payload.tokensOutput !== undefined) metadata.tokens_output = payload.tokensOutput
+    if (payload.states && payload.states.length > 0) {
+      metadata.states = payload.states.map((s) => ({ key: s.key, data: s.data ?? null }))
+    }
+    if (payload.errorMessage) metadata.error = payload.errorMessage
+
+    const status = payload.status === 'errored' ? 'errored' : 'completed'
 
     if (db.dialect === 'postgres') {
-      const { gravelTraces, gravelObservations } = await import('../schema/postgres.js')
+      const { gravelSamples } = await import('../schema/postgres.js')
       const drz = db.drizzle as import('drizzle-orm/node-postgres').NodePgDatabase
-      await drz.insert(gravelTraces).values({
-        id: traceId,
+      await drz.insert(gravelSamples).values({
+        id: sampleId,
         name: payload.name,
         environment,
-        metadata: baseMetadata,
-        status: payload.status === 'errored' ? 'errored' : 'completed',
+        model: payload.model ?? null,
+        status,
+        input: (inputData ?? null) as object,
+        output: (outputData ?? null) as object,
+        metadata,
         timestamp: payload.startedAt,
         startedAt: payload.startedAt,
         completedAt: payload.finishedAt,
         durationMs,
       })
-      const obsRows: Array<typeof gravelObservations.$inferInsert> = [
-        {
-          id: randomUUID(),
-          traceId,
-          type: 'input',
-          data: inputData as object,
-          timestamp: payload.startedAt,
-        },
-      ]
-      if (outputData !== undefined) {
-        obsRows.push({
-          id: randomUUID(),
-          traceId,
-          type: 'output',
-          data: (outputData ?? null) as object,
-          timestamp: payload.finishedAt,
-        })
-      }
-      for (const s of payload.states ?? []) {
-        obsRows.push({
-          id: randomUUID(),
-          traceId,
-          type: 'state',
-          key: s.key,
-          data: (s.data ?? null) as object,
-          timestamp: payload.finishedAt,
-        })
-      }
-      if (payload.errorMessage) {
-        obsRows.push({
-          id: randomUUID(),
-          traceId,
-          type: 'state',
-          key: 'error',
-          data: { message: payload.errorMessage } as object,
-          timestamp: payload.finishedAt,
-        })
-      }
-      await drz.insert(gravelObservations).values(obsRows)
     } else {
-      const { gravelTraces, gravelObservations } = await import('../schema/sqlite.js')
+      const { gravelSamples } = await import('../schema/sqlite.js')
       const drz = db.drizzle as import('drizzle-orm/better-sqlite3').BetterSQLite3Database
       drz
-        .insert(gravelTraces)
+        .insert(gravelSamples)
         .values({
-          id: traceId,
+          id: sampleId,
           name: payload.name,
           environment,
-          metadata: JSON.stringify(baseMetadata),
-          status: payload.status === 'errored' ? 'errored' : 'completed',
+          model: payload.model ?? null,
+          status,
+          input: JSON.stringify(inputData ?? null),
+          output: JSON.stringify(outputData ?? null),
+          metadata: JSON.stringify(metadata),
           timestamp: payload.startedAt.getTime(),
           startedAt: payload.startedAt.getTime(),
           completedAt: payload.finishedAt.getTime(),
           durationMs,
         })
         .run()
-      const obsRows: Array<typeof gravelObservations.$inferInsert> = [
-        {
-          id: randomUUID(),
-          traceId,
-          type: 'input',
-          data: JSON.stringify(inputData ?? null),
-          timestamp: payload.startedAt.getTime(),
-        },
-      ]
-      if (outputData !== undefined) {
-        obsRows.push({
-          id: randomUUID(),
-          traceId,
-          type: 'output',
-          data: JSON.stringify(outputData ?? null),
-          timestamp: payload.finishedAt.getTime(),
-        })
-      }
-      for (const s of payload.states ?? []) {
-        obsRows.push({
-          id: randomUUID(),
-          traceId,
-          type: 'state',
-          key: s.key,
-          data: JSON.stringify(s.data ?? null),
-          timestamp: payload.finishedAt.getTime(),
-        })
-      }
-      if (payload.errorMessage) {
-        obsRows.push({
-          id: randomUUID(),
-          traceId,
-          type: 'state',
-          key: 'error',
-          data: JSON.stringify({ message: payload.errorMessage }),
-          timestamp: payload.finishedAt.getTime(),
-        })
-      }
-      drz.insert(gravelObservations).values(obsRows).run()
     }
   } catch (err) {
     // Spec §6: tracer failures must never bubble. Log once so it's debuggable.

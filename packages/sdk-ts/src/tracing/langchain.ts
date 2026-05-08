@@ -18,7 +18,7 @@
  * detects this and dedupes on a Langchain-injected request ID").
  */
 import { gravelContext } from './context.js'
-import { persistTrace } from './persist.js'
+import { persistSample } from './persist.js'
 
 function isTracingDisabledEnv(): boolean {
   return process.env.GRAVEL_TRACING_DISABLED === '1'
@@ -101,7 +101,7 @@ async function patchLangchain(): Promise<void> {
       if (!state) return
       activeRuns.delete(runId)
       const usage = output?.llmOutput?.tokenUsage ?? output?.llmOutput?.usage
-      void persistTrace({
+      void persistSample({
         name: state.name,
         status: 'completed',
         startedAt: state.startedAt,
@@ -119,7 +119,7 @@ async function patchLangchain(): Promise<void> {
       const state = activeRuns.get(runId)
       if (!state) return
       activeRuns.delete(runId)
-      void persistTrace({
+      void persistSample({
         name: state.name,
         status: 'errored',
         startedAt: state.startedAt,
@@ -144,7 +144,7 @@ async function patchLangchain(): Promise<void> {
       const state = activeRuns.get(runId)
       if (!state) return
       activeRuns.delete(runId)
-      void persistTrace({
+      void persistSample({
         name: state.name,
         status: 'completed',
         startedAt: state.startedAt,
@@ -159,7 +159,7 @@ async function patchLangchain(): Promise<void> {
       const state = activeRuns.get(runId)
       if (!state) return
       activeRuns.delete(runId)
-      void persistTrace({
+      void persistSample({
         name: state.name,
         status: 'errored',
         startedAt: state.startedAt,

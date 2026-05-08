@@ -1,19 +1,24 @@
 /**
  * Shared TypeScript types for dashboard payloads.
  *
- * Mirrors the backend route shapes defined in
+ * Mirrors the backend route shapes in
  * `packages/sdk-ts/src/handler/routes.ts` and the schema in
  * `gravel-cloud/docs/spec/data-model.md`.
+ *
+ * 2026-05-08 vocabulary refresh (D-Q53): traces are now "samples"
+ * (one row per LLM call). A multi-step trace is samples sharing a
+ * group_id. Datasets + evals + observations + per-user types removed.
  */
 
-export type TraceStatus = 'running' | 'completed' | 'errored'
+export type SampleStatus = 'running' | 'completed' | 'errored'
 
-export interface TraceListItem {
+export interface SampleListItem {
   id: string
   name: string
   model: string | null
   environment: string | null
-  status: TraceStatus
+  status: SampleStatus
+  group_id: string | null
   started_at: string
   completed_at: string | null
   duration_ms: number | null
@@ -23,28 +28,16 @@ export interface TraceListItem {
   feedback_score: 'positive' | 'negative' | 'mixed' | null
 }
 
-export interface TracesResponse {
-  traces: TraceListItem[]
+export interface SamplesResponse {
+  samples: SampleListItem[]
   total: number
   page: number
   page_size: number
 }
 
-export interface Observation {
-  id: string
-  trace_id: string
-  type: 'input' | 'output' | 'state'
-  name?: string | null
-  key?: string | null
-  data: unknown
-  timestamp: string
-  started_at?: string | null
-}
-
 export interface FeedbackItem {
   id: string
-  trace_id: string | null
-  observation_id: string | null
+  sample_id: string
   comment: string | null
   correction: string | null
   score: 'positive' | 'negative' | 'neutral' | null
@@ -52,77 +45,16 @@ export interface FeedbackItem {
   created_at: string
 }
 
-export interface TraceDetailResponse {
-  trace: TraceListItem & { commit_sha?: string | null; metadata?: Record<string, unknown> }
-  observations: Observation[]
-  feedback: FeedbackItem[]
-}
-
-export interface DatasetSummary {
-  id: string
-  name: string
-  description: string | null
-  trace_count: number
-  updated_at: string
-  created_at: string
-}
-
-export interface DatasetsResponse {
-  datasets: DatasetSummary[]
-  runPipelineConfigured: boolean
-}
-
-export interface DatasetTrace {
-  dataset_trace_id: string
-  trace: TraceListItem
-}
-
-export interface DatasetDetailResponse {
-  dataset: DatasetSummary
-  traces: DatasetTrace[]
-  runPipelineConfigured: boolean
-}
-
-export type EvalRunStatus = 'queued' | 'pending' | 'running' | 'completed' | 'cancelled' | 'errored'
-export type EvalRunType = 'trace' | 'live'
-
-export interface EvalRunSummary {
-  id: string
-  dataset_id: string
-  dataset_name: string
-  type: EvalRunType
-  status: EvalRunStatus
-  total_rows: number
-  completed_rows: number
-  summary: { passed: number; failed: number } | null
-  started_at: string | null
-  completed_at: string | null
-  created_at: string
-}
-
-export interface EvalRunsResponse {
-  runs: EvalRunSummary[]
-}
-
-export interface EvalResultRow {
-  id: string
-  trace_id: string | null
-  input_snippet: string | null
-  expected: string | null
-  output: string | null
-  live_output: unknown | null
-  verdict: {
-    score: number
-    passed: boolean
-    reasoning: string
-    breakdown: Record<string, number>
+export interface SampleDetailResponse {
+  sample: SampleListItem & {
+    commit_sha: string | null
+    input: unknown
+    output: unknown
+    metadata: Record<string, unknown> | null
   }
-  created_at: string
-}
-
-export interface EvalRunDetailResponse {
-  run: EvalRunSummary
-  results: EvalResultRow[]
+  feedback: FeedbackItem[]
+  /** Other samples sharing this sample's group_id. Empty for single-shot. */
+  related: SampleListItem[]
 }
 
 export interface MalletIssue {
@@ -143,9 +75,8 @@ export interface AnalysisResponse {
 
 // ---------- Prompts ----------
 //
-// Mirrors `packages/sdk-ts/src/manifest/types.ts` (ManifestPrompt) and the
-// route shapes in `packages/sdk-ts/src/handler/routes.ts` (`/api/prompts*`,
-// `/api/github/*`).
+// Mirrors `packages/sdk-ts/src/manifest/types.ts` (ManifestPrompt) and
+// the route shapes in `packages/sdk-ts/src/handler/routes.ts`.
 
 export type PromptType = 'file' | 'embedded'
 

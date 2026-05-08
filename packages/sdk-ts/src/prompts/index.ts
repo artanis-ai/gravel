@@ -11,4 +11,3 @@ export type { DraftRow } from './drafts.js'
 export { submitDrafts, SubmitError } from './submit.js'
 export type { SubmitArgs } from './submit.js'
 
-export { ensureGravelUser } from './user-extra.js'

@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // We mock persist before importing the patcher so we can assert what was
 // fed in.
 vi.mock('../src/tracing/persist.js', () => ({
-  persistTrace: vi.fn(async () => {}),
+  persistSample: vi.fn(async () => {}),
   setGravelTracingConfig: () => {},
   _resetGravelTracingForTests: () => {},
 }))
@@ -23,7 +23,7 @@ describe('fetch auto-patch', () => {
     delete (globalThis as any)[PATCHED_SYM]
     vi.resetModules()
     const persistMod = await import('../src/tracing/persist.js')
-    ;(persistMod.persistTrace as any).mockClear?.()
+    ;(persistMod.persistSample as any).mockClear?.()
   })
 
   afterEach(() => {
@@ -57,11 +57,11 @@ describe('fetch auto-patch', () => {
     const json = await r.json()
     expect(json.choices[0].message.content).toBe('hi')
 
-    // Allow the void persistTrace promise to settle.
+    // Allow the void persistSample promise to settle.
     await new Promise((r) => setTimeout(r, 10))
 
-    expect(persistMod.persistTrace).toHaveBeenCalledOnce()
-    const arg = (persistMod.persistTrace as any).mock.calls[0][0]
+    expect(persistMod.persistSample).toHaveBeenCalledOnce()
+    const arg = (persistMod.persistSample as any).mock.calls[0][0]
     expect(arg.name).toBe('fetch:openai.chat.completions')
     expect(arg.provider).toBe('openai')
     expect(arg.model).toBe('gpt-test')
@@ -94,8 +94,8 @@ describe('fetch auto-patch', () => {
     })
     await new Promise((r) => setTimeout(r, 10))
 
-    expect(persistMod.persistTrace).toHaveBeenCalledOnce()
-    const arg = (persistMod.persistTrace as any).mock.calls[0][0]
+    expect(persistMod.persistSample).toHaveBeenCalledOnce()
+    const arg = (persistMod.persistSample as any).mock.calls[0][0]
     expect(arg.name).toBe('fetch:anthropic.messages')
     expect(arg.provider).toBe('anthropic')
     expect(arg.tokensInput).toBe(5)
@@ -112,7 +112,7 @@ describe('fetch auto-patch', () => {
     await globalThis.fetch('https://example.com/api/users')
     await new Promise((r) => setTimeout(r, 10))
 
-    expect(persistMod.persistTrace).not.toHaveBeenCalled()
+    expect(persistMod.persistSample).not.toHaveBeenCalled()
     expect(fakeFetch).toHaveBeenCalledOnce()
   })
 
@@ -134,7 +134,7 @@ describe('fetch auto-patch', () => {
     })
     await new Promise((r) => setTimeout(r, 10))
 
-    expect(persistMod.persistTrace).not.toHaveBeenCalled()
+    expect(persistMod.persistSample).not.toHaveBeenCalled()
   })
 
   it('records errored status when the response is non-2xx', async () => {
@@ -153,7 +153,7 @@ describe('fetch auto-patch', () => {
     })
     await new Promise((r) => setTimeout(r, 10))
 
-    const arg = (persistMod.persistTrace as any).mock.calls[0][0]
+    const arg = (persistMod.persistSample as any).mock.calls[0][0]
     expect(arg.status).toBe('errored')
   })
 })

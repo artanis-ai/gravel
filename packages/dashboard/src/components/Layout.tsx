@@ -15,17 +15,18 @@ interface User {
   role: 'user' | 'admin'
 }
 
-// Three tabs the domain expert understands. "Traces" was a developer-
-// shaped word; "Outputs" is what the AI produced. "Review" is where
-// flagged outputs go for inspection (folds in Datasets + Evals — they
-// are the same workflow from the DE's perspective). "Prompts" is the
-// manifest editor.
+// Two tabs. "Traces" was a developer-shaped word; "Outputs" is what
+// the AI produced (one row = one sample = one input/output exchange).
+// "Prompts" is the manifest editor.
+//
+// (A "Review" tab — flagged samples + regression issues — was folded
+// out 2026-05-08 because it was just a filter over Outputs. Bring it
+// back as a dedicated tab when the workflow earns its own surface.)
 const NAV_ITEMS: NavItem[] = [
   // `/` is rendered by App.tsx as the prompts page; treat it as part of
   // the Prompts tab so the highlight is correct on first load.
   { path: '/prompts', label: 'Prompts', match: ['/', '/prompts'], icon: PromptsIcon },
-  { path: '/traces', label: 'Outputs', match: ['/traces'], icon: OutputsIcon },
-  { path: '/review', label: 'Review', match: ['/review', '/datasets', '/evals'], icon: ReviewIcon },
+  { path: '/samples', label: 'Outputs', match: ['/samples'], icon: OutputsIcon },
 ]
 
 interface NavItem {
@@ -153,21 +154,3 @@ function OutputsIcon({ className }: { className?: string }) {
   )
 }
 
-function ReviewIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      className={iconClass(className)}
-    >
-      <polyline points="9 11 12 14 22 4" />
-      <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
-    </svg>
-  )
-}
