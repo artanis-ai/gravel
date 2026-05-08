@@ -134,3 +134,48 @@ describe('handler with no database (prompts-only install)', () => {
     expect(response.headers.get('content-type')).toMatch(/^text\/html/)
   })
 })
+
+describe('handler with an UNREACHABLE database (bad URL in config)', () => {
+  // Mirrors the customer scenario where the wizard was run before the
+  // optional-database fix landed: `gravel.config.ts` has a `database`
+  // block but DATABASE_URL points at a Postgres that isn't actually
+  // running. `pg.Pool` doesn't attempt the connection until the first
+  // query, so opening the pool succeeds — the question is whether
+  // routes that DON'T need the DB (login!) still work.
+  function buildBadUrlHandler() {
+    return createGravelHandler({
+      config: {
+        mountPath: '/admin/ai',
+        // Picked from the fixtures' tracked .env — placeholder shape,
+        // no real Postgres listening.
+        database: { url: 'postgres://user:pass@localhost:5432/test_app' },
+        auth: { defaultPassword: PASSWORD },
+      },
+    })
+  }
+
+  it('login POST still 303s — does NOT 500 because the DB is unreachable', async () => {
+    const handler = buildBadUrlHandler()
+    const form = new URLSearchParams({ password: PASSWORD })
+    const response = await request(handler, 'POST', '/admin/ai/api/auth/login', {
+      body: form.toString(),
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    })
+    expect(response.status).toBe(303)
+    expect(response.headers.get('set-cookie')).toMatch(/^gravel_session=/)
+  })
+
+  it('login POST is fast — does not block on a 30s pg connect timeout', async () => {
+    const handler = buildBadUrlHandler()
+    const form = new URLSearchParams({ password: PASSWORD })
+    const start = Date.now()
+    await request(handler, 'POST', '/admin/ai/api/auth/login', {
+      body: form.toString(),
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    })
+    const elapsed = Date.now() - start
+    // Login shouldn't even touch the DB; if it did and the DB was
+    // unreachable, we'd see ~30s here. Guard with a generous 1s.
+    expect(elapsed).toBeLessThan(1000)
+  })
+})
