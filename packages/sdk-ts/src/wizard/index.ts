@@ -156,7 +156,7 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
 
   welcome(
     'Gravel install',
-    'embedded prompt management for AI engineering teams',
+    'Embedded prompt management and evals for domain experts',
   )
   say(
     `Detected ${c.bold(detection.framework)} (${detection.language}, ${detection.packageManager}, db=${detection.database.driver}). I'll walk you through three things — you can skip any.`,
