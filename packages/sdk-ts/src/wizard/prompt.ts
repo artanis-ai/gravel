@@ -59,6 +59,13 @@ export interface AskTextOptions {
   output?: NodeJS.WritableStream
   /** Default returned on non-TTY or empty answer. */
   defaultValue?: string
+  /**
+   * Optional readline completer function. Returns
+   * `[matches, substring]`. Triggered when the user hits Tab on a
+   * TTY. See `pathCompleter()` below for the file-path one used by
+   * the manual-entry prompt.
+   */
+  completer?: (line: string) => [string[], string]
 }
 
 export async function askText(question: string, opts: AskTextOptions = {}): Promise<string> {
@@ -68,7 +75,11 @@ export async function askText(question: string, opts: AskTextOptions = {}): Prom
   const defaultValue = opts.defaultValue ?? ''
   if (!isTTY) return defaultValue
 
-  const rl = createInterface({ input, output })
+  const rl = createInterface({
+    input,
+    output,
+    ...(opts.completer ? { completer: opts.completer } : {}),
+  })
   try {
     const answer = await new Promise<string>((resolve) => {
       rl.question(question + ' ', (a) => resolve(a.trim()))

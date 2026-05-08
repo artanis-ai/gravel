@@ -43,6 +43,7 @@ import {
 import type { Manifest, ManifestPrompt } from '../manifest/types.js'
 import { resolveControlPlaneUrl } from './oauth.js'
 import { askText, confirm, pressEnter } from './prompt.js'
+import { pathCompleter, toRepoRelative } from './path-completer.js'
 import {
   bullet,
   c,
@@ -646,12 +647,18 @@ async function addPromptInteractive(
   askTextFn: (q: string, def?: string) => Promise<string>,
 ): Promise<ManifestPrompt | null> {
   say('')
-  const rawPath = (await askTextFn(`File path ${c.dim('(relative to repo root)')}:`, '')).trim()
+  // Tab-completion against the repo for file paths. Cross-platform —
+  // uses Node's readline `completer` hook + node:fs.readdirSync.
+  const rawPath = (
+    await askText(`File path ${c.dim('(Tab to complete; relative to repo root)')}:`, {
+      completer: pathCompleter(cwd),
+    })
+  ).trim()
   if (!rawPath) {
     bullet('No path given — cancelled.', 'skip')
     return null
   }
-  const path = rawPath.replace(/\\/g, '/')
+  const path = toRepoRelative(cwd, rawPath)
   const abs = join(cwd, ...path.split('/'))
   let text: string
   try {
