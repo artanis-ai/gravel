@@ -21,32 +21,8 @@ import { sql } from 'drizzle-orm'
 
 const now = sql`(unixepoch() * 1000)`
 
-export const gravelProjects = sqliteTable('gravel_projects', {
-  id: text('id').primaryKey(),
-  name: text('name').notNull(),
-  tier: text('tier').notNull().default('free'),
-  creditsRemaining: integer('credits_remaining').notNull().default(0),
-  creditsRefreshedAt: integer('credits_refreshed_at'),
-  ghInstallationId: integer('gh_installation_id'),
-  ghRepoOwner: text('gh_repo_owner'),
-  ghRepoName: text('gh_repo_name'),
-  ghBindingToken: text('gh_binding_token'),
-  ghInstalledAt: integer('gh_installed_at'),
-  createdAt: integer('created_at').notNull().default(now),
-})
-
-export const gravelEnvironments = sqliteTable(
-  'gravel_environments',
-  {
-    id: text('id').primaryKey(), // UUID generated at insert
-    name: text('name').notNull(),
-    createdAt: integer('created_at').notNull().default(now),
-  },
-  (table) => ({
-    nameUnique: uniqueIndex('gravel_environments_name_unique').on(table.name),
-  }),
-)
-
+// gravel_users — see postgres.ts for the rationale on the dropped tables
+// (gravel_projects, gravel_environments, gravel_labels, gravel_prompts).
 export const gravelUsers = sqliteTable('gravel_users', {
   id: text('id').primaryKey(),
   firstName: text('first_name').notNull(),
@@ -61,9 +37,7 @@ export const gravelTraces = sqliteTable(
     id: text('id').primaryKey(),
     name: text('name').notNull(),
     groupId: text('group_id'),
-    environmentId: text('environment_id')
-      .notNull()
-      .references(() => gravelEnvironments.id, { onDelete: 'restrict' }),
+    environment: text('environment'),
     metadata: text('metadata'),
     status: text('status').notNull().default('running'),
     timestamp: integer('timestamp').notNull(),
@@ -75,10 +49,7 @@ export const gravelTraces = sqliteTable(
     createdAt: integer('created_at').notNull().default(now),
   },
   (table) => ({
-    envTimestamp: index('gravel_traces_env_timestamp_idx').on(
-      table.environmentId,
-      table.timestamp,
-    ),
+    envTimestamp: index('gravel_traces_env_timestamp_idx').on(table.environment, table.timestamp),
     promptIdx: index('gravel_traces_prompt_id_idx').on(table.promptId),
   }),
 )
@@ -129,30 +100,11 @@ export const gravelFeedback = sqliteTable(
   }),
 )
 
-export const gravelLabels = sqliteTable(
-  'gravel_labels',
-  {
-    id: text('id').primaryKey(),
-    observationId: text('observation_id')
-      .notNull()
-      .references(() => gravelObservations.id, { onDelete: 'cascade' }),
-    labelData: text('label_data').notNull(),
-    timestamp: integer('timestamp').notNull(),
-    createdAt: integer('created_at').notNull().default(now),
-    updatedAt: integer('updated_at').notNull().default(now),
-  },
-  (table) => ({
-    observationIdx: index('gravel_labels_observation_id_idx').on(table.observationId),
-  }),
-)
-
 export const gravelDatasets = sqliteTable('gravel_datasets', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   description: text('description'),
-  environmentId: text('environment_id').references(() => gravelEnvironments.id, {
-    onDelete: 'set null',
-  }),
+  environment: text('environment'),
   createdByUserId: text('created_by_user_id').references(() => gravelUsers.id, {
     onDelete: 'set null',
   }),
@@ -178,32 +130,11 @@ export const gravelDatasetTraces = sqliteTable(
   }),
 )
 
-export const gravelPrompts = sqliteTable(
-  'gravel_prompts',
-  {
-    id: text('id').primaryKey(),
-    path: text('path').notNull(),
-    type: text('type').notNull(),
-    segment: text('segment'),
-    currentHash: text('current_hash').notNull(),
-    currentText: text('current_text').notNull(),
-    lastSeenCommit: text('last_seen_commit').notNull(),
-    createdAt: integer('created_at').notNull().default(now),
-    updatedAt: integer('updated_at').notNull().default(now),
-  },
-  (table) => ({
-    pathIdx: index('gravel_prompts_path_idx').on(table.path),
-    hashIdx: index('gravel_prompts_hash_idx').on(table.currentHash),
-  }),
-)
-
 export const gravelPromptDrafts = sqliteTable(
   'gravel_prompt_drafts',
   {
     id: text('id').primaryKey(),
-    promptId: text('prompt_id')
-      .notNull()
-      .references(() => gravelPrompts.id, { onDelete: 'cascade' }),
+    promptId: text('prompt_id').notNull(),
     draftBranch: text('draft_branch').notNull(),
     newText: text('new_text').notNull(),
     editorUserId: text('editor_user_id').references(() => gravelUsers.id, {
@@ -234,9 +165,7 @@ export const gravelEvalRuns = sqliteTable(
       onDelete: 'set null',
     }),
     commitSha: text('commit_sha'),
-    targetEnvironmentId: text('target_environment_id').references(() => gravelEnvironments.id, {
-      onDelete: 'set null',
-    }),
+    targetEnvironment: text('target_environment'),
     totalRows: integer('total_rows').notNull().default(0),
     completedRows: integer('completed_rows').notNull().default(0),
     summary: text('summary'),
@@ -273,16 +202,12 @@ export const gravelEvalResults = sqliteTable(
 )
 
 export const allTables = {
-  gravelProjects,
-  gravelEnvironments,
   gravelUsers,
   gravelTraces,
   gravelObservations,
   gravelFeedback,
-  gravelLabels,
   gravelDatasets,
   gravelDatasetTraces,
-  gravelPrompts,
   gravelPromptDrafts,
   gravelEvalRuns,
   gravelEvalResults,

@@ -72,7 +72,10 @@ describe('Traces list', () => {
     mockedGet.mockResolvedValue(makeTraces(3))
     renderRoute(<TracesPage />)
     await waitFor(() => expect(screen.getAllByText('chat.completions.create')).toHaveLength(3))
-    expect(screen.getByText(/3 traces/i)).toBeInTheDocument()
+    // Pagination caption is broken across spans; check the container
+    // has "Showing 1–3 of 3" once whitespace + numbers are flattened.
+    const paginationNav = screen.getByLabelText(/pagination/i)
+    expect(paginationNav.textContent?.replace(/\s+/g, ' ')).toMatch(/Showing 1.{1,3}3 of 3/i)
   })
 
   it('refetches when a filter changes', async () => {

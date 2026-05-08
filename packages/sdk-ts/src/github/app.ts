@@ -87,14 +87,13 @@ export function buildInstallUrl(args: { state: string; slug?: string }): string 
  */
 export async function mintInstallationToken(args: {
   controlPlaneUrl: string
-  /** Per-installation bearer token issued by the install callback. */
-  installBindingToken: string
-  installationId: number
+  /** Project API key (Clerk-managed). CP looks up the install. */
+  apiKey: string
+  projectId: string
 }): Promise<InstallationToken> {
-  // Dev stub: when the install callback was the stubbed one (no real
-  // GitHub install), use a PAT from the dev's .env directly. Pairs with
-  // `GRAVEL_GH_DEV_STUB=1` in `handler/routes.ts`.
-  if (args.installBindingToken === 'dev-stub') {
+  // Dev stub: bypass the CP entirely. Pairs with GRAVEL_GH_DEV_STUB=1
+  // in handler/routes.ts + project-state.ts.
+  if (process.env.GRAVEL_GH_DEV_STUB === '1') {
     const stubToken = process.env.GRAVEL_GH_DEV_STUB_TOKEN
     if (!stubToken) {
       throw new Error(
@@ -114,9 +113,9 @@ export async function mintInstallationToken(args: {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      authorization: `Bearer ${args.installBindingToken}`,
+      authorization: `Bearer ${args.apiKey}`,
     },
-    body: JSON.stringify({ installation_id: args.installationId }),
+    body: JSON.stringify({ project_id: args.projectId }),
   })
   if (!res.ok) {
     throw new Error(`installation-token mint failed: ${res.status} ${await res.text()}`)

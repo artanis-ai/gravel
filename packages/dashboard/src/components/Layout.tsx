@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'wouter'
-import type { ReactNode } from 'react'
+import type { ReactElement, ReactNode } from 'react'
 import { UpdateBanner } from './UpdateBanner'
 
 declare global {
@@ -20,13 +20,20 @@ interface User {
 // flagged outputs go for inspection (folds in Datasets + Evals — they
 // are the same workflow from the DE's perspective). "Prompts" is the
 // manifest editor.
-const NAV_ITEMS = [
+const NAV_ITEMS: NavItem[] = [
   // `/` is rendered by App.tsx as the prompts page; treat it as part of
   // the Prompts tab so the highlight is correct on first load.
-  { path: '/prompts', label: 'Prompts', match: ['/', '/prompts'] },
-  { path: '/traces', label: 'Outputs', match: ['/traces'] },
-  { path: '/review', label: 'Review', match: ['/review', '/datasets', '/evals'] },
+  { path: '/prompts', label: 'Prompts', match: ['/', '/prompts'], icon: PromptsIcon },
+  { path: '/traces', label: 'Outputs', match: ['/traces'], icon: OutputsIcon },
+  { path: '/review', label: 'Review', match: ['/review', '/datasets', '/evals'], icon: ReviewIcon },
 ]
+
+interface NavItem {
+  path: string
+  label: string
+  match: string[]
+  icon: (props: { className?: string }) => ReactElement
+}
 
 function isActive(location: string, prefixes: string[]): boolean {
   return prefixes.some((p) => (p === '/' ? location === '/' : location === p || location.startsWith(p + '/')))
@@ -44,46 +51,123 @@ export function Layout({ children, user }: { children: ReactNode; user?: User })
   return (
     <div className="min-h-screen flex flex-col">
       <UpdateBanner mountPath={mountPath} isAdmin={isAdmin} />
-      <div className="flex-1 flex">
-        <aside className="w-52 border-r border-warm hidden sm:flex sm:flex-col">
+      <header className="bg-cream">
+        <div className="flex flex-col items-center gap-2 px-4 py-4 sm:px-6">
           {productName ? (
-            <div className="px-4 pt-4 pb-3 border-b border-warm">
-              <span className="font-display font-semibold text-sm text-text-dark">{productName}</span>
-            </div>
+            <span className="font-display text-xs font-medium uppercase tracking-wide text-text-muted">
+              {productName}
+            </span>
           ) : null}
-          <nav className="flex-1 p-4 space-y-1 text-sm">
-            {NAV_ITEMS.map((item) => {
-              const active = isActive(location, item.match)
-              return (
-                <Link key={item.path} href={item.path}>
-                  <a
-                    className={`block rounded-lg px-2.5 py-1.5 cursor-pointer ${
-                      active
-                        ? 'bg-primary/10 text-primary font-medium'
-                        : 'text-text-mid hover:bg-warm'
-                    }`}
-                  >
-                    {item.label}
-                  </a>
-                </Link>
-              )
-            })}
-          </nav>
-          {/*
-            No "Hi, {name}" footer. The dashboard is embedded chrome
-            inside the host app — a domain expert who's already logged
-            into the host doesn't need to be reminded who they are. The
-            only place we surface their identity is on the PR they
-            submit, where it actually carries information.
-
-            Sign out: not present here either. For real users, logout
-            belongs to the HOST app's auth UI, not the embed. For
-            localhost devs, the auth gate auto-elevates regardless, so
-            a button would just visually flicker.
-          */}
-        </aside>
-        <main className="flex-1 p-6 sm:p-8 overflow-y-auto">{children}</main>
-      </div>
+          <Tabs location={location} />
+        </div>
+      </header>
+      <main className="flex-1 overflow-y-auto">
+        <div className="px-4 py-6 sm:px-8 sm:py-8">{children}</div>
+      </main>
     </div>
+  )
+}
+
+/**
+ * Segmented-control tab bar — the rounded pill with the active tab
+ * as a raised white card. Matches the iOS / macOS segmented-control
+ * pattern; reads as one cohesive choice rather than three separate
+ * links so the DE doesn't have to wonder "where am I."
+ */
+function Tabs({ location }: { location: string }) {
+  return (
+    <nav
+      className="inline-flex items-center gap-1 rounded-2xl bg-warm/80 p-1 text-sm"
+      role="tablist"
+      aria-label="Sections"
+    >
+      {NAV_ITEMS.map((item) => {
+        const active = isActive(location, item.match)
+        const Icon = item.icon
+        return (
+          <Link key={item.path} href={item.path}>
+            <a
+              role="tab"
+              aria-selected={active}
+              className={
+                'inline-flex cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1.5 font-medium transition-colors ' +
+                (active
+                  ? 'bg-cream text-text-dark shadow-sm ring-1 ring-warm'
+                  : 'text-text-mid hover:text-text-dark')
+              }
+            >
+              <Icon className={active ? 'text-text-dark' : 'text-text-muted'} />
+              {item.label}
+            </a>
+          </Link>
+        )
+      })}
+    </nav>
+  )
+}
+
+// Inline SVG icons — kept tiny and tonally matched to the brand. Using
+// stroke-based glyphs (1.75 weight) so they sit visually with the
+// existing lock icon on the login page + the eye on DeveloperNote.
+
+function iconClass(extra?: string): string {
+  return `h-4 w-4 ${extra ?? ''}`.trim()
+}
+
+function PromptsIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={iconClass(className)}
+    >
+      <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+      <polyline points="14 3 14 9 20 9" />
+      <line x1="8" y1="13" x2="16" y2="13" />
+      <line x1="8" y1="17" x2="13" y2="17" />
+    </svg>
+  )
+}
+
+function OutputsIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={iconClass(className)}
+    >
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
+  )
+}
+
+function ReviewIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={iconClass(className)}
+    >
+      <polyline points="9 11 12 14 22 4" />
+      <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+    </svg>
   )
 }

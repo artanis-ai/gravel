@@ -49,7 +49,6 @@ let cachedDb: Database | null = null
 let dbOpenPromise: Promise<Database | null> | null = null
 let warnedNoConfig = false
 let warnedDbFailure = false
-const ensuredEnvironments = new Map<string, string>()
 
 /**
  * Wired by `createGravelHandler` so the tracer has a DB to write into.
@@ -60,7 +59,6 @@ export function setGravelTracingConfig(config: ResolvedGravelConfig): void {
   // Reset the cached DB so the next persist re-opens against the new config.
   cachedDb = null
   dbOpenPromise = null
-  ensuredEnvironments.clear()
 }
 
 /** Test seam — restore module to pristine state between tests. */
@@ -70,7 +68,6 @@ export function _resetGravelTracingForTests(): void {
   dbOpenPromise = null
   warnedNoConfig = false
   warnedDbFailure = false
-  ensuredEnvironments.clear()
 }
 
 async function getDb(): Promise<Database | null> {
@@ -111,74 +108,8 @@ function getEnvironmentName(): string {
   return resolvedConfig?.environments?.[0] ?? 'prod'
 }
 
-async function ensureEnvironment(db: Database, name: string): Promise<string> {
-  const existing = ensuredEnvironments.get(name)
-  if (existing) return existing
-  // Lazy-import schema variant matching the dialect.
-  if (db.dialect === 'postgres') {
-    const { gravelEnvironments } = await import('../schema/postgres.js')
-    const drz = db.drizzle as import('drizzle-orm/node-postgres').NodePgDatabase
-    const found = await drz
-      .select({ id: gravelEnvironments.id })
-      .from(gravelEnvironments)
-      .where(eq(gravelEnvironments.name, name))
-      .limit(1)
-    if (found.length > 0 && found[0]) {
-      ensuredEnvironments.set(name, found[0].id)
-      return found[0].id
-    }
-    const inserted = await drz
-      .insert(gravelEnvironments)
-      .values({ name })
-      .onConflictDoNothing({ target: gravelEnvironments.name })
-      .returning({ id: gravelEnvironments.id })
-    if (inserted.length > 0 && inserted[0]) {
-      ensuredEnvironments.set(name, inserted[0].id)
-      return inserted[0].id
-    }
-    // Race: another writer inserted; re-select.
-    const refound = await drz
-      .select({ id: gravelEnvironments.id })
-      .from(gravelEnvironments)
-      .where(eq(gravelEnvironments.name, name))
-      .limit(1)
-    if (refound.length > 0 && refound[0]) {
-      ensuredEnvironments.set(name, refound[0].id)
-      return refound[0].id
-    }
-    throw new Error(`[gravel] failed to ensure environment row for "${name}"`)
-  } else {
-    const { gravelEnvironments } = await import('../schema/sqlite.js')
-    const drz = db.drizzle as import('drizzle-orm/better-sqlite3').BetterSQLite3Database
-    const found = drz
-      .select({ id: gravelEnvironments.id })
-      .from(gravelEnvironments)
-      .where(eq(gravelEnvironments.name, name))
-      .limit(1)
-      .all()
-    if (found.length > 0 && found[0]) {
-      ensuredEnvironments.set(name, found[0].id)
-      return found[0].id
-    }
-    const id = randomUUID()
-    drz
-      .insert(gravelEnvironments)
-      .values({ id, name })
-      .onConflictDoNothing({ target: gravelEnvironments.name })
-      .run()
-    const refound = drz
-      .select({ id: gravelEnvironments.id })
-      .from(gravelEnvironments)
-      .where(eq(gravelEnvironments.name, name))
-      .limit(1)
-      .all()
-    if (refound.length > 0 && refound[0]) {
-      ensuredEnvironments.set(name, refound[0].id)
-      return refound[0].id
-    }
-    throw new Error(`[gravel] failed to ensure environment row for "${name}"`)
-  }
-}
+// (gravel_environments was dropped 2026-05-08; environment is now a
+// free-form text column on gravel_traces.)
 
 /**
  * Persist a single trace + its observations. Never throws — tracer failures
@@ -191,8 +122,7 @@ export async function persistTrace(payload: PersistTraceInput): Promise<void> {
     const db = await getDb()
     if (!db) return
 
-    const envName = getEnvironmentName()
-    const environmentId = await ensureEnvironment(db, envName)
+    const environment = getEnvironmentName()
 
     // Apply user-provided scrubbers (spec §7) before write.
     const scrubInput = resolvedConfig?.scrubInput
@@ -217,7 +147,7 @@ export async function persistTrace(payload: PersistTraceInput): Promise<void> {
       await drz.insert(gravelTraces).values({
         id: traceId,
         name: payload.name,
-        environmentId,
+        environment,
         metadata: baseMetadata,
         status: payload.status === 'errored' ? 'errored' : 'completed',
         timestamp: payload.startedAt,
@@ -272,7 +202,7 @@ export async function persistTrace(payload: PersistTraceInput): Promise<void> {
         .values({
           id: traceId,
           name: payload.name,
-          environmentId,
+          environment,
           metadata: JSON.stringify(baseMetadata),
           status: payload.status === 'errored' ? 'errored' : 'completed',
           timestamp: payload.startedAt.getTime(),

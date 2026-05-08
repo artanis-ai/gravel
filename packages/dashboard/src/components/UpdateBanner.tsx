@@ -19,6 +19,7 @@
  *     a generic note covering the four common managers.
  */
 import { useEffect, useState } from 'react'
+import { CopyableCode } from './CopyableCode'
 
 interface VersionInfo {
   current: string
@@ -37,7 +38,6 @@ export function UpdateBanner({ mountPath, isAdmin }: { mountPath: string; isAdmi
       return null
     }
   })
-  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     if (!isAdmin) return
@@ -70,16 +70,6 @@ export function UpdateBanner({ mountPath, isAdmin }: { mountPath: string; isAdmi
 
   const updateCmd = `pnpm update @artanis-ai/gravel@${info.latest}` // works for pnpm + npm aliases mostly; doc lists npm/yarn/bun explicitly
 
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(updateCmd)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1_500)
-    } catch {
-      /* ignore */
-    }
-  }
-
   return (
     <div
       role="status"
@@ -91,19 +81,13 @@ export function UpdateBanner({ mountPath, isAdmin }: { mountPath: string; isAdmi
         <span className="text-text-mid">
           {info.current} → {info.latest}
         </span>
-        <code className="ml-auto rounded bg-warm px-2 py-0.5 font-mono text-[11px]">{updateCmd}</code>
-        <button
-          type="button"
-          onClick={handleCopy}
-          className="rounded border border-warm px-2 py-0.5 hover:bg-warm transition-colors"
-          aria-label="Copy update command"
-        >
-          {copied ? 'Copied' : 'Copy'}
-        </button>
+        <span className="ml-auto">
+          <CopyableCode>{updateCmd}</CopyableCode>
+        </span>
         <button
           type="button"
           onClick={handleDismiss}
-          className="text-text-muted hover:text-text-dark px-1"
+          className="text-text-muted hover:text-text-dark px-1 cursor-pointer"
           aria-label="Dismiss update notice"
         >
           ×

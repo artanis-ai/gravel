@@ -1,171 +1,115 @@
 /**
- * Project-level GitHub App install state. Written by
- * `/api/github/install/callback` once the dev installs gravel-bot on
- * their repo; read by `prompts/submit.ts` on every PR creation.
+ * GitHub install state — queried from the control plane, not stored
+ * locally. (The previous design mirrored install state into the
+ * customer's DB; that table was dropped 2026-05-08.)
  *
- * The customer's DB has a single `gravel_projects` row keyed by
- * `process.env.GRAVEL_PROJECT_ID`. The SDK is single-tenant per install
- * — the upsert below is unconditional.
+ * Auth: project API key from `.env`. The CP enforces "you must own
+ * this project" via the Clerk-managed key.
  */
-import { eq } from 'drizzle-orm'
-import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
-import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
-
-import type { Database } from '../db/index.js'
 
 export interface GhInstallState {
   installationId: number
   repoOwner: string
   repoName: string
-  /** JWT issued by the control plane; carry as bearer when minting. */
-  bindingToken: string
-  /** When the dev clicked Install. ISO-8601. */
   installedAt: string
 }
 
-function getProjectId(): string {
+interface CachedState {
+  state: GhInstallState | null
+  fetchedAt: number
+}
+
+// Tiny in-process cache so a status-check + a submit don't both hit
+// the CP. TTL is short — install state changes rarely, and freshness
+// is cheap.
+const CACHE_TTL_MS = 30_000
+let cache: CachedState | null = null
+
+export function _resetGhInstallStateCacheForTests(): void {
+  cache = null
+}
+
+function controlPlaneUrl(): string {
+  return process.env.GRAVEL_CONTROL_PLANE_URL ?? 'https://gravel.artanis.ai'
+}
+
+function projectId(): string {
   const id = process.env.GRAVEL_PROJECT_ID
   if (!id) throw new Error('GRAVEL_PROJECT_ID not set')
   return id
 }
 
-export async function getGhInstallState(db: Database): Promise<GhInstallState | null> {
-  const projectId = getProjectId()
-  type Row = {
-    installationId: number | null
-    repoOwner: string | null
-    repoName: string | null
-    bindingToken: string | null
-    installedAt: Date | number | null
-  }
-  let row: Row | undefined
-  if (db.dialect === 'postgres') {
-    const { gravelProjects } = await import('../schema/postgres.js')
-    const drz = db.drizzle as NodePgDatabase
-    const rows = await drz
-      .select({
-        installationId: gravelProjects.ghInstallationId,
-        repoOwner: gravelProjects.ghRepoOwner,
-        repoName: gravelProjects.ghRepoName,
-        bindingToken: gravelProjects.ghBindingToken,
-        installedAt: gravelProjects.ghInstalledAt,
-      })
-      .from(gravelProjects)
-      .where(eq(gravelProjects.id, projectId))
-      .limit(1)
-    row = rows[0] as Row | undefined
-  } else {
-    const { gravelProjects } = await import('../schema/sqlite.js')
-    const drz = db.drizzle as BetterSQLite3Database
-    const rows = drz
-      .select({
-        installationId: gravelProjects.ghInstallationId,
-        repoOwner: gravelProjects.ghRepoOwner,
-        repoName: gravelProjects.ghRepoName,
-        bindingToken: gravelProjects.ghBindingToken,
-        installedAt: gravelProjects.ghInstalledAt,
-      })
-      .from(gravelProjects)
-      .where(eq(gravelProjects.id, projectId))
-      .limit(1)
-      .all()
-    row = rows[0] as Row | undefined
-  }
-  if (!row || row.installationId == null || !row.repoOwner || !row.repoName || !row.bindingToken) {
-    return null
-  }
-  const installedAtIso =
-    row.installedAt instanceof Date
-      ? row.installedAt.toISOString()
-      : typeof row.installedAt === 'number'
-        ? new Date(row.installedAt).toISOString()
-        : new Date().toISOString()
-  return {
-    installationId: row.installationId,
-    repoOwner: row.repoOwner,
-    repoName: row.repoName,
-    bindingToken: row.bindingToken,
-    installedAt: installedAtIso,
-  }
+function apiKey(): string {
+  const key = process.env.GRAVEL_API_KEY
+  if (!key) throw new Error('GRAVEL_API_KEY not set')
+  return key
 }
 
 /**
- * Upsert the install state. The `name` column on gravel_projects is
- * NOT NULL, so we seed it from GRAVEL_PROJECT_NAME (or the project_id
- * itself) when inserting a fresh row. The control plane is the source
- * of truth for the human-friendly name; this is only a fallback.
+ * Read the install state from the CP, or `null` if the App isn't
+ * installed on this project's repo yet.
  */
-export async function setGhInstallState(db: Database, state: GhInstallState): Promise<void> {
-  const projectId = getProjectId()
-  const fallbackName = process.env.GRAVEL_PROJECT_NAME ?? projectId
-  const installedAtPg = new Date(state.installedAt)
-  const installedAtSqlite = installedAtPg.getTime()
-
-  if (db.dialect === 'postgres') {
-    const { gravelProjects } = await import('../schema/postgres.js')
-    const drz = db.drizzle as NodePgDatabase
-    const existing = await drz
-      .select({ id: gravelProjects.id })
-      .from(gravelProjects)
-      .where(eq(gravelProjects.id, projectId))
-      .limit(1)
-    if (existing.length === 0) {
-      await drz.insert(gravelProjects).values({
-        id: projectId,
-        name: fallbackName,
-        ghInstallationId: state.installationId,
-        ghRepoOwner: state.repoOwner,
-        ghRepoName: state.repoName,
-        ghBindingToken: state.bindingToken,
-        ghInstalledAt: installedAtPg,
-      })
-    } else {
-      await drz
-        .update(gravelProjects)
-        .set({
-          ghInstallationId: state.installationId,
-          ghRepoOwner: state.repoOwner,
-          ghRepoName: state.repoName,
-          ghBindingToken: state.bindingToken,
-          ghInstalledAt: installedAtPg,
-        })
-        .where(eq(gravelProjects.id, projectId))
+export async function getGhInstallState(): Promise<GhInstallState | null> {
+  if (cache && Date.now() - cache.fetchedAt < CACHE_TTL_MS) {
+    return cache.state
+  }
+  // Dev stub: bypass CP entirely (used by the fixture suite + UI
+  // iteration without a deployed CP). Pairs with the same flag in
+  // handler/routes.ts and github/app.ts.
+  if (process.env.GRAVEL_GH_DEV_STUB === '1') {
+    const owner = process.env.GRAVEL_GH_DEV_REPO_OWNER
+    const name = process.env.GRAVEL_GH_DEV_REPO_NAME
+    if (!owner || !name) return null
+    const state: GhInstallState = {
+      installationId: 0,
+      repoOwner: owner,
+      repoName: name,
+      installedAt: new Date().toISOString(),
     }
-    return
+    cache = { state, fetchedAt: Date.now() }
+    return state
   }
 
-  const { gravelProjects } = await import('../schema/sqlite.js')
-  const drz = db.drizzle as BetterSQLite3Database
-  const existing = drz
-    .select({ id: gravelProjects.id })
-    .from(gravelProjects)
-    .where(eq(gravelProjects.id, projectId))
-    .limit(1)
-    .all()
-  if (existing.length === 0) {
-    drz
-      .insert(gravelProjects)
-      .values({
-        id: projectId,
-        name: fallbackName,
-        ghInstallationId: state.installationId,
-        ghRepoOwner: state.repoOwner,
-        ghRepoName: state.repoName,
-        ghBindingToken: state.bindingToken,
-        ghInstalledAt: installedAtSqlite,
-      })
-      .run()
-    return
+  const url = new URL(`/api/cli/projects/${encodeURIComponent(projectId())}/github`, controlPlaneUrl())
+  const res = await fetch(url, {
+    headers: { authorization: `Bearer ${apiKey()}` },
+  })
+  if (res.status === 404) {
+    cache = { state: null, fetchedAt: Date.now() }
+    return null
   }
-  drz
-    .update(gravelProjects)
-    .set({
-      ghInstallationId: state.installationId,
-      ghRepoOwner: state.repoOwner,
-      ghRepoName: state.repoName,
-      ghBindingToken: state.bindingToken,
-      ghInstalledAt: installedAtSqlite,
-    })
-    .where(eq(gravelProjects.id, projectId))
-    .run()
+  if (!res.ok) {
+    throw new Error(`gh-install-state fetch failed: ${res.status} ${await res.text()}`)
+  }
+  const body = (await res.json()) as
+    | { installed: false }
+    | {
+        installed: true
+        installation_id: number
+        repo_owner: string
+        repo_name: string
+        installed_at: string | null
+      }
+  if (!body.installed) {
+    cache = { state: null, fetchedAt: Date.now() }
+    return null
+  }
+  const state: GhInstallState = {
+    installationId: body.installation_id,
+    repoOwner: body.repo_owner,
+    repoName: body.repo_name,
+    installedAt: body.installed_at ?? new Date().toISOString(),
+  }
+  cache = { state, fetchedAt: Date.now() }
+  return state
+}
+
+/**
+ * No-op kept for source compatibility with the SDK's install callback
+ * route. The CP writes the install state; the SDK has nothing to
+ * persist locally. (Bumps the cache so a status-refetch right after
+ * install reflects the new state without waiting for the TTL.)
+ */
+export function bustGhInstallStateCache(): void {
+  cache = null
 }

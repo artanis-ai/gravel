@@ -11,5 +11,5 @@ export type { PromptChange, CreatePullRequestArgs, CreatePullRequestResult } fro
 export { buildInstallUrl, mintInstallationToken, DEFAULT_APP_SLUG, DEFAULT_APP_ID } from './app.js'
 export type { GravelAppId, InstallationBinding, InstallationToken } from './app.js'
 
-export { getGhInstallState, setGhInstallState } from './project-state.js'
+export { getGhInstallState, bustGhInstallStateCache } from './project-state.js'
 export type { GhInstallState } from './project-state.js'

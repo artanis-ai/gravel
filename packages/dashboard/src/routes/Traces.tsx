@@ -20,12 +20,17 @@ import {
 } from '../lib/types'
 import { EmptyState } from '../components/EmptyState'
 import { DeveloperNote } from '../components/DeveloperNote'
+import { CopyableCode } from '../components/CopyableCode'
 import { SkeletonTable, SkeletonText } from '../components/Skeleton'
 import { Badge } from '../components/Badge'
 import { Modal } from '../components/Modal'
+import { Sheet } from '../components/Sheet'
 import { cx, formatDuration, formatRelative, formatTokens } from '../lib/format'
 
 const PAGE_SIZE = 20
+
+type SortKey = 'started_at' | 'duration_ms' | 'tokens_in' | 'tokens_out' | 'feedback_count'
+type SortDir = 'asc' | 'desc'
 
 interface TraceFilters {
   env: string
@@ -35,10 +40,12 @@ interface TraceFilters {
   from: string
   to: string
   page: number
+  sortBy: SortKey
+  sortDir: SortDir
 }
 
 function defaultFilters(): TraceFilters {
-  return { env: '', model: '', status: '', q: '', from: '', to: '', page: 1 }
+  return { env: '', model: '', status: '', q: '', from: '', to: '', page: 1, sortBy: 'started_at', sortDir: 'desc' }
 }
 
 function buildTracesQueryString(f: TraceFilters): string {
@@ -63,6 +70,7 @@ export function TracesPage({ traceId }: { traceId?: string } = {}) {
 
 function TracesList() {
   const [filters, setFilters] = useState<TraceFilters>(defaultFilters())
+  const [sheetTraceId, setSheetTraceId] = useState<string | null>(null)
   const queryString = buildTracesQueryString(filters)
   const path = `/api/traces?${queryString}`
 
@@ -75,64 +83,147 @@ function TracesList() {
     setFilters((prev) => ({ ...prev, [key]: value, page: key === 'page' ? (value as number) : 1 }))
   }
 
-  const traces = data?.traces ?? []
+  function toggleSort(key: SortKey) {
+    setFilters((prev) => ({
+      ...prev,
+      sortBy: key,
+      sortDir: prev.sortBy === key && prev.sortDir === 'desc' ? 'asc' : 'desc',
+      page: 1,
+    }))
+  }
+
+  const tracesUnsorted = data?.traces ?? []
+  const traces = useMemo(() => sortClientSide(tracesUnsorted, filters.sortBy, filters.sortDir), [
+    tracesUnsorted,
+    filters.sortBy,
+    filters.sortDir,
+  ])
   const total = data?.total ?? 0
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const startIndex = total === 0 ? 0 : (filters.page - 1) * PAGE_SIZE + 1
+  const endIndex = Math.min(filters.page * PAGE_SIZE, total)
 
   return (
-    <div className="space-y-6">
-      <header className="flex items-baseline justify-between gap-4">
-        <div>
-          <h1 className="font-display text-2xl font-semibold text-text-dark">Outputs</h1>
-          <p className="mt-1 text-sm text-text-mid">
-            Everything the AI produced. Flag any that need a closer look — they'll move to Review.
-          </p>
+    <div className="space-y-4">
+      <DeveloperNote>
+        Traces flow in once the app runs with Gravel tracing on. To diagnose, run{' '}
+        <CopyableCode>npx @artanis-ai/gravel doctor</CopyableCode>
+        .
+      </DeveloperNote>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex-1 min-w-0">
+          <TracesFilters filters={filters} onChange={update} />
         </div>
         <button
           type="button"
-          className="cursor-pointer rounded-lg border border-warm px-3 py-1.5 text-sm text-text-mid hover:bg-warm"
+          className="shrink-0 cursor-pointer rounded-lg border border-warm bg-cream p-2 text-text-mid hover:bg-warm"
           onClick={() => refetch()}
           aria-label="Refresh"
+          title="Refresh"
         >
-          {isFetching ? 'Refreshing…' : 'Refresh'}
+          <RefreshIcon spinning={isFetching} />
         </button>
-      </header>
-
-      <TracesFilters filters={filters} onChange={update} />
+      </div>
 
       {isError ? (
         <ErrorBox message={(error as Error)?.message ?? 'Failed to load traces.'} onRetry={() => refetch()} />
       ) : isLoading ? (
-        <div className="rounded-2xl border border-warm bg-cream p-4">
-          <SkeletonTable rows={6} cols={6} />
+        <div className="rounded-lg border border-warm bg-cream p-4">
+          <SkeletonTable rows={8} cols={7} />
         </div>
       ) : traces.length === 0 ? (
-        <div className="space-y-3">
-          <EmptyState
-            title="No outputs yet"
-            body="Once your app produces AI output, it'll appear here so you can flag any that need a closer look."
-          />
-          <DeveloperNote>
-            Traces flow in once the app runs with Gravel tracing on. To diagnose, run{' '}
-            <code className="rounded bg-cream px-1 py-0.5 font-mono text-[11px]">
-              npx @artanis-ai/gravel doctor
-            </code>
-            .
-          </DeveloperNote>
-        </div>
+        <EmptyState
+          title="No outputs yet"
+          body="Once your app produces AI output, it'll appear here so you can flag any that need a closer look."
+        />
       ) : (
-        <TracesTable traces={traces} />
+        <TracesTable
+          traces={traces}
+          sortBy={filters.sortBy}
+          sortDir={filters.sortDir}
+          onSort={toggleSort}
+          onRowClick={(t) => setSheetTraceId(t.id)}
+        />
       )}
 
       {!isLoading && !isError && total > 0 && (
-        <Pagination
+        <PaginationBar
           page={filters.page}
           totalPages={totalPages}
+          startIndex={startIndex}
+          endIndex={endIndex}
           total={total}
           onChange={(page) => update('page', page)}
         />
       )}
+
+      <Sheet
+        open={sheetTraceId !== null}
+        onClose={() => setSheetTraceId(null)}
+        title={sheetTraceId ? <SheetTitle traceId={sheetTraceId} /> : 'Output'}
+        subtitle={
+          sheetTraceId ? (
+            <Link
+              href={`/traces/${sheetTraceId}`}
+              className="cursor-pointer underline hover:text-text-dark"
+            >
+              Open full page
+            </Link>
+          ) : undefined
+        }
+      >
+        {sheetTraceId && <TraceDetailBody traceId={sheetTraceId} />}
+      </Sheet>
     </div>
+  )
+}
+
+function SheetTitle({ traceId }: { traceId: string }) {
+  // Read straight from the cached query — avoids a second fetch.
+  const { data } = useQuery<TraceDetailResponse>({
+    queryKey: ['trace', traceId],
+    queryFn: () => api.get<TraceDetailResponse>(`/api/traces/${traceId}`),
+  })
+  return <span className="font-mono text-sm font-medium">{data?.trace.name ?? 'Output'}</span>
+}
+
+/**
+ * Client-side sort over the current page. Keeps the implementation
+ * small for v0; once real sort filters land server-side, wire `sortBy`
+ * + `sortDir` into the query string + drop this helper.
+ */
+function sortClientSide(rows: TraceListItem[], key: SortKey, dir: SortDir): TraceListItem[] {
+  const sign = dir === 'asc' ? 1 : -1
+  return [...rows].sort((a, b) => {
+    if (key === 'started_at') {
+      return (Date.parse(a.started_at) - Date.parse(b.started_at)) * sign
+    }
+    const av = (a[key] ?? 0) as number
+    const bv = (b[key] ?? 0) as number
+    return (av - bv) * sign
+  })
+}
+
+function RefreshIcon({ spinning }: { spinning: boolean }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={spinning ? 'animate-spin' : ''}
+    >
+      <polyline points="23 4 23 10 17 10" />
+      <polyline points="1 20 1 14 7 14" />
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+    </svg>
   )
 }
 
@@ -219,24 +310,37 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   )
 }
 
-function TracesTable({ traces }: { traces: TraceListItem[] }) {
+function TracesTable({
+  traces,
+  sortBy,
+  sortDir,
+  onSort,
+  onRowClick,
+}: {
+  traces: TraceListItem[]
+  sortBy: SortKey
+  sortDir: SortDir
+  onSort: (key: SortKey) => void
+  onRowClick: (t: TraceListItem) => void
+}) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-warm bg-cream">
+    <div className="overflow-x-auto rounded-lg border border-warm bg-cream">
       <table className="w-full text-sm">
-        <thead className="bg-warm/40 text-xs uppercase tracking-wide text-text-mid">
+        <thead className="border-b border-warm bg-warm/30 text-[11px] uppercase tracking-wide text-text-mid">
           <tr>
-            <th className="px-4 py-2 text-left font-medium">When</th>
+            <SortHeader label="When" col="started_at" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
             <th className="px-4 py-2 text-left font-medium">Name</th>
             <th className="px-4 py-2 text-left font-medium">Model</th>
-            <th className="px-4 py-2 text-right font-medium">Tokens (in / out)</th>
-            <th className="px-4 py-2 text-right font-medium">Duration</th>
+            <th className="px-4 py-2 text-left font-medium">Env</th>
+            <SortHeader label="Tokens" col="tokens_in" sortBy={sortBy} sortDir={sortDir} onSort={onSort} align="right" />
+            <SortHeader label="Duration" col="duration_ms" sortBy={sortBy} sortDir={sortDir} onSort={onSort} align="right" />
             <th className="px-4 py-2 text-left font-medium">Status</th>
-            <th className="px-4 py-2 text-left font-medium">Feedback</th>
+            <SortHeader label="Feedback" col="feedback_count" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
           </tr>
         </thead>
         <tbody>
           {traces.map((t) => (
-            <TraceRow key={t.id} trace={t} />
+            <TraceRow key={t.id} trace={t} onClick={() => onRowClick(t)} />
           ))}
         </tbody>
       </table>
@@ -244,24 +348,81 @@ function TracesTable({ traces }: { traces: TraceListItem[] }) {
   )
 }
 
-function TraceRow({ trace }: { trace: TraceListItem }) {
+function SortHeader({
+  label,
+  col,
+  sortBy,
+  sortDir,
+  onSort,
+  align = 'left',
+}: {
+  label: string
+  col: SortKey
+  sortBy: SortKey
+  sortDir: SortDir
+  onSort: (key: SortKey) => void
+  align?: 'left' | 'right'
+}) {
+  const active = sortBy === col
   return (
-    <tr className="border-t border-warm hover:bg-warm/30">
-      <td className="px-4 py-2 text-text-mid">
-        <Link
-          href={`/traces/${trace.id}`}
-          className="cursor-pointer text-text-dark hover:underline"
-          data-testid={`trace-link-${trace.id}`}
-        >
-          {formatRelative(trace.started_at)}
-        </Link>
-      </td>
+    <th className={`px-4 py-2 font-medium ${align === 'right' ? 'text-right' : 'text-left'}`}>
+      <button
+        type="button"
+        onClick={() => onSort(col)}
+        className={`inline-flex cursor-pointer items-center gap-1 ${
+          active ? 'text-text-dark' : 'hover:text-text-dark'
+        }`}
+      >
+        {label}
+        <SortGlyph active={active} dir={sortDir} />
+      </button>
+    </th>
+  )
+}
+
+function SortGlyph({ active, dir }: { active: boolean; dir: SortDir }) {
+  // Triple state: inactive (faded ↕), active asc (↑), active desc (↓).
+  const path = !active
+    ? 'M7 10l5-5 5 5M7 14l5 5 5-5'
+    : dir === 'asc'
+      ? 'M5 15l7-7 7 7'
+      : 'M19 9l-7 7-7-7'
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="10"
+      height="10"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={active ? 'opacity-100' : 'opacity-30'}
+      aria-hidden="true"
+    >
+      <path d={path} />
+    </svg>
+  )
+}
+
+function TraceRow({ trace, onClick }: { trace: TraceListItem; onClick: () => void }) {
+  return (
+    <tr
+      className="cursor-pointer border-t border-warm/60 hover:bg-warm/40"
+      onClick={onClick}
+      data-testid={`trace-row-${trace.id}`}
+    >
+      <td className="whitespace-nowrap px-4 py-2 text-xs text-text-mid">{formatRelative(trace.started_at)}</td>
       <td className="px-4 py-2 font-mono text-xs text-text-dark">{trace.name}</td>
       <td className="px-4 py-2 font-mono text-xs text-text-mid">{trace.model ?? '—'}</td>
-      <td className="px-4 py-2 text-right font-mono text-xs text-text-mid">
+      <td className="px-4 py-2 text-xs text-text-mid">{trace.environment ?? '—'}</td>
+      <td className="whitespace-nowrap px-4 py-2 text-right font-mono text-xs text-text-mid">
         {formatTokens(trace.tokens_in)} / {formatTokens(trace.tokens_out)}
       </td>
-      <td className="px-4 py-2 text-right font-mono text-xs text-text-mid">{formatDuration(trace.duration_ms)}</td>
+      <td className="whitespace-nowrap px-4 py-2 text-right font-mono text-xs text-text-mid">
+        {formatDuration(trace.duration_ms)}
+      </td>
       <td className="px-4 py-2"><StatusBadge status={trace.status} /></td>
       <td className="px-4 py-2"><FeedbackBadge trace={trace} /></td>
     </tr>
@@ -281,48 +442,105 @@ function FeedbackBadge({ trace }: { trace: TraceListItem }) {
   return <Badge tone="warn" icon="•">{trace.feedback_count}</Badge>
 }
 
-function Pagination({
+/**
+ * Bottom pagination bar matching the platform's pattern: count caption
+ * on the left, prev/page-numbers/next on the right. Renders a small
+ * window of pages around `page` with ellipses for the rest.
+ */
+function PaginationBar({
   page,
   totalPages,
+  startIndex,
+  endIndex,
   total,
   onChange,
 }: {
   page: number
   totalPages: number
+  startIndex: number
+  endIndex: number
   total: number
   onChange: (page: number) => void
 }) {
+  const pages: (number | 'gap')[] = []
+  for (let p = 1; p <= totalPages; p++) {
+    if (p === 1 || p === totalPages || (p >= page - 1 && p <= page + 1)) {
+      pages.push(p)
+    } else if (pages[pages.length - 1] !== 'gap') {
+      pages.push('gap')
+    }
+  }
   return (
-    <nav aria-label="Pagination" className="flex items-center justify-between text-xs text-text-mid">
-      <div>
-        Page <span className="font-medium text-text-dark">{page}</span> of{' '}
-        <span className="font-medium text-text-dark">{totalPages}</span> · {total.toLocaleString()} traces
-      </div>
-      <div className="flex gap-2">
-        <button
-          type="button"
-          className={cx(
-            'rounded-md border border-warm px-2 py-1',
-            page <= 1 ? 'cursor-not-allowed text-text-muted' : 'cursor-pointer hover:bg-warm',
+    <nav aria-label="Pagination" className="flex flex-wrap items-center justify-between gap-3 text-xs text-text-mid">
+      <p className="text-text-mid">
+        Showing <span className="font-medium text-text-dark">{startIndex}</span>–
+        <span className="font-medium text-text-dark">{endIndex}</span> of{' '}
+        <span className="font-medium text-text-dark">{total.toLocaleString()}</span>
+      </p>
+      {totalPages > 1 && (
+        <ul className="flex items-center gap-1">
+          <li>
+            <PageButton disabled={page <= 1} onClick={() => onChange(page - 1)} aria-label="Previous page">
+              ‹
+            </PageButton>
+          </li>
+          {pages.map((p, i) =>
+            p === 'gap' ? (
+              <li key={`gap-${i}`} className="px-1 text-text-muted">
+                …
+              </li>
+            ) : (
+              <li key={p}>
+                <PageButton active={p === page} onClick={() => onChange(p)} aria-label={`Page ${p}`}>
+                  {p}
+                </PageButton>
+              </li>
+            ),
           )}
-          disabled={page <= 1}
-          onClick={() => onChange(page - 1)}
-        >
-          ← Prev
-        </button>
-        <button
-          type="button"
-          className={cx(
-            'rounded-md border border-warm px-2 py-1',
-            page >= totalPages ? 'cursor-not-allowed text-text-muted' : 'cursor-pointer hover:bg-warm',
-          )}
-          disabled={page >= totalPages}
-          onClick={() => onChange(page + 1)}
-        >
-          Next →
-        </button>
-      </div>
+          <li>
+            <PageButton
+              disabled={page >= totalPages}
+              onClick={() => onChange(page + 1)}
+              aria-label="Next page"
+            >
+              ›
+            </PageButton>
+          </li>
+        </ul>
+      )}
     </nav>
+  )
+}
+
+function PageButton({
+  children,
+  onClick,
+  active,
+  disabled,
+  ...rest
+}: {
+  children: React.ReactNode
+  onClick?: () => void
+  active?: boolean
+  disabled?: boolean
+} & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cx(
+        'inline-flex h-7 min-w-[1.75rem] items-center justify-center rounded-md px-2 text-xs',
+        active
+          ? 'bg-text-dark text-cream'
+          : disabled
+            ? 'cursor-not-allowed text-text-muted'
+            : 'cursor-pointer text-text-mid hover:bg-warm',
+      )}
+      {...rest}
+    >
+      {children}
+    </button>
   )
 }
 
@@ -344,7 +562,23 @@ function ErrorBox({ message, onRetry }: { message: string; onRetry: () => void }
 
 // ---------- Detail ----------
 
+/**
+ * Full-page trace detail (`/traces/:id`). Used for direct links / new
+ * tab opens. The Outputs list opens the same content in a side sheet
+ * via TraceDetailBody so the DE doesn't lose context.
+ */
 function TraceDetail({ traceId }: { traceId: string }) {
+  return (
+    <div className="space-y-6">
+      <Link href="/traces" className="cursor-pointer text-xs text-text-mid hover:text-text-dark">
+        ← Back to outputs
+      </Link>
+      <TraceDetailBody traceId={traceId} showTitle />
+    </div>
+  )
+}
+
+function TraceDetailBody({ traceId, showTitle = false }: { traceId: string; showTitle?: boolean }) {
   const path = `/api/traces/${traceId}`
   const { data, isLoading, isError, error } = useQuery<TraceDetailResponse>({
     queryKey: ['trace', traceId],
@@ -355,9 +589,9 @@ function TraceDetail({ traceId }: { traceId: string }) {
 
   if (isLoading) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-4">
         <SkeletonText lines={2} />
-        <div className="rounded-2xl border border-warm bg-cream p-4">
+        <div className="rounded-lg border border-warm bg-cream p-4">
           <SkeletonText lines={6} />
         </div>
       </div>
@@ -375,12 +609,9 @@ function TraceDetail({ traceId }: { traceId: string }) {
   const { trace, observations, feedback } = data
 
   return (
-    <div className="space-y-6">
-      <div>
-        <Link href="/traces" className="cursor-pointer text-xs text-text-mid hover:text-text-dark">
-          ← All traces
-        </Link>
-        <div className="mt-2 flex items-baseline justify-between gap-4">
+    <div className="space-y-5">
+      {showTitle && (
+        <div className="flex items-baseline justify-between gap-4">
           <h1 className="font-display text-2xl font-semibold text-text-dark">
             {trace.name}{' '}
             <span className="font-mono text-sm font-normal text-text-muted">{trace.id}</span>
@@ -393,14 +624,24 @@ function TraceDetail({ traceId }: { traceId: string }) {
             Add to dataset
           </button>
         </div>
-        <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-text-mid sm:grid-cols-5">
-          <Stat label="Started" value={formatRelative(trace.started_at)} />
-          <Stat label="Duration" value={formatDuration(trace.duration_ms)} />
-          <Stat label="Model" value={trace.model ?? '—'} mono />
-          <Stat label="Status" value={<StatusBadge status={trace.status} />} />
-          <Stat label="Env" value={trace.environment ?? '—'} />
-        </div>
+      )}
+      <div className="grid grid-cols-2 gap-3 text-xs text-text-mid sm:grid-cols-5">
+        <Stat label="Started" value={formatRelative(trace.started_at)} />
+        <Stat label="Duration" value={formatDuration(trace.duration_ms)} />
+        <Stat label="Model" value={trace.model ?? '—'} mono />
+        <Stat label="Status" value={<StatusBadge status={trace.status} />} />
+        <Stat label="Env" value={trace.environment ?? '—'} />
       </div>
+
+      {!showTitle && (
+        <button
+          type="button"
+          className="cursor-pointer rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-dark"
+          onClick={() => setAddOpen(true)}
+        >
+          Add to dataset
+        </button>
+      )}
 
       <ObservationsTimeline observations={observations} />
       <FeedbackPanel traceId={trace.id} feedback={feedback} />

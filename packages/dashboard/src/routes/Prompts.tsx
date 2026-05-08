@@ -11,10 +11,10 @@ import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { EmptyState } from '../components/EmptyState'
 import { DeveloperNote } from '../components/DeveloperNote'
+import { CopyableCode } from '../components/CopyableCode'
 import { SkeletonText } from '../components/Skeleton'
 import { PromptBadge } from '../components/prompts/PromptBadge'
 import { SubmitModal, type SubmitDraftEntry } from '../components/prompts/SubmitModal'
-import { cx } from '../lib/format'
 import type {
   DraftsResponse,
   GithubStatusResponse,
@@ -93,28 +93,23 @@ function PromptsList() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-baseline justify-between gap-3">
-        <div>
-          <h1 className="font-display text-2xl font-semibold text-text-dark">Prompts</h1>
-          <p className="mt-1 text-sm text-text-mid">
-            Edit any prompt in your repo. Submit accumulates into one PR.
-          </p>
-        </div>
-        <button
-          type="button"
-          disabled={!hasDrafts}
-          aria-disabled={!hasDrafts}
-          title={!hasDrafts ? 'Edit a prompt first.' : ''}
-          className={cx(
-            'rounded-lg px-3 py-1.5 text-sm font-medium text-white',
-            hasDrafts
-              ? 'cursor-pointer bg-primary hover:bg-primary-dark'
-              : 'cursor-not-allowed bg-primary/40',
-          )}
-          onClick={() => setSubmitOpen(true)}
-        >
-          Submit changes{hasDrafts && ` (${draftsQ.data?.drafts.length ?? 0})`}
-        </button>
+      <DeveloperNote>
+        To re-scan your codebase for prompts, run{' '}
+        <CopyableCode>npx @artanis-ai/gravel manifest --update</CopyableCode>
+        .
+      </DeveloperNote>
+
+      <header className="flex flex-wrap items-center gap-3">
+        <SearchField value={search} onChange={setSearch} />
+        {hasDrafts && (
+          <button
+            type="button"
+            className="shrink-0 cursor-pointer rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary-dark"
+            onClick={() => setSubmitOpen(true)}
+          >
+            Submit changes ({draftsQ.data?.drafts.length ?? 0})
+          </button>
+        )}
       </header>
 
       {/*
@@ -145,15 +140,6 @@ function PromptsList() {
         </div>
       )}
 
-      <input
-        type="search"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search by path or var name…"
-        aria-label="Search prompts"
-        className="w-full max-w-md rounded-md border border-warm bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-      />
-
       {promptsQ.isLoading ? (
         <div className="rounded-2xl border border-warm bg-cream p-4">
           <SkeletonText lines={5} />
@@ -163,19 +149,10 @@ function PromptsList() {
           {(promptsQ.error as Error)?.message ?? 'Failed to load prompts.'}
         </p>
       ) : (promptsQ.data?.prompts.length ?? 0) === 0 ? (
-        <div className="space-y-3">
-          <EmptyState
-            title="No prompts yet"
-            body="Once your team has prompts wired up, they'll appear here for editing."
-          />
-          <DeveloperNote>
-            Prompts come from the manifest. Add one in your code, then run{' '}
-            <code className="rounded bg-cream px-1 py-0.5 font-mono text-[11px]">
-              npx @artanis-ai/gravel manifest --update
-            </code>
-            .
-          </DeveloperNote>
-        </div>
+        <EmptyState
+          title="No prompts yet"
+          body="Once your team has prompts wired up, they'll appear here for editing."
+        />
       ) : filtered.length === 0 ? (
         <EmptyState
           title="No matches"
@@ -287,6 +264,73 @@ function DirectoryGroup({
         </ul>
       )}
     </section>
+  )
+}
+
+/**
+ * Search field with a leading magnifier icon + clearable affordance.
+ * Sized to match the height of the adjacent button so they sit on
+ * the same baseline in the page header.
+ */
+function SearchField({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (v: string) => void
+}) {
+  return (
+    <div className="relative flex-1 min-w-[12rem]">
+      <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-text-muted">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <circle cx="11" cy="11" r="7" />
+          <line x1="21" y1="21" x2="16.5" y2="16.5" />
+        </svg>
+      </span>
+      <input
+        type="search"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Search prompts"
+        aria-label="Search prompts"
+        className="w-full rounded-lg border border-warm bg-white py-2 pl-9 pr-9 text-sm placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary/30"
+      />
+      {value && (
+        <button
+          type="button"
+          onClick={() => onChange('')}
+          aria-label="Clear search"
+          className="absolute inset-y-0 right-2 flex cursor-pointer items-center px-1 text-text-muted hover:text-text-dark"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <line x1="6" y1="6" x2="18" y2="18" />
+            <line x1="6" y1="18" x2="18" y2="6" />
+          </svg>
+        </button>
+      )}
+    </div>
   )
 }
 

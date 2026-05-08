@@ -271,7 +271,7 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
       body = {}
     }
     const { getGhInstallState } = await import('../github/project-state.js')
-    const ghState = await getGhInstallState(db)
+    const ghState = await getGhInstallState()
     if (!ghState) {
       return json(
         {
@@ -282,24 +282,23 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
         409,
       )
     }
-    // Mint a fresh installation token for this submit. ~1-hour scope;
-    // we don't cache because the token is single-use here (one PR per
-    // mint), and the mint round-trip is fast.
+    // Mint a fresh installation token for this submit via the CP.
     const { mintInstallationToken } = await import('../github/app.js')
     const cpUrl = process.env.GRAVEL_CONTROL_PLANE_URL ?? 'https://gravel.artanis.ai'
+    const projectId = process.env.GRAVEL_PROJECT_ID
+    const apiKey = process.env.GRAVEL_API_KEY
+    if (!projectId || !apiKey) {
+      return json(
+        { error: 'gravel_config_incomplete', message: 'GRAVEL_PROJECT_ID + GRAVEL_API_KEY required.' },
+        500,
+      )
+    }
     let token: Awaited<ReturnType<typeof mintInstallationToken>>
     try {
-      token = await mintInstallationToken({
-        controlPlaneUrl: cpUrl,
-        installBindingToken: ghState.bindingToken,
-        installationId: ghState.installationId,
-      })
+      token = await mintInstallationToken({ controlPlaneUrl: cpUrl, apiKey, projectId })
     } catch (err) {
       return json(
-        {
-          error: 'github_token_mint_failed',
-          message: (err as Error).message,
-        },
+        { error: 'github_token_mint_failed', message: (err as Error).message },
         502,
       )
     }
@@ -334,10 +333,19 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
   },
 
   // GitHub App install. Spec: gravel-cloud/docs/spec/prompts.md §6.
-  // Per-user OAuth was removed 2026-05-07 (decisions.md D-Q53 re-reversal).
-  'GET /api/github/status': async ({ db }) => {
+  // Per-user OAuth was removed 2026-05-07 (D-Q53 re-reversal).
+  // Install state moved CP-side 2026-05-08 — the SDK queries the CP at
+  // status-check + submit time; nothing is mirrored to the local DB.
+  'GET /api/github/status': async () => {
     const { getGhInstallState } = await import('../github/project-state.js')
-    const state = await getGhInstallState(db)
+    let state: Awaited<ReturnType<typeof getGhInstallState>>
+    try {
+      state = await getGhInstallState()
+    } catch (e) {
+      // Don't 500 on a CP outage — the dashboard treats "no state" the
+      // same as "uninstalled" and re-renders the install banner.
+      return json({ connected: false, repoOwner: null, repoName: null, connectedAt: null, error: (e as Error).message })
+    }
     return json({
       connected: Boolean(state),
       repoOwner: state?.repoOwner ?? null,
@@ -350,10 +358,8 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
     if (!projectId) return json({ error: 'GRAVEL_PROJECT_ID not set' }, 500)
     const callback = new URL(`${config.mountPath}/api/github/install/callback`, request.url).toString()
     // Dev stub: bypass GitHub + control plane entirely. Used for the
-    // local fixture suite + UI iteration when the dev hasn't deployed
-    // the CP yet. Set GRAVEL_GH_DEV_STUB=1 + GRAVEL_GH_DEV_REPO_OWNER
-    // + GRAVEL_GH_DEV_REPO_NAME to short-circuit. Submit later requires
-    // GRAVEL_GH_DEV_STUB_TOKEN — a real PAT scoped to the stub repo.
+    // fixture suite + UI iteration when the dev hasn't deployed the
+    // CP yet. Submit later uses GRAVEL_GH_DEV_STUB_TOKEN (a PAT).
     if (process.env.GRAVEL_GH_DEV_STUB === '1') {
       const owner = process.env.GRAVEL_GH_DEV_REPO_OWNER
       const name = process.env.GRAVEL_GH_DEV_REPO_NAME
@@ -363,12 +369,9 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
           500,
         )
       }
-      const stubCallback = new URL(callback)
-      stubCallback.searchParams.set('installation_id', '0')
-      stubCallback.searchParams.set('binding_token', 'dev-stub')
-      stubCallback.searchParams.set('repo_owner', owner)
-      stubCallback.searchParams.set('repo_name', name)
-      return json({ redirectUrl: stubCallback.toString() })
+      // Round-trip straight back to ourselves so the SPA refetches
+      // status — getGhInstallState() reads the same env vars.
+      return json({ redirectUrl: `${callback}?gh=installed` })
     }
     // Bounce through the control plane so it can issue the signed
     // `state` parameter GitHub's install URL needs.
@@ -378,37 +381,17 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
     start.searchParams.set('return_to', callback)
     return json({ redirectUrl: start.toString() })
   },
-  'GET /api/github/install/callback': async ({ request, db }) => {
-    // The control plane redirects here after the dev finishes the
-    // GitHub install flow. URL params:
-    //   - installation_id: numeric, GitHub's identifier
-    //   - binding_token  : long-lived JWT, used to mint installation tokens
-    //   - repo_owner / repo_name: the repo the dev picked at install time
-    const url = new URL(request.url)
-    const installationIdRaw = url.searchParams.get('installation_id')
-    const bindingToken = url.searchParams.get('binding_token')
-    const repoOwner = url.searchParams.get('repo_owner')
-    const repoName = url.searchParams.get('repo_name')
-    if (!installationIdRaw || !bindingToken || !repoOwner || !repoName) {
-      return json({ error: 'missing install params' }, 400)
-    }
-    const installationId = Number(installationIdRaw)
-    if (!Number.isInteger(installationId) || installationId <= 0) {
-      return json({ error: 'bad installation_id' }, 400)
-    }
-    const { setGhInstallState } = await import('../github/project-state.js')
-    await setGhInstallState(db, {
-      installationId,
-      repoOwner,
-      repoName,
-      bindingToken,
-      installedAt: new Date().toISOString(),
-    })
-    // Bounce the browser back to the dashboard root with a flag so the
-    // SPA can refetch /api/github/status and dismiss the setup banner.
+  'GET /api/github/install/callback': async ({ request, config }) => {
+    // The CP redirects here after the dev finishes the GitHub install
+    // flow. CP has already persisted install state on its side — we
+    // just bounce the browser to the dashboard with a success flag so
+    // the SPA refetches /api/github/status.
+    const { bustGhInstallStateCache } = await import('../github/project-state.js')
+    bustGhInstallStateCache()
+    void request
     return new Response(null, {
       status: 302,
-      headers: { location: `${url.pathname.replace('/api/github/install/callback', '')}/?gh=installed` },
+      headers: { location: `${config.mountPath}/?gh=installed` },
     })
   },
 

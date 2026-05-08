@@ -33,13 +33,6 @@ export function ReviewPage() {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="font-display text-2xl font-semibold text-text-dark">Review</h1>
-        <p className="mt-1 text-sm text-text-mid">
-          Outputs flagged for review and any regressions caught by your test runs.
-        </p>
-      </header>
-
       {hasIssues && (
         <section className="rounded-2xl border border-primary/30 bg-primary/5 p-4 text-sm text-primary-dark">
           <h2 className="font-display font-semibold">Issues</h2>

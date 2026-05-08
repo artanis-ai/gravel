@@ -24,39 +24,13 @@ import {
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 
-// 1.1 gravel_projects — local cache of the project this install is bound to.
+// gravel_users — mirror of users seen via the getUser callback.
 //
-// GH columns are populated by `/api/github/install/callback` once the
-// dev installs the Gravel App on their repo. PR creation reads them on
-// every submit. Null while the App isn't installed.
-export const gravelProjects = pgTable('gravel_projects', {
-  id: text('id').primaryKey(),
-  name: text('name').notNull(),
-  tier: text('tier').notNull().default('free'),
-  creditsRemaining: bigint('credits_remaining', { mode: 'number' }).notNull().default(0),
-  creditsRefreshedAt: timestamp('credits_refreshed_at', { mode: 'date' }),
-  ghInstallationId: bigint('gh_installation_id', { mode: 'number' }),
-  ghRepoOwner: text('gh_repo_owner'),
-  ghRepoName: text('gh_repo_name'),
-  ghBindingToken: text('gh_binding_token'),
-  ghInstalledAt: timestamp('gh_installed_at', { mode: 'date' }),
-  createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
-})
-
-// 1.2 gravel_environments — environments inside a project.
-export const gravelEnvironments = pgTable(
-  'gravel_environments',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    name: text('name').notNull(),
-    createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
-  },
-  (table) => ({
-    nameUnique: uniqueIndex('gravel_environments_name_unique').on(table.name),
-  }),
-)
-
-// 1.3 gravel_users — mirror of users seen via the getUser callback.
+// (Both gravel_projects and gravel_environments were dropped in the
+// 2026-05-08 schema simplification: GitHub install state moved to the
+// control plane keyed by project_id, and `environment` is now a plain
+// text column on gravel_traces. See decisions.md D-Q53 + the schema
+// section of spec/data-model.md.)
 export const gravelUsers = pgTable('gravel_users', {
   id: text('id').primaryKey(),
   firstName: text('first_name').notNull(),
@@ -65,16 +39,16 @@ export const gravelUsers = pgTable('gravel_users', {
   extra: jsonb('extra'),
 })
 
-// 1.4 gravel_traces — mirrors platform `traces`.
+// gravel_traces — mirrors platform `traces`.
 export const gravelTraces = pgTable(
   'gravel_traces',
   {
     id: text('id').primaryKey(),
     name: text('name').notNull(),
     groupId: text('group_id'),
-    environmentId: uuid('environment_id')
-      .notNull()
-      .references(() => gravelEnvironments.id, { onDelete: 'restrict' }),
+    /** Free-form tag — typically 'prod'/'staging'/'dev' but anything
+     * the customer's tracing config sets. Null = no env tag. */
+    environment: text('environment'),
     metadata: jsonb('metadata'),
     status: text('status').notNull().default('running'), // 'running' | 'completed' | 'errored'
     timestamp: timestamp('timestamp', { mode: 'date' }).notNull(),
@@ -82,14 +56,13 @@ export const gravelTraces = pgTable(
     completedAt: timestamp('completed_at', { mode: 'date' }),
     durationMs: bigint('duration_ms', { mode: 'number' }),
     commitSha: text('commit_sha'),
-    promptId: text('prompt_id'), // FK added below; see relations
+    /** Manifest entry id this trace pinned to. Plain text, no FK —
+     * the manifest is the source of truth (it's in git). */
+    promptId: text('prompt_id'),
     createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
   },
   (table) => ({
-    envTimestamp: index('gravel_traces_env_timestamp_idx').on(
-      table.environmentId,
-      table.timestamp,
-    ),
+    envTimestamp: index('gravel_traces_env_timestamp_idx').on(table.environment, table.timestamp),
     promptIdx: index('gravel_traces_prompt_id_idx').on(table.promptId),
     metadataIdx: index('gravel_traces_metadata_idx').using('gin', table.metadata),
   }),
@@ -143,35 +116,14 @@ export const gravelFeedback = pgTable(
   }),
 )
 
-// 1.7 gravel_labels — mirrors platform `labels`.
-export const gravelLabels = pgTable(
-  'gravel_labels',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    observationId: text('observation_id')
-      .notNull()
-      .references(() => gravelObservations.id, { onDelete: 'cascade' }),
-    labelData: jsonb('label_data').notNull(),
-    timestamp: timestamp('timestamp', { mode: 'date' }).notNull(),
-    createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { mode: 'date' })
-      .notNull()
-      .defaultNow()
-      .$onUpdate(() => new Date()),
-  },
-  (table) => ({
-    observationIdx: index('gravel_labels_observation_id_idx').on(table.observationId),
-  }),
-)
 
-// 1.8 gravel_datasets
+// gravel_datasets
 export const gravelDatasets = pgTable('gravel_datasets', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: text('name').notNull(),
   description: text('description'),
-  environmentId: uuid('environment_id').references(() => gravelEnvironments.id, {
-    onDelete: 'set null',
-  }),
+  /** Optional env scope — purely a label, no FK. */
+  environment: text('environment'),
   createdByUserId: text('created_by_user_id').references(() => gravelUsers.id, {
     onDelete: 'set null',
   }),
@@ -201,37 +153,14 @@ export const gravelDatasetTraces = pgTable(
   }),
 )
 
-// 1.10 gravel_prompts — DB-side mirror of .artanis/manifest.json
-export const gravelPrompts = pgTable(
-  'gravel_prompts',
-  {
-    id: text('id').primaryKey(),
-    path: text('path').notNull(),
-    type: text('type').notNull(), // 'file' | 'embedded'
-    segment: jsonb('segment'),
-    currentHash: text('current_hash').notNull(),
-    currentText: text('current_text').notNull(),
-    lastSeenCommit: text('last_seen_commit').notNull(),
-    createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { mode: 'date' })
-      .notNull()
-      .defaultNow()
-      .$onUpdate(() => new Date()),
-  },
-  (table) => ({
-    pathIdx: index('gravel_prompts_path_idx').on(table.path),
-    hashIdx: index('gravel_prompts_hash_idx').on(table.currentHash),
-  }),
-)
-
-// 1.11 gravel_prompt_drafts — accumulated unsaved DE edits per draft branch
+// gravel_prompt_drafts — accumulated unsaved DE edits per draft branch.
+// `prompt_id` is plain text now: the manifest at .artanis/manifest.json
+// is the source of truth, no DB mirror needed.
 export const gravelPromptDrafts = pgTable(
   'gravel_prompt_drafts',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    promptId: text('prompt_id')
-      .notNull()
-      .references(() => gravelPrompts.id, { onDelete: 'cascade' }),
+    promptId: text('prompt_id').notNull(),
     draftBranch: text('draft_branch').notNull(),
     newText: text('new_text').notNull(),
     editorUserId: text('editor_user_id').references(() => gravelUsers.id, {
@@ -266,9 +195,8 @@ export const gravelEvalRuns = pgTable(
       onDelete: 'set null',
     }),
     commitSha: text('commit_sha'),
-    targetEnvironmentId: uuid('target_environment_id').references(() => gravelEnvironments.id, {
-      onDelete: 'set null',
-    }),
+    /** Free-form env tag for live runs ('prod', 'staging', etc.). */
+    targetEnvironment: text('target_environment'),
     totalRows: integer('total_rows').notNull().default(0),
     completedRows: integer('completed_rows').notNull().default(0),
     summary: jsonb('summary'),
@@ -306,16 +234,12 @@ export const gravelEvalResults = pgTable(
 )
 
 export const allTables = {
-  gravelProjects,
-  gravelEnvironments,
   gravelUsers,
   gravelTraces,
   gravelObservations,
   gravelFeedback,
-  gravelLabels,
   gravelDatasets,
   gravelDatasetTraces,
-  gravelPrompts,
   gravelPromptDrafts,
   gravelEvalRuns,
   gravelEvalResults,

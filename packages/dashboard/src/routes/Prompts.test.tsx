@@ -106,9 +106,10 @@ describe('Prompts list', () => {
     setupGet([])
     renderRoute(<PromptsPage />)
     expect(await screen.findByText(/no prompts yet/i)).toBeInTheDocument()
-    // Developer-only hint visible because auth/me reports localhost.
+    // Developer-only hint visible because auth/me reports localhost. The
+    // page-level DeveloperNote sits at the top under the tabs.
     expect(await screen.findByText(/manifest --update/i)).toBeInTheDocument()
-    expect(screen.getByText(/visible only on localhost/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/visible only on localhost/i).length).toBeGreaterThan(0)
   })
 
   it('hides the CLI hint from domain experts (non-localhost user)', async () => {
@@ -156,18 +157,18 @@ describe('Prompts list', () => {
     expect(screen.getByText('extract.md')).toBeInTheDocument()
   })
 
-  it('disables Submit changes when there are no drafts and enables it otherwise', async () => {
+  it('hides Submit changes when there are no drafts and shows it otherwise', async () => {
     setupGet([makePrompt({ id: 'p_a', path: 'prompts/triage.md' })], [])
     const { unmount } = renderRoute(<PromptsPage />)
     await screen.findByText('triage.md')
-    expect(screen.getByRole('button', { name: /submit changes/i })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: /submit changes/i })).not.toBeInTheDocument()
     unmount()
 
     setupGet([makePrompt({ id: 'p_a', path: 'prompts/triage.md' })], ['p_a'])
     renderRoute(<PromptsPage />)
     await screen.findByText('triage.md')
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: /submit changes/i })).toBeEnabled(),
+      expect(screen.getByRole('button', { name: /submit changes/i })).toBeInTheDocument(),
     )
   })
 
@@ -203,8 +204,10 @@ describe('Prompts list', () => {
     renderRoute(<PromptsPage />)
     await screen.findByText(/install the gravel github app/i)
     expect(screen.getByRole('button', { name: /install github app/i })).toBeInTheDocument()
-    // The whole banner is wrapped in DeveloperNote — visible only on localhost.
-    expect(screen.getByText(/visible only on localhost/i)).toBeInTheDocument()
+    // The whole banner is wrapped in DeveloperNote — visible only on
+    // localhost. There are two such notes on this page (top + banner),
+    // so just confirm at least one renders.
+    expect(screen.getAllByText(/visible only on localhost/i).length).toBeGreaterThan(0)
   })
 
   it('hides the install-GitHub-App banner from non-localhost users', async () => {

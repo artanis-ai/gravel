@@ -82,14 +82,13 @@ export async function listTraces(db: Database, filters: TraceFilters): Promise<T
   const offset = (page - 1) * pageSize
 
   if (db.dialect === 'postgres') {
-    const { gravelTraces, gravelEnvironments, gravelObservations, gravelFeedback } =
-      await import('../schema/postgres.js')
+    const { gravelTraces, gravelObservations, gravelFeedback } = await import(
+      '../schema/postgres.js'
+    )
     const drz = db.drizzle as NodePgDatabase
 
     const conds = [] as ReturnType<typeof eq>[]
-    if (filters.env) {
-      conds.push(eq(gravelEnvironments.name, filters.env))
-    }
+    if (filters.env) conds.push(eq(gravelTraces.environment, filters.env))
     if (filters.status) conds.push(eq(gravelTraces.status, filters.status))
     if (filters.from) conds.push(gte(gravelTraces.timestamp, new Date(filters.from)))
     if (filters.to) conds.push(lte(gravelTraces.timestamp, new Date(filters.to)))
@@ -100,14 +99,13 @@ export async function listTraces(db: Database, filters: TraceFilters): Promise<T
     const [{ count } = { count: 0 }] = (await drz
       .select({ count: sql<number>`count(*)::int` })
       .from(gravelTraces)
-      .leftJoin(gravelEnvironments, eq(gravelTraces.environmentId, gravelEnvironments.id))
       .where(whereClause)) as Array<{ count: number }>
 
     const rows = await drz
       .select({
         id: gravelTraces.id,
         name: gravelTraces.name,
-        environment: gravelEnvironments.name,
+        environment: gravelTraces.environment,
         status: gravelTraces.status,
         startedAt: gravelTraces.startedAt,
         completedAt: gravelTraces.completedAt,
@@ -115,7 +113,6 @@ export async function listTraces(db: Database, filters: TraceFilters): Promise<T
         metadata: gravelTraces.metadata,
       })
       .from(gravelTraces)
-      .leftJoin(gravelEnvironments, eq(gravelTraces.environmentId, gravelEnvironments.id))
       .where(whereClause)
       .orderBy(desc(gravelTraces.timestamp))
       .limit(pageSize)
@@ -192,12 +189,11 @@ export async function listTraces(db: Database, filters: TraceFilters): Promise<T
   }
 
   // SQLite path
-  const { gravelTraces, gravelEnvironments, gravelObservations, gravelFeedback } =
-    await import('../schema/sqlite.js')
+  const { gravelTraces, gravelObservations, gravelFeedback } = await import('../schema/sqlite.js')
   const drz = db.drizzle as BetterSQLite3Database
 
   const conds = [] as ReturnType<typeof eq>[]
-  if (filters.env) conds.push(eq(gravelEnvironments.name, filters.env))
+  if (filters.env) conds.push(eq(gravelTraces.environment, filters.env))
   if (filters.status) conds.push(eq(gravelTraces.status, filters.status))
   if (filters.from) conds.push(gte(gravelTraces.timestamp, new Date(filters.from).getTime()))
   if (filters.to) conds.push(lte(gravelTraces.timestamp, new Date(filters.to).getTime()))
@@ -207,7 +203,6 @@ export async function listTraces(db: Database, filters: TraceFilters): Promise<T
   const totalRows = drz
     .select({ count: sql<number>`count(*)` })
     .from(gravelTraces)
-    .leftJoin(gravelEnvironments, eq(gravelTraces.environmentId, gravelEnvironments.id))
     .where(whereClause)
     .all() as Array<{ count: number }>
   const total = totalRows[0]?.count ?? 0
@@ -216,14 +211,13 @@ export async function listTraces(db: Database, filters: TraceFilters): Promise<T
     .select({
       id: gravelTraces.id,
       name: gravelTraces.name,
-      environment: gravelEnvironments.name,
+      environment: gravelTraces.environment,
       status: gravelTraces.status,
       startedAt: gravelTraces.startedAt,
       completedAt: gravelTraces.completedAt,
       durationMs: gravelTraces.durationMs,
     })
     .from(gravelTraces)
-    .leftJoin(gravelEnvironments, eq(gravelTraces.environmentId, gravelEnvironments.id))
     .where(whereClause)
     .orderBy(desc(gravelTraces.timestamp))
     .limit(pageSize)
@@ -510,21 +504,21 @@ export async function getTraceDetail(db: Database, traceId: string): Promise<Tra
 /** Look up a single trace by id when it falls outside the first list page. */
 async function listTracesById(db: Database, traceId: string): Promise<TraceListItem | null> {
   if (db.dialect === 'postgres') {
-    const { gravelTraces, gravelEnvironments, gravelObservations, gravelFeedback } =
-      await import('../schema/postgres.js')
+    const { gravelTraces, gravelObservations, gravelFeedback } = await import(
+      '../schema/postgres.js'
+    )
     const drz = db.drizzle as NodePgDatabase
     const rows = await drz
       .select({
         id: gravelTraces.id,
         name: gravelTraces.name,
-        environment: gravelEnvironments.name,
+        environment: gravelTraces.environment,
         status: gravelTraces.status,
         startedAt: gravelTraces.startedAt,
         completedAt: gravelTraces.completedAt,
         durationMs: gravelTraces.durationMs,
       })
       .from(gravelTraces)
-      .leftJoin(gravelEnvironments, eq(gravelTraces.environmentId, gravelEnvironments.id))
       .where(eq(gravelTraces.id, traceId))
       .limit(1)
     const r = rows[0]
@@ -564,21 +558,19 @@ async function listTracesById(db: Database, traceId: string): Promise<TraceListI
     }
   }
   // SQLite
-  const { gravelTraces, gravelEnvironments, gravelObservations, gravelFeedback } =
-    await import('../schema/sqlite.js')
+  const { gravelTraces, gravelObservations, gravelFeedback } = await import('../schema/sqlite.js')
   const drz = db.drizzle as BetterSQLite3Database
   const rows = drz
     .select({
       id: gravelTraces.id,
       name: gravelTraces.name,
-      environment: gravelEnvironments.name,
+      environment: gravelTraces.environment,
       status: gravelTraces.status,
       startedAt: gravelTraces.startedAt,
       completedAt: gravelTraces.completedAt,
       durationMs: gravelTraces.durationMs,
     })
     .from(gravelTraces)
-    .leftJoin(gravelEnvironments, eq(gravelTraces.environmentId, gravelEnvironments.id))
     .where(eq(gravelTraces.id, traceId))
     .limit(1)
     .all()
