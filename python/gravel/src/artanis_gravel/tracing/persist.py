@@ -1,16 +1,18 @@
-"""Persistence helper — writes a captured (trace, observations) tuple to the
-user's database via SQLAlchemy.
+"""Persistence helper — writes a captured sample (one LLM call) to the user's
+database via SQLAlchemy.
 
 The patches call `persist_trace(record)` after capturing input/output. We keep
 this synchronous + best-effort: a logged warning on failure, never a raise into
 user code (spec §6 — tracing must be invisible from a perf standpoint and never
 break the caller).
 
-The persister needs a SQLAlchemy `Engine` (or async-equivalent in future) plus
-the resolved environment id. The wizard / runtime handler calls
-`set_gravel_tracing_config(...)` once on startup to wire that in. Until it's
-called, we buffer nothing — patches still fire, observe, and discard. (The
-auto-patcher prints a one-shot notice in that case.)
+2026-05-08 (D-Q53): the customer-side data plane is two tables —
+`gravel_samples` (the unit; one row per LLM call) and `gravel_feedback`. The
+old `gravel_traces` + `gravel_observations` split collapsed into the sample's
+`input` / `output` / `metadata` jsonb columns. The TraceRecord / Observation
+in-memory shape stays for the patch sites' compat — `persist_trace` flattens
+the input/output observations into the sample row and pushes any
+state/error observations into `metadata.states` / `metadata.error`.
 """
 from __future__ import annotations
 
@@ -26,7 +28,7 @@ from typing import Any, Callable, Iterable
 from sqlalchemy import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
-from ..schema import gravel_observations, gravel_traces
+from ..schema import gravel_samples
 
 log = logging.getLogger("gravel.tracing")
 
@@ -36,7 +38,12 @@ log = logging.getLogger("gravel.tracing")
 
 @dataclass
 class ObservationRecord:
-    """One observation row to be persisted alongside its trace."""
+    """One observation row — kept for back-compat with patch call sites.
+
+    `input` and `output` types are flattened into the sample's `input` / `output`
+    jsonb columns at write time. `state` and `error` types are merged into the
+    sample's `metadata.states` list (and `metadata.error` for error keys).
+    """
 
     type: str  # 'input' | 'output' | 'state' | 'error'
     data: dict[str, Any]
@@ -126,8 +133,33 @@ def _scrub(record: TraceRecord, runtime: TracingRuntimeConfig) -> None:
                     log.warning("scrub_output raised; passing through unscrubbed: %s", exc)
 
 
+def _flatten(record: TraceRecord) -> tuple[Any, Any, dict[str, Any]]:
+    """Collapse the (compat) observation list into the sample's three jsonb
+    columns. Returns (input, output, metadata)."""
+    input_data: Any = None
+    output_data: Any = None
+    states: list[dict[str, Any]] = []
+    error: str | None = None
+    for obs in record.observations:
+        if obs.type == "input":
+            input_data = obs.data
+        elif obs.type == "output":
+            output_data = obs.data
+        elif obs.type == "error":
+            states.append({"key": obs.key or "error", "data": obs.data})
+            error = error or (obs.data.get("message") if isinstance(obs.data, dict) else None)
+        else:  # 'state' or anything else — treat as auxiliary state
+            states.append({"key": obs.key, "data": obs.data})
+    metadata: dict[str, Any] = dict(record.metadata or {})
+    if states:
+        metadata.setdefault("states", states)
+    if error and "error" not in metadata:
+        metadata["error"] = error
+    return input_data, output_data, metadata
+
+
 def persist_trace(record: TraceRecord) -> str | None:
-    """Insert one trace + its observations. Returns the trace id on success.
+    """Insert one sample row. Returns the sample id on success.
 
     Best-effort: returns `None` on any error (DB down, no runtime configured,
     table missing) and logs a warning. Never raises into caller code.
@@ -139,19 +171,25 @@ def persist_trace(record: TraceRecord) -> str | None:
 
     _scrub(record, runtime)
 
-    trace_id = uuid.uuid4().hex
+    sample_id = uuid.uuid4().hex
     env_id = _resolve_env(record, runtime)
+    input_data, output_data, metadata = _flatten(record)
+
+    status = "errored" if record.status == "errored" else "completed"
 
     try:
         with runtime.engine.begin() as conn:
             conn.execute(
-                gravel_traces.insert().values(
-                    id=trace_id,
+                gravel_samples.insert().values(
+                    id=sample_id,
                     name=record.name,
                     group_id=record.group_id,
-                    environment_id=env_id,
-                    metadata=record.metadata or None,
-                    status=record.status,
+                    environment=env_id,
+                    model=record.model,
+                    status=status,
+                    input=input_data,
+                    output=output_data,
+                    metadata=metadata or None,
                     timestamp=record.started_at,
                     started_at=record.started_at,
                     completed_at=record.completed_at,
@@ -160,33 +198,19 @@ def persist_trace(record: TraceRecord) -> str | None:
                     prompt_id=record.prompt_id,
                 )
             )
-            obs_rows = [_observation_row(trace_id, o) for o in record.observations]
-            if obs_rows:
-                conn.execute(gravel_observations.insert(), obs_rows)
     except SQLAlchemyError as exc:
-        log.warning("failed to persist trace %s: %s", record.name, exc)
+        log.warning("failed to persist sample %s: %s", record.name, exc)
         return None
-    return trace_id
-
-
-def _observation_row(trace_id: str, obs: ObservationRecord) -> dict[str, Any]:
-    return {
-        "id": uuid.uuid4().hex,
-        "trace_id": trace_id,
-        "type": obs.type,
-        "data": obs.data,
-        "key": obs.key,
-        "timestamp": obs.timestamp,
-    }
+    return sample_id
 
 
 def persist_traces(records: Iterable[TraceRecord]) -> list[str]:
-    """Bulk wrapper. Returns the list of successfully-written trace ids."""
+    """Bulk wrapper. Returns the list of successfully-written sample ids."""
     out: list[str] = []
     for r in records:
-        tid = persist_trace(r)
-        if tid is not None:
-            out.append(tid)
+        sid = persist_trace(r)
+        if sid is not None:
+            out.append(sid)
     return out
 
 

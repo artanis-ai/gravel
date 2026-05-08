@@ -17,8 +17,8 @@ vi.mock('../lib/api', () => ({
 import { api } from '../lib/api'
 import { PromptsPage } from './Prompts'
 import { renderRoute } from '../test/util'
+import { upsertDraft } from '../lib/drafts'
 import type {
-  DraftsResponse,
   GithubStatusResponse,
   ManifestPromptListItem,
   PromptsListResponse,
@@ -30,6 +30,7 @@ const mockedPost = api.post as unknown as ReturnType<typeof vi.fn>
 beforeEach(() => {
   mockedGet.mockReset()
   mockedPost.mockReset()
+  localStorage.clear()
 })
 
 function makePrompt(overrides: Partial<ManifestPromptListItem> = {}): ManifestPromptListItem {
@@ -49,9 +50,6 @@ function routeFor(path: string): unknown {
   if (path === '/api/prompts') {
     return { prompts: [], last_scan_at: null } satisfies PromptsListResponse
   }
-  if (path === '/api/prompts/drafts') {
-    return { draftBranch: 'gravel/draft-2026-05-05-u1', drafts: [] } satisfies DraftsResponse
-  }
   if (path === '/api/github/status') {
     return {
       connected: true,
@@ -63,27 +61,18 @@ function routeFor(path: string): unknown {
   throw new Error(`unmocked GET ${path}`)
 }
 
-function setupGet(promptOverrides: ManifestPromptListItem[] | null, draftPromptIds: string[] = [], gh?: Partial<GithubStatusResponse>) {
+function setupGet(
+  prompts: ManifestPromptListItem[] | null,
+  draftPromptIds: string[] = [],
+  gh?: Partial<GithubStatusResponse>,
+  userId: string = 'localhost',
+) {
+  for (const id of draftPromptIds) {
+    upsertDraft(userId, { promptId: id, newText: 'changed' })
+  }
   mockedGet.mockImplementation(async (path: string) => {
     if (path === '/api/prompts') {
-      return {
-        prompts: promptOverrides ?? [],
-        last_scan_at: null,
-      } satisfies PromptsListResponse
-    }
-    if (path === '/api/prompts/drafts') {
-      return {
-        draftBranch: 'gravel/draft-2026-05-05-u1',
-        drafts: draftPromptIds.map((pid, i) => ({
-          id: `d_${i}`,
-          promptId: pid,
-          draftBranch: 'gravel/draft-2026-05-05-u1',
-          newText: 'changed',
-          editorUserId: 'u1',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        })),
-      } satisfies DraftsResponse
+      return { prompts: prompts ?? [], last_scan_at: null } satisfies PromptsListResponse
     }
     if (path === '/api/github/status') {
       return {
@@ -163,6 +152,7 @@ describe('Prompts list', () => {
     await screen.findByText('triage.md')
     expect(screen.queryByRole('button', { name: /submit changes/i })).not.toBeInTheDocument()
     unmount()
+    localStorage.clear()
 
     setupGet([makePrompt({ id: 'p_a', path: 'prompts/triage.md' })], ['p_a'])
     renderRoute(<PromptsPage />)
@@ -172,7 +162,7 @@ describe('Prompts list', () => {
     )
   })
 
-  it('opens the submit modal and posts the form', async () => {
+  it('opens the submit modal and posts the form with inline drafts', async () => {
     setupGet([makePrompt({ id: 'p_a', path: 'prompts/triage.md' })], ['p_a'])
     mockedPost.mockResolvedValue({
       ok: true,
@@ -196,7 +186,15 @@ describe('Prompts list', () => {
     await user.type(titleInput, 'PR title')
     await user.click(screen.getByRole('button', { name: /open pr/i }))
 
-    await waitFor(() => expect(mockedPost).toHaveBeenCalledWith('/api/prompts/submit', expect.objectContaining({ title: 'PR title' })))
+    await waitFor(() =>
+      expect(mockedPost).toHaveBeenCalledWith(
+        '/api/prompts/submit',
+        expect.objectContaining({
+          title: 'PR title',
+          drafts: [{ promptId: 'p_a', newText: 'changed' }],
+        }),
+      ),
+    )
   })
 
   it('shows the install-GitHub-App banner to the dev when not connected', async () => {
@@ -217,9 +215,6 @@ describe('Prompts list', () => {
       }
       if (path === '/api/prompts') {
         return { prompts: [makePrompt()], last_scan_at: null }
-      }
-      if (path === '/api/prompts/drafts') {
-        return { draftBranch: 'gravel/draft-2026-05-05-u1', drafts: [] }
       }
       if (path === '/api/github/status') {
         return { connected: false, repoOwner: null, repoName: null, connectedAt: null }

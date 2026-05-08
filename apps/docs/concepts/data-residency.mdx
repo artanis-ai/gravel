@@ -9,15 +9,12 @@ Gravel is designed so that **data stays where it was generated**. For an AI engi
 
 Gravel creates tables prefixed `gravel_` in *your* Postgres or SQLite:
 
-- `gravel_traces` — every traced LLM call.
-- `gravel_observations` — per-step input / output / state.
-- `gravel_feedback` — DE labels and corrections.
-- `gravel_datasets` / `gravel_dataset_traces` — labeled groupings for evals.
-- `gravel_prompts` — the working manifest of every prompt in your repo.
-- `gravel_eval_runs` / `gravel_eval_results` — eval state and verdicts.
-- Plus auxiliary: `gravel_users`, `gravel_environments`, `gravel_projects`, `gravel_prompt_drafts`, `gravel_labels`.
+- `gravel_samples` — one row per LLM call (the unit). `input`, `output`, `metadata` are JSONB on Postgres / TEXT on SQLite. A multi-step "trace" is samples sharing a `group_id` — there is no separate trace table.
+- `gravel_feedback` — DE labels, corrections, and free-form comments attached to a sample.
 
-You own these. We never touch them. You can drop them and Gravel is gone.
+That's the whole data plane (as of the 2026-05-08 simplification). No mirrored users, datasets, evals, or prompt drafts in your DB — drafts live in the editor's browser localStorage; the manifest lives in your repo at `.artanis/manifest.json`.
+
+You own these tables. We never touch them. You can drop them and Gravel is gone.
 
 ## What leaves the boundary
 

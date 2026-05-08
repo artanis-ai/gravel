@@ -1,6 +1,10 @@
 /**
  * "Submit changes" confirmation modal.
  *
+ * Drafts are read from the browser's localStorage by the parent and
+ * passed in. On submit we POST them inline in the request body — the
+ * server doesn't persist drafts.
+ *
  * Spec: gravel-cloud/docs/spec/prompts.md §2 (submission step 8 — list each
  * draft's path + before/after diff snippet, optional title + description).
  *
@@ -8,12 +12,14 @@
  * isolation from the prompts list.
  */
 import { useEffect, useState, type FormEvent } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { Modal } from '../Modal'
 import { PromptBadge } from './PromptBadge'
 import { DiffView } from './DiffView'
 import { api } from '../../lib/api'
 import { cx } from '../../lib/format'
+import { clearDrafts, type LocalDraft } from '../../lib/drafts'
+import { useCurrentUser } from '../../lib/useCurrentUser'
 
 const NAME_STORAGE_KEY = 'gravel:submitter-name'
 
@@ -34,14 +40,13 @@ function writeCachedName(name: string): void {
   }
 }
 import type {
-  DraftRow,
   ManifestPromptListItem,
   PromptType,
   SubmitPrResult,
 } from '../../lib/types'
 
 export interface SubmitDraftEntry {
-  draft: DraftRow
+  draft: LocalDraft
   prompt: ManifestPromptListItem
   /** Current text from the file/literal — used as the "before" in the diff. */
   before: string
@@ -62,6 +67,7 @@ export function SubmitModal({
   const [description, setDescription] = useState('')
   const [name, setName] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const me = useCurrentUser()
 
   // Name field priority:
   //   1. previously-typed value in localStorage (the dev or DE has
@@ -70,11 +76,6 @@ export function SubmitModal({
   //   3. literal 'admin' for the localhost shortcut, since that
   //      matches what the auth shortcut tags the user with
   //   4. empty — DE types it themselves, gets cached for next time
-  const meQ = useQuery<{ user?: { id: string; firstName: string } }>({
-    queryKey: ['/api/auth/me'],
-    queryFn: () => api.get('/api/auth/me'),
-    enabled: open,
-  })
   useEffect(() => {
     if (!open) return
     const cached = readCachedName()
@@ -82,10 +83,9 @@ export function SubmitModal({
       setName(cached)
       return
     }
-    const me = meQ.data?.user
     if (me?.id === 'localhost') setName('admin')
     else if (me?.firstName) setName(me.firstName)
-  }, [open, meQ.data])
+  }, [open, me])
 
   const submit = useMutation<SubmitPrResult, Error, void>({
     mutationFn: () =>
@@ -93,10 +93,15 @@ export function SubmitModal({
         title: title.trim() || undefined,
         description: description.trim() || undefined,
         submitterName: name.trim() || undefined,
+        drafts: drafts.map((d) => ({
+          promptId: d.draft.promptId,
+          newText: d.draft.newText,
+        })),
       }),
     onSuccess: (result) => {
       setError(null)
       writeCachedName(name.trim())
+      if (me?.id) clearDrafts(me.id)
       setTitle('')
       setDescription('')
       onSubmitted(result)
@@ -156,7 +161,7 @@ export function SubmitModal({
 
         <ul className="space-y-3">
           {drafts.map((entry) => (
-            <DraftRowPreview key={entry.draft.id} entry={entry} />
+            <DraftRowPreview key={entry.draft.promptId} entry={entry} />
           ))}
         </ul>
 

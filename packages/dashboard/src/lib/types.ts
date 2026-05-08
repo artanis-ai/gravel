@@ -106,26 +106,6 @@ export interface PromptDetailResponse {
   varName?: string
 }
 
-export interface DraftRow {
-  id: string
-  promptId: string
-  draftBranch: string
-  newText: string
-  editorUserId: string | null
-  createdAt: string
-  updatedAt: string
-}
-
-export interface DraftsResponse {
-  draftBranch: string
-  drafts: DraftRow[]
-}
-
-export interface PutDraftResponse {
-  draft: DraftRow
-  draftBranch: string
-}
-
 export interface SubmitPrResult {
   ok: true
   pr: {

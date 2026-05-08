@@ -1,16 +1,16 @@
 /**
  * Drizzle schema for the customer's database (data plane).
  *
- * 2026-05-08 simplification (D-Q53): the customer-side schema is three
+ * 2026-05-08 simplification (D-Q53): the customer-side schema is two
  * tables. Traces became samples; samples carry their own input/output
- * jsonb (no separate observations table). Users + datasets + evals
- * tables retired until the corresponding UI surfaces ship — they're a
- * query away when needed.
+ * jsonb (no separate observations table). Drafts moved to the
+ * browser's localStorage (no draft persistence required across
+ * devices in the v0 workflow). Users + datasets + evals retired
+ * until the corresponding UI surfaces ship.
  *
- *   gravel_samples       — one row per LLM call. group_id links samples
- *                          into a "trace" (a virtual grouping).
- *   gravel_feedback      — flagged samples (1..N per sample).
- *   gravel_prompt_drafts — in-flight prompt edits before a PR.
+ *   gravel_samples  — one row per LLM call. group_id links samples
+ *                     into a "trace" (a virtual grouping).
+ *   gravel_feedback — flagged samples (1..N per sample).
  *
  * Mirrored by python/gravel/src/artanis_gravel/schema.py — schema-
  * drift CI rejects mismatches.
@@ -18,11 +18,9 @@
 import {
   pgTable,
   text,
-  uuid,
   bigint,
   timestamp,
   jsonb,
-  uniqueIndex,
   index,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
@@ -100,40 +98,12 @@ export const gravelFeedback = pgTable(
   }),
 )
 
-// gravel_prompt_drafts — accumulated unsaved prompt edits per draft
-// branch. The dashboard reads these to show "you have N drafts"; the
-// submit flow reads them to push commits + open one PR.
-export const gravelPromptDrafts = pgTable(
-  'gravel_prompt_drafts',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    /** Manifest entry id. Plain text — the manifest is source of truth. */
-    promptId: text('prompt_id').notNull(),
-    draftBranch: text('draft_branch').notNull(),
-    newText: text('new_text').notNull(),
-    /** From getUser. Plain text, no FK. */
-    editorUserId: text('editor_user_id'),
-    createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { mode: 'date' })
-      .notNull()
-      .defaultNow()
-      .$onUpdate(() => new Date()),
-  },
-  (table) => ({
-    branchIdx: index('gravel_prompt_drafts_branch_idx').on(table.draftBranch),
-    promptBranchIdx: index('gravel_prompt_drafts_prompt_branch_idx').on(
-      table.promptId,
-      table.draftBranch,
-    ),
-    promptBranchUnique: uniqueIndex('gravel_prompt_drafts_prompt_branch_unique').on(
-      table.promptId,
-      table.draftBranch,
-    ),
-  }),
-)
+// (gravel_prompt_drafts dropped 2026-05-08: drafts live in the
+// browser's localStorage, scoped per user. The submit endpoint
+// accepts them inline in the request body — no server-side
+// persistence between edits and submit.)
 
 export const allTables = {
   gravelSamples,
   gravelFeedback,
-  gravelPromptDrafts,
 }

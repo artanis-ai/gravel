@@ -21,7 +21,6 @@ from sqlalchemy import (
     MetaData,
     String,
     Table,
-    UniqueConstraint,
     func,
 )
 
@@ -70,23 +69,11 @@ gravel_feedback = Table(
     Index("gravel_feedback_sample_id_idx", "sample_id"),
 )
 
-gravel_prompt_drafts = Table(
-    "gravel_prompt_drafts",
-    metadata,
-    Column("id", String, primary_key=True),
-    Column("prompt_id", String, nullable=False),
-    Column("draft_branch", String, nullable=False),
-    Column("new_text", String, nullable=False),
-    Column("editor_user_id", String),
-    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    Index("gravel_prompt_drafts_branch_idx", "draft_branch"),
-    Index("gravel_prompt_drafts_prompt_branch_idx", "prompt_id", "draft_branch"),
-    UniqueConstraint("prompt_id", "draft_branch", name="gravel_prompt_drafts_prompt_branch_unique"),
-)
+# (gravel_prompt_drafts dropped 2026-05-08; drafts live in the
+# browser's localStorage, scoped per user. Submit endpoint accepts
+# them inline in the request body.)
 
 ALL_TABLES = [
     gravel_samples,
     gravel_feedback,
-    gravel_prompt_drafts,
 ]

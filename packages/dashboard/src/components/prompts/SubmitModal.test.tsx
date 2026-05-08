@@ -38,13 +38,9 @@ beforeEach(() => {
 function makeEntry(overrides: Partial<SubmitDraftEntry> = {}): SubmitDraftEntry {
   return {
     draft: {
-      id: 'd_1',
       promptId: 'p_abc',
-      draftBranch: 'gravel/draft-2026-05-05-alice',
       newText: 'You are a careful assistant.',
-      editorUserId: 'u_1',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      updatedAt: Date.now(),
     },
     prompt: {
       id: 'p_abc',
@@ -95,7 +91,12 @@ describe('SubmitModal', () => {
     await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(1))
     expect(mockedPost.mock.calls[0]).toEqual([
       '/api/prompts/submit',
-      { title: 'My PR title', description: undefined, submitterName: 'Alice' },
+      {
+        title: 'My PR title',
+        description: undefined,
+        submitterName: 'Alice',
+        drafts: [{ promptId: 'p_abc', newText: 'You are a careful assistant.' }],
+      },
     ])
     expect(onSubmitted).toHaveBeenCalled()
     expect(onClose).toHaveBeenCalled()

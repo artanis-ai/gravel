@@ -1,6 +1,8 @@
 /**
  * Tests for the prompt editor (load + edit + save + discard + diff +
  * Mallet-404 fallback).
+ *
+ * Drafts persist in localStorage now; tests seed/inspect that directly.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
@@ -18,23 +20,26 @@ vi.mock('../lib/api', () => ({
 import { api } from '../lib/api'
 import { PromptsPage } from './Prompts'
 import { renderRoute } from '../test/util'
-import type { DraftsResponse, PromptDetailResponse } from '../lib/types'
+import { getDraft, upsertDraft } from '../lib/drafts'
+import type { PromptDetailResponse } from '../lib/types'
 
 const mockedGet = api.get as unknown as ReturnType<typeof vi.fn>
 const mockedPost = api.post as unknown as ReturnType<typeof vi.fn>
 const mockedPut = api.put as unknown as ReturnType<typeof vi.fn>
 const mockedDelete = api.delete as unknown as ReturnType<typeof vi.fn>
 
+const USER_ID = 'localhost'
+
 beforeEach(() => {
   mockedGet.mockReset()
   mockedPost.mockReset()
   mockedPut.mockReset()
   mockedDelete.mockReset()
+  localStorage.clear()
 })
 
 interface Setup {
   detail?: PromptDetailResponse
-  drafts?: DraftsResponse
   analysis?: unknown
   analysisFails?: 'not-found' | 'other'
 }
@@ -46,12 +51,10 @@ function setup(opts: Setup = {}) {
     path: 'prompts/triage.md',
     content: 'You are a helpful assistant.',
   }
-  const drafts: DraftsResponse = opts.drafts ?? {
-    draftBranch: 'gravel/draft-2026-05-05-u1',
-    drafts: [],
-  }
   mockedGet.mockImplementation(async (path: string) => {
-    if (path === '/api/prompts/drafts') return drafts
+    if (path === '/api/auth/me') {
+      return { user: { id: USER_ID, firstName: 'Developer', role: 'admin' } }
+    }
     if (path.startsWith('/api/prompts/')) return detail
     throw new Error(`unmocked GET ${path}`)
   })
@@ -90,21 +93,8 @@ describe('PromptDetail', () => {
     })
   })
 
-  it('saves the draft via PUT and shows a toast', async () => {
+  it('saves the draft to localStorage and shows a toast', async () => {
     setup()
-    mockedPut.mockResolvedValue({
-      draft: {
-        id: 'd_1',
-        promptId: 'p_abc',
-        draftBranch: 'gravel/draft-2026-05-05-u1',
-        newText: 'You are a careful assistant.',
-        editorUserId: 'u1',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-      draftBranch: 'gravel/draft-2026-05-05-u1',
-    })
-
     const user = userEvent.setup()
     renderRoute(<PromptsPage promptId="p_abc" />)
     const ta = (await screen.findByLabelText(/draft prompt text/i)) as HTMLTextAreaElement
@@ -112,39 +102,28 @@ describe('PromptDetail', () => {
     await user.type(ta, 'You are a careful assistant.')
     await user.click(screen.getByRole('button', { name: /save draft/i }))
 
-    await waitFor(() => expect(mockedPut).toHaveBeenCalledTimes(1))
-    expect(mockedPut.mock.calls[0]).toEqual([
-      '/api/prompts/p_abc',
-      { newText: 'You are a careful assistant.' },
-    ])
+    await waitFor(() => {
+      const draft = getDraft(USER_ID, 'p_abc')
+      expect(draft?.newText).toBe('You are a careful assistant.')
+    })
+    expect(mockedPut).not.toHaveBeenCalled()
     expect(await screen.findByText(/draft saved on branch/i)).toBeInTheDocument()
   })
 
-  it('discards an existing draft via DELETE', async () => {
-    setup({
-      drafts: {
-        draftBranch: 'gravel/draft-2026-05-05-u1',
-        drafts: [
-          {
-            id: 'd_1',
-            promptId: 'p_abc',
-            draftBranch: 'gravel/draft-2026-05-05-u1',
-            newText: 'old draft',
-            editorUserId: 'u1',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          },
-        ],
-      },
-    })
-    mockedDelete.mockResolvedValue({ ok: true })
+  it('discards an existing draft from localStorage', async () => {
+    upsertDraft(USER_ID, { promptId: 'p_abc', newText: 'old draft' })
+    setup()
 
     const user = userEvent.setup()
     renderRoute(<PromptsPage promptId="p_abc" />)
     await screen.findByText('prompts/triage.md')
     const discardBtn = await screen.findByRole('button', { name: /discard draft/i })
     await user.click(discardBtn)
-    await waitFor(() => expect(mockedDelete).toHaveBeenCalledTimes(1))
+
+    await waitFor(() => {
+      expect(getDraft(USER_ID, 'p_abc')).toBeNull()
+    })
+    expect(mockedDelete).not.toHaveBeenCalled()
   })
 
   it('shows the Mallet-not-available fallback on 404', async () => {

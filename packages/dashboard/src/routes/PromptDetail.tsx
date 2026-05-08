@@ -2,6 +2,8 @@
  * Prompt editor — read current text, accept a draft, save / discard, show
  * inline diff + Mallet analysis as the DE types.
  *
+ * Drafts persist in this browser's localStorage (see lib/drafts.ts).
+ *
  * Spec: gravel-cloud/docs/spec/prompts.md §2 (edit flow), §5 (inline diff +
  * Mallet on edits).
  */
@@ -14,43 +16,51 @@ import { Badge } from '../components/Badge'
 import { PromptBadge } from '../components/prompts/PromptBadge'
 import { DiffView } from '../components/prompts/DiffView'
 import { cx } from '../lib/format'
-import type {
-  AnalysisResponse,
-  DraftsResponse,
-  MalletIssue,
-  PromptDetailResponse,
-  PutDraftResponse,
-} from '../lib/types'
+import {
+  draftBranchFor,
+  getDraft,
+  removeDraft,
+  upsertDraft,
+  type LocalDraft,
+} from '../lib/drafts'
+import { useCurrentUser } from '../lib/useCurrentUser'
+import type { AnalysisResponse, MalletIssue, PromptDetailResponse } from '../lib/types'
 
 export function PromptDetail({ promptId }: { promptId: string }) {
   const [, navigate] = useLocation()
   const queryClient = useQueryClient()
+  const me = useCurrentUser()
+  const userId = me?.id ?? null
 
   const detailQ = useQuery<PromptDetailResponse>({
     queryKey: ['prompt', promptId],
     queryFn: () => api.get<PromptDetailResponse>(`/api/prompts/${promptId}`),
   })
-  const draftsQ = useQuery<DraftsResponse>({
-    queryKey: ['prompts', 'drafts'],
-    queryFn: () => api.get<DraftsResponse>('/api/prompts/drafts'),
+  const draftQ = useQuery<LocalDraft | null>({
+    queryKey: ['prompts', 'drafts', userId, promptId],
+    enabled: userId !== null,
+    queryFn: () => Promise.resolve(userId ? getDraft(userId, promptId) : null),
   })
 
-  const existingDraft = draftsQ.data?.drafts.find((d) => d.promptId === promptId) ?? null
+  const existingDraft = draftQ.data ?? null
   const [draftText, setDraftText] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
 
   // Seed the editor once we know the current text + any existing draft.
   useEffect(() => {
     if (draftText !== null) return
-    if (!detailQ.data || draftsQ.isLoading) return
+    if (!detailQ.data || draftQ.isLoading) return
     setDraftText(existingDraft ? existingDraft.newText : detailQ.data.content)
-  }, [detailQ.data, draftsQ.isLoading, existingDraft, draftText])
+  }, [detailQ.data, draftQ.isLoading, existingDraft, draftText])
 
-  const save = useMutation<PutDraftResponse, Error, string>({
-    mutationFn: (newText) =>
-      api.put<PutDraftResponse>(`/api/prompts/${promptId}`, { newText }),
-    onSuccess: (data) => {
-      setToast(`Draft saved on branch ${data.draftBranch}`)
+  const save = useMutation<LocalDraft, Error, string>({
+    mutationFn: async (newText) => {
+      if (!userId) throw new Error('Not signed in')
+      return upsertDraft(userId, { promptId, newText })
+    },
+    onSuccess: () => {
+      const branch = userId ? draftBranchFor(userId) : ''
+      setToast(`Draft saved on branch ${branch}`)
       queryClient.invalidateQueries({ queryKey: ['prompts', 'drafts'] })
       // Spec §2: "After save, returns user to /prompts with the row marked
       // 'draft'." Wait a beat so the toast is readable in tests + real use.
@@ -58,8 +68,11 @@ export function PromptDetail({ promptId }: { promptId: string }) {
     },
   })
 
-  const discard = useMutation<{ ok: true }, Error, void>({
-    mutationFn: () => api.delete<{ ok: true }>(`/api/prompts/${promptId}/draft`),
+  const discard = useMutation<void, Error, void>({
+    mutationFn: async () => {
+      if (!userId) throw new Error('Not signed in')
+      removeDraft(userId, promptId)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['prompts', 'drafts'] })
       navigate('/prompts')
@@ -87,7 +100,7 @@ export function PromptDetail({ promptId }: { promptId: string }) {
   const detail = detailQ.data
   const editorText = draftText ?? detail.content
   const dirty = editorText !== detail.content
-  const draftBranch = draftsQ.data?.draftBranch ?? null
+  const draftBranch = userId ? draftBranchFor(userId) : null
 
   return (
     <div className="space-y-4">

@@ -8,7 +8,7 @@ from datetime import timedelta
 import pytest
 from sqlalchemy import create_engine, select
 
-from artanis_gravel.schema import gravel_observations, gravel_traces, metadata as schema_metadata
+from artanis_gravel.schema import gravel_samples, metadata as schema_metadata
 from artanis_gravel.tracing import (
     awith_gravel_metadata,
     awith_tracing_disabled,
@@ -85,16 +85,10 @@ def test_persist_trace_drops_silently_without_config() -> None:
     assert persist_trace(record) is None
 
 
-def test_persist_trace_writes_rows_to_sqlite(tmp_path) -> None:
+def test_persist_trace_writes_sample_to_sqlite(tmp_path) -> None:
     db_path = tmp_path / "trace.db"
     engine = create_engine(f"sqlite:///{db_path}")
     schema_metadata.create_all(engine)
-
-    # We need a gravel_environments row for the FK.
-    from artanis_gravel.schema import gravel_environments
-
-    with engine.begin() as conn:
-        conn.execute(gravel_environments.insert().values(id="prod", name="prod"))
 
     set_gravel_tracing_config(
         TracingRuntimeConfig(engine=engine, environment_id="prod")
@@ -109,21 +103,20 @@ def test_persist_trace_writes_rows_to_sqlite(tmp_path) -> None:
             input_data={"messages": [{"role": "user", "content": "hi"}]},
             output_data={"choices": [{"message": {"content": "hello"}}]},
         )
-        trace_id = persist_trace(record)
-        assert trace_id is not None
+        sample_id = persist_trace(record)
+        assert sample_id is not None
 
         with engine.connect() as conn:
-            traces = list(conn.execute(select(gravel_traces)).mappings())
-            obs = list(conn.execute(select(gravel_observations)).mappings())
+            samples = list(conn.execute(select(gravel_samples)).mappings())
 
-        assert len(traces) == 1
-        assert traces[0]["name"] == "openai.chat.completions.create"
-        assert traces[0]["status"] == "ok"
-        assert traces[0]["environment_id"] == "prod"
-        assert traces[0]["duration_ms"] >= 0
-        assert len(obs) == 2
-        kinds = sorted(o["type"] for o in obs)
-        assert kinds == ["input", "output"]
+        assert len(samples) == 1
+        sample = samples[0]
+        assert sample["name"] == "openai.chat.completions.create"
+        assert sample["status"] == "completed"
+        assert sample["environment"] == "prod"
+        assert sample["duration_ms"] >= 0
+        assert sample["input"]["messages"][0]["content"] == "hi"
+        assert sample["output"]["choices"][0]["message"]["content"] == "hello"
     finally:
         set_gravel_tracing_config(None)
 
@@ -132,10 +125,6 @@ def test_scrub_input_applied(tmp_path) -> None:
     db_path = tmp_path / "scrub.db"
     engine = create_engine(f"sqlite:///{db_path}")
     schema_metadata.create_all(engine)
-    from artanis_gravel.schema import gravel_environments
-
-    with engine.begin() as conn:
-        conn.execute(gravel_environments.insert().values(id="prod", name="prod"))
 
     def scrub(messages):
         return [{"role": m["role"], "content": "[REDACTED]"} for m in (messages or [])]
@@ -159,8 +148,11 @@ def test_scrub_input_applied(tmp_path) -> None:
         persist_trace(record)
 
         with engine.connect() as conn:
-            obs = list(conn.execute(select(gravel_observations)).mappings())
-        input_row = next(o for o in obs if o["type"] == "input")
-        assert input_row["data"]["messages"][0]["content"] == "[REDACTED]"
+            samples = list(conn.execute(select(gravel_samples)).mappings())
+        assert len(samples) == 1
+        sample = samples[0]
+        assert sample["input"]["messages"][0]["content"] == "[REDACTED]"
+        # state observation surfaces in metadata.states.
+        assert sample["metadata"]["states"] == [{"key": "s", "data": {"x": 1}}]
     finally:
         set_gravel_tracing_config(None)

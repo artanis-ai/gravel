@@ -21,12 +21,9 @@
   - Types/config with mutually-exclusive auth-mode validation.
   - HMAC sessions + view-as.
   - **Default-password auth wired** (login / logout / view-as routes — IP rate-limited, HMAC-signed sessions, HttpOnly+Secure cookies).
-  - **Prompts backend** (`src/prompts/{drafts,submit,user-extra}.ts` + 6 wired routes):
+  - **Prompts backend** (`src/prompts/submit.ts` + 3 wired routes):
     - `GET /api/prompts` + `GET /api/prompts/:id` (manifest-backed).
-    - `PUT /api/prompts/:id` upserts a draft.
-    - `GET /api/prompts/drafts` lists user's drafts.
-    - `DELETE /api/prompts/:id/draft` discards.
-    - `POST /api/prompts/submit` orchestrates: read drafts → group by file → fetch current content via GH API → apply surgical edits in descending char-start order → call `createPullRequest()` → clear drafts.
+    - `POST /api/prompts/submit` accepts `{ drafts: [{promptId, newText}, ...], title?, description?, submitterName? }` inline; orchestrates: group by file → fetch current content via GH API → apply surgical edits in descending char-start order → call `createPullRequest()`. Drafts persist in the dashboard's localStorage (no server-side draft store as of 2026-05-08).
   - **GitHub OAuth wired through** (`/api/github/{status,connect,callback,repo}`): callback persists the access token in `gravel_users.extra`, repo selection via POST.
   - **Tracing auto-patches** for OpenAI / Anthropic / Langchain / Vercel AI SDK. Lazy provider import; missing SDKs no-op. Streaming via Symbol.asyncIterator tee.
   - Manifest tooling (fast scan + polite-blocking pre-commit hook installer).
@@ -91,7 +88,7 @@
 | Dashboard SPA bundled into SDK | Pending — mechanical Vite-output integration | `packages/sdk-ts/src/handler/routes.ts` `htmlShell` |
 | In-app notifications | Spec says v0 is browser localStorage only | dashboard |
 | GitHub repo picker (list user's repos) | v1+ — for now the dashboard takes free-text owner/name | dashboard |
-| SQLite parity for `prompts/drafts.ts` + `prompts/user-extra.ts` | Postgres-only for v0 | sdk-ts |
+| (none) | Drafts no longer persisted server-side as of 2026-05-08 | — |
 
 ## Cloud verification (run anytime)
 

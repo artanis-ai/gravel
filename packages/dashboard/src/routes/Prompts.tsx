@@ -2,6 +2,9 @@
  * Prompts list — surface the manifest, group by directory, let the DE see
  * which prompts have an in-flight draft, and submit all drafts as one PR.
  *
+ * Drafts live in this browser's localStorage (see lib/drafts.ts). The
+ * submit endpoint accepts them inline in the POST body.
+ *
  * Spec: gravel-cloud/docs/spec/prompts.md §2 (edit flow), §3 (no "new
  * prompt" button + empty-state copy), §6 (GitHub OAuth gating), §9 (search).
  */
@@ -15,8 +18,9 @@ import { CopyableCode } from '../components/CopyableCode'
 import { SkeletonText } from '../components/Skeleton'
 import { PromptBadge } from '../components/prompts/PromptBadge'
 import { SubmitModal, type SubmitDraftEntry } from '../components/prompts/SubmitModal'
+import { listDrafts, type LocalDraft } from '../lib/drafts'
+import { useCurrentUser } from '../lib/useCurrentUser'
 import type {
-  DraftsResponse,
   GithubStatusResponse,
   ManifestPromptListItem,
   PromptDetailResponse,
@@ -34,14 +38,16 @@ function PromptsList() {
   const [submitOpen, setSubmitOpen] = useState(false)
   const [submittedPrUrl, setSubmittedPrUrl] = useState<string | null>(null)
   const queryClient = useQueryClient()
+  const userId = useCurrentUser()?.id ?? null
 
   const promptsQ = useQuery<PromptsListResponse>({
     queryKey: ['prompts'],
     queryFn: () => api.get<PromptsListResponse>('/api/prompts'),
   })
-  const draftsQ = useQuery<DraftsResponse>({
-    queryKey: ['prompts', 'drafts'],
-    queryFn: () => api.get<DraftsResponse>('/api/prompts/drafts'),
+  const draftsQ = useQuery<LocalDraft[]>({
+    queryKey: ['prompts', 'drafts', userId],
+    enabled: userId !== null,
+    queryFn: () => Promise.resolve(userId ? listDrafts(userId) : []),
   })
   const ghQ = useQuery<GithubStatusResponse>({
     queryKey: ['github', 'status'],
@@ -49,8 +55,8 @@ function PromptsList() {
   })
 
   const draftsByPromptId = useMemo(() => {
-    const map = new Map<string, DraftsResponse['drafts'][number]>()
-    for (const d of draftsQ.data?.drafts ?? []) map.set(d.promptId, d)
+    const map = new Map<string, LocalDraft>()
+    for (const d of draftsQ.data ?? []) map.set(d.promptId, d)
     return map
   }, [draftsQ.data])
 
@@ -71,10 +77,10 @@ function PromptsList() {
   // text so we can show a meaningful diff. Fetch on demand only when the
   // modal opens.
   const draftPreviewsQ = useQuery<SubmitDraftEntry[]>({
-    queryKey: ['prompts', 'submit-preview', draftsQ.data?.drafts.map((d) => d.id).join(',')],
-    enabled: submitOpen && (draftsQ.data?.drafts.length ?? 0) > 0,
+    queryKey: ['prompts', 'submit-preview', (draftsQ.data ?? []).map((d) => d.promptId).join(',')],
+    enabled: submitOpen && (draftsQ.data?.length ?? 0) > 0,
     queryFn: async () => {
-      const drafts = draftsQ.data?.drafts ?? []
+      const drafts = draftsQ.data ?? []
       const prompts = promptsQ.data?.prompts ?? []
       const byId = new Map(prompts.map((p) => [p.id, p]))
       const entries: SubmitDraftEntry[] = []
@@ -88,7 +94,7 @@ function PromptsList() {
     },
   })
 
-  const hasDrafts = (draftsQ.data?.drafts.length ?? 0) > 0
+  const hasDrafts = (draftsQ.data?.length ?? 0) > 0
   const ghConnected = ghQ.data?.connected === true
 
   return (
@@ -107,7 +113,7 @@ function PromptsList() {
             className="shrink-0 cursor-pointer rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary-dark"
             onClick={() => setSubmitOpen(true)}
           >
-            Submit changes ({draftsQ.data?.drafts.length ?? 0})
+            Submit changes ({draftsQ.data?.length ?? 0})
           </button>
         )}
       </header>
@@ -116,8 +122,8 @@ function PromptsList() {
         GH App install is dev-only setup. Domain experts can't (and
         shouldn't) wire up a bot; they just want to edit a prompt. When
         the App is installed by the dev once on the repo, every viewer's
-        "Submit changes" goes through it. The repo binding happens at
-        install time on github.com — no separate repo-picker needed.
+        "Submit changes" goes through it. The repo binds at install time
+        on github.com — no separate repo-picker needed.
       */}
       {ghQ.data && !ghConnected && (
         <DeveloperNote>
@@ -213,7 +219,7 @@ function DirectoryGroup({
 }: {
   dir: string
   prompts: ManifestPromptListItem[]
-  draftsByPromptId: Map<string, DraftsResponse['drafts'][number]>
+  draftsByPromptId: Map<string, LocalDraft>
 }) {
   const [open, setOpen] = useState(true)
   return (
@@ -358,4 +364,3 @@ function GithubBanner() {
     </div>
   )
 }
-

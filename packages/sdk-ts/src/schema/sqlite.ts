@@ -9,7 +9,7 @@
  *
  * Semantic shape is identical. Three tables, same as postgres.ts.
  */
-import { sqliteTable, text, integer, uniqueIndex, index } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core'
 import { sql } from 'drizzle-orm'
 
 const now = sql`(unixepoch() * 1000)`
@@ -62,32 +62,9 @@ export const gravelFeedback = sqliteTable(
   }),
 )
 
-export const gravelPromptDrafts = sqliteTable(
-  'gravel_prompt_drafts',
-  {
-    id: text('id').primaryKey(),
-    promptId: text('prompt_id').notNull(),
-    draftBranch: text('draft_branch').notNull(),
-    newText: text('new_text').notNull(),
-    editorUserId: text('editor_user_id'),
-    createdAt: integer('created_at').notNull().default(now),
-    updatedAt: integer('updated_at').notNull().default(now),
-  },
-  (table) => ({
-    branchIdx: index('gravel_prompt_drafts_branch_idx').on(table.draftBranch),
-    promptBranchIdx: index('gravel_prompt_drafts_prompt_branch_idx').on(
-      table.promptId,
-      table.draftBranch,
-    ),
-    promptBranchUnique: uniqueIndex('gravel_prompt_drafts_prompt_branch_unique').on(
-      table.promptId,
-      table.draftBranch,
-    ),
-  }),
-)
+// (gravel_prompt_drafts dropped 2026-05-08; see postgres.ts.)
 
 export const allTables = {
   gravelSamples,
   gravelFeedback,
-  gravelPromptDrafts,
 }

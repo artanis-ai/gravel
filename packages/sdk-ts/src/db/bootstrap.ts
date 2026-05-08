@@ -1,7 +1,10 @@
 /**
- * Idempotent CREATE TABLE bootstrap. Brings up the three gravel_*
+ * Idempotent CREATE TABLE bootstrap. Brings up the two gravel_*
  * tables on a fresh DB. Mirrors python schema.py — schema-drift CI
  * rejects mismatches.
+ *
+ * (Drafts live in the browser's localStorage; the submit endpoint
+ * accepts them inline. No gravel_prompt_drafts table.)
  */
 import type { Database } from './index.js'
 
@@ -42,19 +45,6 @@ CREATE TABLE IF NOT EXISTS gravel_feedback (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS gravel_feedback_sample_id_idx ON gravel_feedback(sample_id);
-
-CREATE TABLE IF NOT EXISTS gravel_prompt_drafts (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  prompt_id TEXT NOT NULL,
-  draft_branch TEXT NOT NULL,
-  new_text TEXT NOT NULL,
-  editor_user_id TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS gravel_prompt_drafts_branch_idx ON gravel_prompt_drafts(draft_branch);
-CREATE INDEX IF NOT EXISTS gravel_prompt_drafts_prompt_branch_idx ON gravel_prompt_drafts(prompt_id, draft_branch);
-CREATE UNIQUE INDEX IF NOT EXISTS gravel_prompt_drafts_prompt_branch_unique ON gravel_prompt_drafts(prompt_id, draft_branch);
 `
 
 const SQLITE_BOOTSTRAP = `
@@ -93,19 +83,6 @@ CREATE TABLE IF NOT EXISTS gravel_feedback (
   created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
 );
 CREATE INDEX IF NOT EXISTS gravel_feedback_sample_id_idx ON gravel_feedback(sample_id);
-
-CREATE TABLE IF NOT EXISTS gravel_prompt_drafts (
-  id TEXT PRIMARY KEY,
-  prompt_id TEXT NOT NULL,
-  draft_branch TEXT NOT NULL,
-  new_text TEXT NOT NULL,
-  editor_user_id TEXT,
-  created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
-  updated_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
-);
-CREATE INDEX IF NOT EXISTS gravel_prompt_drafts_branch_idx ON gravel_prompt_drafts(draft_branch);
-CREATE INDEX IF NOT EXISTS gravel_prompt_drafts_prompt_branch_idx ON gravel_prompt_drafts(prompt_id, draft_branch);
-CREATE UNIQUE INDEX IF NOT EXISTS gravel_prompt_drafts_prompt_branch_unique ON gravel_prompt_drafts(prompt_id, draft_branch);
 `
 
 export async function bootstrap(db: Database): Promise<void> {

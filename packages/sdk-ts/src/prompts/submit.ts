@@ -3,15 +3,17 @@
  *
  * Spec: gravel-cloud/docs/spec/prompts.md §2 (Submission), §6 (PR authoring).
  *
+ * Drafts are passed in by the caller (the dashboard reads them from the
+ * browser's localStorage and POSTs them inline on the submit request).
+ * No server-side draft persistence — see schema.py header.
+ *
  * Pipeline:
- *   1. Read every draft for the DE's branch.
- *   2. Look up each prompt's manifest entry for path + char range.
- *   3. Group drafts by file path.
- *   4. For each path: fetch current file content via the GitHub API (using
+ *   1. Look up each draft's prompt manifest entry for path + char range.
+ *   2. Group drafts by file path.
+ *   3. For each path: fetch current file content via the GitHub API (using
  *      the DE's OAuth access token), apply surgical edits in *descending*
  *      char-start order so earlier offsets aren't shifted by later edits.
- *   5. Hand the resulting per-file content to `createPullRequest()`.
- *   6. Clear the drafts so the editor starts fresh.
+ *   4. Hand the resulting per-file content to `createPullRequest()`.
  *
  * Invariants enforced here:
  *   - All drafts must reference prompts the manifest knows about. If a
@@ -25,13 +27,26 @@
 import { readManifest, type ManifestPrompt, type ManifestPromptEmbedded } from '../manifest/index.js'
 import { githubAPI } from '../github/api.js'
 import { createPullRequest, type PromptChange, type CreatePullRequestResult } from '../github/create-pr.js'
-import { clearDraftsForBranch, listDraftsForBranch, type DraftRow } from './drafts.js'
-import type { Database } from '../db/index.js'
+
+/** A single draft passed in from the dashboard's localStorage. */
+export interface DraftInput {
+  promptId: string
+  newText: string
+}
+
+/** Compute the draft branch name for a given user. Idempotent within a day. */
+export function draftBranchFor(userId: string, now: Date = new Date()): string {
+  const date = now.toISOString().slice(0, 10) // YYYY-MM-DD
+  const sanitized = userId.replace(/[^A-Za-z0-9._-]/g, '-')
+  return `gravel/draft-${date}-${sanitized}`
+}
 
 export interface SubmitArgs {
-  db: Database
   /** Repo root for reading the manifest (typically `process.cwd()`). */
   repoRoot: string
+  /** Drafts read from the dashboard's localStorage. */
+  drafts: DraftInput[]
+  /** Git branch to push the PR from. */
   draftBranch: string
   accessToken: string
   repoOwner: string
@@ -58,9 +73,8 @@ export class SubmitError extends Error {
 }
 
 export async function submitDrafts(args: SubmitArgs): Promise<CreatePullRequestResult> {
-  const drafts = await listDraftsForBranch(args.db, args.draftBranch)
-  if (drafts.length === 0) {
-    throw new SubmitError('no_drafts', 'No drafts to submit on this branch')
+  if (args.drafts.length === 0) {
+    throw new SubmitError('no_drafts', 'No drafts to submit')
   }
 
   const manifest = await readManifest(args.repoRoot)
@@ -72,11 +86,10 @@ export async function submitDrafts(args: SubmitArgs): Promise<CreatePullRequestR
   }
   const promptIndex = new Map<string, ManifestPrompt>(manifest.prompts.map((p) => [p.id, p]))
 
-  // Match drafts to manifest entries.
-  type Resolved = { draft: DraftRow; entry: ManifestPrompt }
+  type Resolved = { draft: DraftInput; entry: ManifestPrompt }
   const resolved: Resolved[] = []
   const missing: string[] = []
-  for (const draft of drafts) {
+  for (const draft of args.drafts) {
     const entry = promptIndex.get(draft.promptId)
     if (!entry) {
       missing.push(draft.promptId)
@@ -88,7 +101,6 @@ export async function submitDrafts(args: SubmitArgs): Promise<CreatePullRequestR
     throw new SubmitError('unknown_prompt', 'One or more drafts refer to unknown prompts', { missing })
   }
 
-  // Group by file path.
   const byPath = new Map<string, Resolved[]>()
   for (const r of resolved) {
     const arr = byPath.get(r.entry.path) ?? []
@@ -109,7 +121,6 @@ export async function submitDrafts(args: SubmitArgs): Promise<CreatePullRequestR
     }
 
     if (fileChanges.length > 1) {
-      // A file-type prompt is the whole file; only one can win.
       throw new SubmitError(
         'unknown_prompt',
         `Path ${path} has multiple file-type prompt drafts in this submit`,
@@ -121,8 +132,6 @@ export async function submitDrafts(args: SubmitArgs): Promise<CreatePullRequestR
       continue
     }
 
-    // Embedded — read current file content + apply surgical edits in
-    // descending char-start order.
     let current: string
     try {
       const file = await githubAPI<{ content: string; encoding: string }>(
@@ -145,9 +154,8 @@ export async function submitDrafts(args: SubmitArgs): Promise<CreatePullRequestR
     changes.push({ path, content: next })
   }
 
-  let pr: CreatePullRequestResult
   try {
-    pr = await createPullRequest({
+    return await createPullRequest({
       accessToken: args.accessToken,
       repoOwner: args.repoOwner,
       repoName: args.repoName,
@@ -160,20 +168,15 @@ export async function submitDrafts(args: SubmitArgs): Promise<CreatePullRequestR
   } catch (err) {
     throw new SubmitError('github_failed', 'Failed to open PR', err)
   }
-
-  await clearDraftsForBranch(args.db, args.draftBranch)
-  return pr
 }
 
 function decodeBase64Utf8(content: string, encoding: string): string {
   if (encoding !== 'base64') {
     throw new Error(`Unexpected GitHub contents encoding: ${encoding}`)
   }
-  // GitHub returns base64 with line breaks every 60 chars.
   const clean = content.replace(/\s+/g, '')
   if (typeof Buffer !== 'undefined') {
     return Buffer.from(clean, 'base64').toString('utf-8')
   }
-  // Edge fallback.
   return decodeURIComponent(escape(atob(clean)))
 }

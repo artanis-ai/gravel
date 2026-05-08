@@ -216,57 +216,45 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
       content,
     })
   },
-  'PUT /api/prompts/:id': async ({ path, request, db, authed }) => {
+  // Drafts live in the dashboard's localStorage (no server persistence).
+  // The submit endpoint receives them inline — see POST /api/prompts/submit.
+  'POST /api/prompts/submit': async ({ request, authed }) => {
     if (!authed) return json({ error: 'unauthorized' }, 401)
-    const id = path.split('/').pop()
-    if (!id) return json({ error: 'missing id' }, 400)
-    let body: { newText?: unknown }
-    try {
-      body = (await request.json()) as { newText?: unknown }
-    } catch {
-      return json({ error: 'invalid JSON body' }, 400)
+    let body: {
+      title?: unknown
+      description?: unknown
+      submitterName?: unknown
+      drafts?: unknown
     }
-    const newText = typeof body.newText === 'string' ? body.newText : null
-    if (newText === null) return json({ error: 'newText (string) required' }, 400)
-    const { readManifest } = await import('../manifest/io.js')
-    const manifest = await readManifest(process.cwd())
-    if (!manifest.prompts.find((p) => p.id === id)) {
-      return json({ error: 'prompt not in manifest' }, 404)
-    }
-    const { upsertDraft, draftBranchFor } = await import('../prompts/drafts.js')
-    const draftBranch = draftBranchFor(authed.id)
-    const draft = await upsertDraft(db, {
-      promptId: id,
-      draftBranch,
-      newText,
-      editorUserId: authed.id,
-    })
-    return json({ draft, draftBranch })
-  },
-  'GET /api/prompts/drafts': async ({ db, authed }) => {
-    if (!authed) return json({ error: 'unauthorized' }, 401)
-    const { listDraftsForBranch, draftBranchFor } = await import('../prompts/drafts.js')
-    const draftBranch = draftBranchFor(authed.id)
-    const drafts = await listDraftsForBranch(db, draftBranch)
-    return json({ draftBranch, drafts })
-  },
-  'DELETE /api/prompts/:id/draft': async ({ path, db, authed }) => {
-    if (!authed) return json({ error: 'unauthorized' }, 401)
-    // path is /api/prompts/:id/draft — :id is the segment after /prompts/
-    const segments = path.split('/').filter(Boolean)
-    const id = segments[2]
-    if (!id) return json({ error: 'missing id' }, 400)
-    const { deleteDraft, draftBranchFor } = await import('../prompts/drafts.js')
-    await deleteDraft(db, { promptId: id, draftBranch: draftBranchFor(authed.id) })
-    return json({ ok: true })
-  },
-  'POST /api/prompts/submit': async ({ request, db, authed }) => {
-    if (!authed) return json({ error: 'unauthorized' }, 401)
-    let body: { title?: unknown; description?: unknown; submitterName?: unknown }
     try {
       body = (await request.json().catch(() => ({}))) as typeof body
     } catch {
       body = {}
+    }
+    // Validate the inline drafts payload.
+    if (!Array.isArray(body.drafts) || body.drafts.length === 0) {
+      return json(
+        { error: 'no_drafts', message: 'drafts (non-empty array) required in request body' },
+        400,
+      )
+    }
+    const drafts: { promptId: string; newText: string }[] = []
+    for (const raw of body.drafts) {
+      if (
+        typeof raw !== 'object' ||
+        raw === null ||
+        typeof (raw as { promptId?: unknown }).promptId !== 'string' ||
+        typeof (raw as { newText?: unknown }).newText !== 'string'
+      ) {
+        return json(
+          { error: 'invalid_draft', message: 'each draft needs string promptId + newText' },
+          400,
+        )
+      }
+      drafts.push({
+        promptId: (raw as { promptId: string }).promptId,
+        newText: (raw as { newText: string }).newText,
+      })
     }
     const { getGhInstallState } = await import('../github/project-state.js')
     const ghState = await getGhInstallState()
@@ -300,8 +288,7 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
         502,
       )
     }
-    const { submitDrafts, SubmitError } = await import('../prompts/submit.js')
-    const { draftBranchFor } = await import('../prompts/drafts.js')
+    const { submitDrafts, SubmitError, draftBranchFor } = await import('../prompts/submit.js')
     try {
       // submitterName comes from the dashboard form. Falls back to the
       // host's getUser() firstName when the field is left blank, which
@@ -311,8 +298,8 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
           ? body.submitterName.trim()
           : authed.firstName
       const result = await submitDrafts({
-        db,
         repoRoot: process.cwd(),
+        drafts,
         draftBranch: draftBranchFor(authed.id),
         accessToken: token.token,
         repoOwner: ghState.repoOwner,
