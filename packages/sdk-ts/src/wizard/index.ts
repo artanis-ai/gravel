@@ -33,6 +33,11 @@ import { probeDatabase } from './db-test.js'
 import { installHook } from '../manifest/hook.js'
 import { fastScan } from '../manifest/scan.js'
 import { readManifest, writeManifest } from '../manifest/io.js'
+import {
+  agentDeepScan,
+  detectAgents,
+  type AgentName,
+} from '../manifest/agent-deep-scan.js'
 import type { Manifest, ManifestPrompt } from '../manifest/types.js'
 import { resolveControlPlaneUrl } from './oauth.js'
 import { askText, confirm, pressEnter } from './prompt.js'
@@ -265,7 +270,12 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
     if (!wantPrompts) {
       bullet('Skipped. Run `gravel init --prompts` later.', 'skip')
     } else {
-      const manifest = await runScanAndVerify(cwd, ask, askInteractiveText(interactive))
+      const manifest = await runScanAndVerify(
+        cwd,
+        ask,
+        askInteractiveText(interactive),
+        { skipDeepScan: opts.noDeepScan === true },
+      )
       if (manifest) {
         promptsRan = true
         if (detection.hasGit && opts.noHook !== true && !state.hookInstalled) {
@@ -385,6 +395,7 @@ async function runScanAndVerify(
   cwd: string,
   ask: (q: string, defaultYes?: boolean) => Promise<boolean>,
   askTextFn: (q: string, def?: string) => Promise<string>,
+  opts: { skipDeepScan?: boolean } = {},
 ): Promise<Manifest | null> {
   const sp = spinner('Scanning repo for prompts…')
   let manifest: Manifest
@@ -400,63 +411,87 @@ async function runScanAndVerify(
     return null
   }
 
-  // Show what we found.
+  // Show what we found, if anything.
   if (manifest.prompts.length === 0) {
     say('')
     say(
       `I didn't find any ${c.bold('.md')} / ${c.bold('.txt')} prompts in conventional ` +
-        `directories. They might be embedded in code as string literals — that needs ` +
-        `the deeper LLM-assisted scan (see ${c.bold('gravel scan --deep')} when implemented). ` +
-        `For now you can also commit a prompt file (e.g. ${c.bold('prompts/system.md')}) and ` +
-        `re-run.`,
+        `directories. If your prompts live in code (string literals, template strings), ` +
+        `the deep scan below should pick them up.`,
     )
-    await writeManifest(cwd, manifest)
-    return manifest
-  }
-
-  say('')
-  say(`Here's what I found:`)
-  for (let i = 0; i < manifest.prompts.length; i++) {
-    const p = manifest.prompts[i]!
-    bullet(`${i + 1}. ${formatPromptEntry(p)}`, 'plain')
-  }
-  say('')
-  const looksRight = await ask('Look right?', true)
-  if (!looksRight) {
+  } else {
     say('')
-    say(
-      `Tell me which to drop (comma-separated numbers, or ${c.bold('all')} to clear). ` +
-        `Press Enter to keep them all.`,
-    )
-    const answer = await askTextFn('Drop:', '')
-    if (answer.trim().length > 0) {
-      const trimmed = applyDrop(manifest.prompts, answer)
-      manifest = { ...manifest, prompts: trimmed.kept }
-      if (trimmed.dropped.length > 0) {
-        bullet(`Dropped ${trimmed.dropped.length} entry(ies)`, 'ok')
+    say(`Here's what I found:`)
+    for (let i = 0; i < manifest.prompts.length; i++) {
+      const p = manifest.prompts[i]!
+      bullet(`${i + 1}. ${formatPromptEntry(p)}`, 'plain')
+    }
+    say('')
+    const looksRight = await ask('Look right?', true)
+    if (!looksRight) {
+      say('')
+      say(
+        `Tell me which to drop (comma-separated numbers, or ${c.bold('all')} to clear). ` +
+          `Press Enter to keep them all.`,
+      )
+      const answer = await askTextFn('Drop:', '')
+      if (answer.trim().length > 0) {
+        const trimmed = applyDrop(manifest.prompts, answer)
+        manifest = { ...manifest, prompts: trimmed.kept }
+        if (trimmed.dropped.length > 0) {
+          bullet(`Dropped ${trimmed.dropped.length} entry(ies)`, 'ok')
+        }
       }
     }
   }
 
-  // Offer the deeper scan as a hint-only opt-in (the LLM-assisted path
-  // isn't implemented yet — see CLI's `gravel scan --deep`). The
-  // question still surfaces because users with code-embedded prompts
-  // will want to know it exists.
+  // Offer the deeper scan, adapting copy to whatever local agent is
+  // actually installed. The agent uses Read/Grep/Glob to navigate the
+  // repo and emits structured findings — code never leaves the
+  // machine. If neither agent is installed, hint at the install URLs.
+  if (opts.skipDeepScan) {
+    await writeManifest(cwd, manifest)
+    return manifest
+  }
   say('')
   say(
     `If your prompts are embedded in code (string literals, template ` +
-      `strings), the regex scan above won't catch them. A deeper LLM-assisted ` +
-      `scan can — runs locally with your own LLM key, code never leaves your ` +
-      `machine.`,
+      `strings), the regex scan above won't catch them. A deeper scan can — ` +
+      `delegated to a coding agent on this machine.`,
   )
-  const wantDeep = await ask('Run a deeper scan now?', false)
-  if (wantDeep) {
-    bullet(
-      `${c.bold('gravel scan --deep')} isn't implemented yet — coming soon. Run it once available.`,
-      'warn',
+  const agents = detectAgents()
+  const chosen = await pickAgent(agents)
+  if (chosen) {
+    const sp = spinner(`Scanning with ${agentLabel(chosen)} (this can take a minute)…`)
+    try {
+      const result = await agentDeepScan(cwd, manifest, chosen)
+      manifest = result.manifest
+      if (result.newFindings.length > 0) {
+        sp.stop(`${agentLabel(chosen)} found ${result.newFindings.length} new prompt(s)`)
+        for (const f of result.newFindings) {
+          bullet(`+ ${formatPromptEntry(f)}`, 'plain')
+        }
+      } else {
+        sp.stop(`${agentLabel(chosen)} found nothing new`)
+      }
+      if (result.errors.length > 0) {
+        for (const err of result.errors.slice(0, 3)) {
+          note(`  agent note: ${err}`)
+        }
+      }
+    } catch (e) {
+      sp.fail(`Deep scan failed: ${(e as Error).message}`)
+    }
+  } else if (!agents.claude && !agents.codex) {
+    note(
+      `(No coding agent detected. Install ${c.bold('Claude Code')} (${c.cyan('https://claude.com/code')}) ` +
+        `or ${c.bold('Codex')} (${c.cyan('https://github.com/openai/codex')}) and re-run, ` +
+        `or run ${c.bold('npx @artanis-ai/gravel scan --deep')} once you do.)`,
     )
   } else {
-    note(`(Run ${c.bold('npx @artanis-ai/gravel scan --deep')} later if you change your mind.)`)
+    note(
+      `(Run ${c.bold('npx @artanis-ai/gravel scan --deep')} later if you change your mind.)`,
+    )
   }
 
   await writeManifest(cwd, manifest)
@@ -465,6 +500,40 @@ async function runScanAndVerify(
     'ok',
   )
   return manifest
+
+  async function pickAgent(
+    available: { claude: boolean; codex: boolean },
+  ): Promise<AgentName | null> {
+    if (available.claude && available.codex) {
+      const useClaude = await ask(
+        `I see ${c.bold('Claude Code')} and ${c.bold('Codex')} installed. Use Claude Code? ${c.dim('(n = Codex)')}`,
+        true,
+      )
+      return useClaude ? 'claude' : 'codex'
+    }
+    if (available.claude) {
+      // Default-no on the agent delegation: it spawns a sub-process
+      // that can take 30s+ and runs against the user's agent quota /
+      // session. Explicit consent feels right here — even on --yes.
+      const ok = await ask(
+        `I see ${c.bold('Claude Code')} installed. Delegate the scan to it?`,
+        false,
+      )
+      return ok ? 'claude' : null
+    }
+    if (available.codex) {
+      const ok = await ask(
+        `I see ${c.bold('Codex')} installed. Delegate the scan to it?`,
+        false,
+      )
+      return ok ? 'codex' : null
+    }
+    return null
+  }
+}
+
+function agentLabel(a: AgentName): string {
+  return a === 'claude' ? 'Claude Code' : 'Codex'
 }
 
 function applyDrop(

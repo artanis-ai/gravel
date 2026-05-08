@@ -126,7 +126,12 @@ async function main(): Promise<void> {
 
     case 'scan':
       if (flags.deep) {
-        await runDeepScan({ printOnly: !!flags['print-only'] })
+        const agent =
+          flags.agent === 'claude' || flags.agent === 'codex' ? flags.agent : undefined
+        await runDeepScan({
+          printOnly: !!flags['print-only'],
+          agent,
+        })
         break
       }
       console.error('scan: pass --deep')
