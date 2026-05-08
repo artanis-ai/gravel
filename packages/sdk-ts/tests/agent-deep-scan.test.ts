@@ -22,13 +22,23 @@ afterEach(async () => {
 })
 
 async function plantFakeAgent(jsonlOutput: string): Promise<string> {
-  // A tiny shell script that ignores its arguments and prints the
-  // canned transcript. Exactly what claude / codex would do, but
-  // deterministic. We `chmod +x` so the test can spawn it directly.
-  const script = join(workdir, 'fake-agent.sh')
+  // A Node-based stand-in for claude/codex. Reads stdin (matching the
+  // real agents' behaviour under -p / exec with no positional), then
+  // writes a canned JSONL transcript to stdout. Cross-platform — bash
+  // shebangs don't run on Windows.
+  const script = join(workdir, 'fake-agent.mjs')
+  // Embed the transcript by JSON-stringifying so backslashes /
+  // backticks survive the round-trip.
   await fs.writeFile(
     script,
-    `#!/usr/bin/env bash\ncat <<'EOF'\n${jsonlOutput}\nEOF\n`,
+    [
+      `process.stdin.resume()`,
+      `process.stdin.on('data', () => {})`,
+      `process.stdin.on('end', () => {`,
+      `  process.stdout.write(${JSON.stringify(jsonlOutput)})`,
+      `  process.exit(0)`,
+      `})`,
+    ].join('\n'),
     { mode: 0o755 },
   )
   return script
@@ -53,8 +63,11 @@ describe('agentDeepScan', () => {
       '###DONE###',
       'trailing chatter',
     ].join('\n')
-    const binary = await plantFakeAgent(transcript)
-    const result = await agentDeepScan(workdir, emptyManifest(), 'claude', { binary })
+    const scriptPath = await plantFakeAgent(transcript)
+    const result = await agentDeepScan(workdir, emptyManifest(), 'claude', {
+      binary: process.execPath,
+      extraArgs: [scriptPath],
+    })
 
     expect(result.errors).toEqual([])
     expect(result.newFindings).toHaveLength(1)
@@ -83,8 +96,11 @@ describe('agentDeepScan', () => {
       '{"path":"src/a.ts","lineStart":1,"lineEnd":1,"varName":"X"}',
       '###DONE###',
     ].join('\n')
-    const binary = await plantFakeAgent(transcript)
-    const result = await agentDeepScan(workdir, manifest, 'claude', { binary })
+    const scriptPath = await plantFakeAgent(transcript)
+    const result = await agentDeepScan(workdir, manifest, 'claude', {
+      binary: process.execPath,
+      extraArgs: [scriptPath],
+    })
 
     expect(result.newFindings).toHaveLength(0)
   })
@@ -94,8 +110,11 @@ describe('agentDeepScan', () => {
       '{"path":"src/missing.ts","lineStart":1,"lineEnd":2}',
       '###DONE###',
     ].join('\n')
-    const binary = await plantFakeAgent(transcript)
-    const result = await agentDeepScan(workdir, emptyManifest(), 'claude', { binary })
+    const scriptPath = await plantFakeAgent(transcript)
+    const result = await agentDeepScan(workdir, emptyManifest(), 'claude', {
+      binary: process.execPath,
+      extraArgs: [scriptPath],
+    })
 
     expect(result.newFindings).toHaveLength(0)
     expect(result.orphans).toHaveLength(1)
@@ -108,8 +127,11 @@ describe('agentDeepScan', () => {
       '{"path":"a.ts","badline":}',
       '###DONE###',
     ].join('\n')
-    const binary = await plantFakeAgent(transcript)
-    const result = await agentDeepScan(workdir, emptyManifest(), 'claude', { binary })
+    const scriptPath = await plantFakeAgent(transcript)
+    const result = await agentDeepScan(workdir, emptyManifest(), 'claude', {
+      binary: process.execPath,
+      extraArgs: [scriptPath],
+    })
 
     expect(result.newFindings).toHaveLength(1)
     expect(result.errors.length).toBeGreaterThanOrEqual(1)
@@ -123,8 +145,11 @@ describe('agentDeepScan', () => {
       '{"path":"a.ts","lineStart":1,"lineEnd":1,"varName":"P"}',
       '###DONE###',
     ].join('\n')
-    const binary = await plantFakeAgent(transcript)
-    const result = await agentDeepScan(workdir, emptyManifest(), 'claude', { binary })
+    const scriptPath = await plantFakeAgent(transcript)
+    const result = await agentDeepScan(workdir, emptyManifest(), 'claude', {
+      binary: process.execPath,
+      extraArgs: [scriptPath],
+    })
 
     expect(result.newFindings).toHaveLength(1)
   })

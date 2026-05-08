@@ -32,8 +32,14 @@ export interface AgentAvailability {
 }
 
 export interface AgentDeepScanOptions {
-  /** Override for tests / unusual setups. */
+  /** Override for tests / unusual setups (e.g. point at an absolute path). */
   binary?: string
+  /**
+   * Extra CLI args prepended before the agent-specific args. Used by
+   * tests to invoke a Node-based stand-in (`binary: process.execPath`,
+   * `extraArgs: [scriptPath]`).
+   */
+  extraArgs?: string[]
   /** Forward agent stderr to our stderr (debugging). */
   verbose?: boolean
   /** Per-process timeout. Defaults to 5 minutes. */
@@ -67,9 +73,17 @@ export function detectAgents(): AgentAvailability {
   return { claude: hasCommand('claude'), codex: hasCommand('codex') }
 }
 
+const IS_WIN = process.platform === 'win32'
+
 function hasCommand(cmd: string): boolean {
-  // POSIX `command -v` first; falls back to `which`. Returns true on
-  // exit-code 0. Both invocations are read-only and quick.
+  if (IS_WIN) {
+    // Windows: `where` walks PATH + PATHEXT (.cmd / .exe / .bat),
+    // matching how the npm shim for `claude` actually resolves.
+    const r = spawnSync('where', [cmd], { stdio: 'ignore' })
+    return r.status === 0
+  }
+  // POSIX: `command -v` (built into sh) is the portable check; fall
+  // back to `which` for shells that don't expose it on PATH.
   const cv = spawnSync('sh', ['-c', `command -v ${shellQuote(cmd)}`], {
     stdio: 'ignore',
   })
@@ -203,13 +217,26 @@ async function spawnAgent(
   opts: AgentDeepScanOptions,
 ): Promise<SpawnResult> {
   const binary = opts.binary ?? agent
-  const args = agent === 'claude' ? claudeArgs(task) : codexArgs(task)
+  // Task goes via stdin, never as a CLI arg. Two reasons:
+  //   1. The task is multi-kilobyte; some shells truncate long argv.
+  //   2. It contains shell metacharacters (backticks, quotes, $) — fine
+  //      when spawn is called without a shell, but on Windows we need
+  //      `shell: true` to resolve `.cmd` shims and that re-introduces
+  //      escaping. Keeping the prompt out of argv sidesteps both.
+  const args = [
+    ...(opts.extraArgs ?? []),
+    ...(agent === 'claude' ? claudeArgs() : codexArgs()),
+  ]
   const timeoutMs = opts.timeoutMs ?? 5 * 60 * 1000
 
   return await new Promise<SpawnResult>((resolve, reject) => {
     const child = spawn(binary, args, {
       cwd,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'],
+      // Windows-only: `claude` ships as an npm `.cmd` shim, which
+      // Node's spawn won't resolve without going through a shell.
+      // POSIX keeps the direct exec for predictable arg handling.
+      shell: IS_WIN,
     })
     let stdout = ''
     let stderr = ''
@@ -217,6 +244,11 @@ async function spawnAgent(
       child.kill('SIGKILL')
       stderr += `\n[gravel] agent exceeded ${timeoutMs}ms — killed.`
     }, timeoutMs)
+
+    // Pipe the task in. Both `claude -p` (no positional) and
+    // `codex exec` (no positional) read the prompt from stdin.
+    child.stdin.write(task)
+    child.stdin.end()
 
     child.stdout.on('data', (chunk: Buffer) => {
       const text = chunk.toString('utf8')
@@ -239,15 +271,16 @@ async function spawnAgent(
   })
 }
 
-function claudeArgs(task: string): string[] {
-  // We want the print mode + restricted to read-only tools. Earlier
-  // versions of this passed `--bare` to skip auto-loaded CLAUDE.md
-  // noise, but `--bare` also strips OAuth/keychain auth — users
-  // logged in via `claude /login` got "Not logged in" failures. Keep
-  // the user's normal auth context; the noise cost is acceptable.
+function claudeArgs(): string[] {
+  // `claude -p` with no positional argument reads the prompt from
+  // stdin. Restrict to read-only tools so the agent can't write
+  // anything during the scan; bypass-permissions is safe with that
+  // narrow allowlist. Earlier versions used `--bare` to skip
+  // CLAUDE.md noise, but `--bare` also strips OAuth/keychain auth so
+  // users logged in via `claude /login` got "Not logged in"
+  // failures. Keep normal auth context; the noise cost is acceptable.
   return [
     '-p',
-    task,
     '--output-format',
     'text',
     '--allowed-tools',
@@ -257,12 +290,11 @@ function claudeArgs(task: string): string[] {
   ]
 }
 
-function codexArgs(task: string): string[] {
-  // Codex's `exec` mode runs a single task non-interactively. We rely
-  // on the stock prompt-handling and don't pass extra flags — Codex
-  // doesn't currently expose a tool-allowlist, but `exec` already
-  // sandboxes file access by default.
-  return ['exec', task]
+function codexArgs(): string[] {
+  // `codex exec` runs a single task non-interactively, reading the
+  // prompt from stdin when no positional is provided. The exec mode
+  // already sandboxes file access by default; no extra flags needed.
+  return ['exec']
 }
 
 const ANSI_RE = /\x1b\[[0-9;]*[A-Za-z]/g
