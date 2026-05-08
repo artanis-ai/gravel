@@ -83,9 +83,9 @@ function TracesList() {
     <div className="space-y-6">
       <header className="flex items-baseline justify-between gap-4">
         <div>
-          <h1 className="font-display text-2xl font-semibold text-text-dark">Traces</h1>
+          <h1 className="font-display text-2xl font-semibold text-text-dark">Outputs</h1>
           <p className="mt-1 text-sm text-text-mid">
-            Auto-captured LLM calls. Click a row to label corrections + add to a dataset.
+            Everything the AI produced. Flag any that need a closer look — they'll move to Review.
           </p>
         </div>
         <button
@@ -109,8 +109,8 @@ function TracesList() {
       ) : traces.length === 0 ? (
         <div className="space-y-3">
           <EmptyState
-            title="No traces yet"
-            body="Once the app sees traffic, traces will appear here so you can review and label them."
+            title="No outputs yet"
+            body="Once your app produces AI output, it'll appear here so you can flag any that need a closer look."
           />
           <DeveloperNote>
             Traces flow in once the app runs with Gravel tracing on. To diagnose, run{' '}

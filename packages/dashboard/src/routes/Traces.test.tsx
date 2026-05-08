@@ -62,7 +62,7 @@ describe('Traces list', () => {
       return { traces: [], total: 0, page: 1, page_size: 20 } satisfies TracesResponse
     })
     renderRoute(<TracesPage />)
-    expect(await screen.findByText(/no traces yet/i)).toBeInTheDocument()
+    expect(await screen.findByText(/no outputs yet/i)).toBeInTheDocument()
     // Developer-only hint visible because auth/me reports localhost.
     expect(await screen.findByText(/gravel doctor/i)).toBeInTheDocument()
     expect(screen.getByText(/visible only on localhost/i)).toBeInTheDocument()

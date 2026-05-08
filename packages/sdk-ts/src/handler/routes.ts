@@ -405,21 +405,169 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
     })
   },
 
-  // Traces (v1)
-  'GET /api/traces': async () => json({ traces: [] }),
-  'GET /api/traces/:id': async () => json({ error: 'not-implemented' }, 501),
-  'POST /api/traces/:id/feedback': async () => json({ error: 'not-implemented' }, 501),
+  // Traces — read from gravel_traces / observations / feedback.
+  'GET /api/traces': async ({ request, db }) => {
+    const url = new URL(request.url)
+    const { listTraces } = await import('../tracing/query.js')
+    const result = await listTraces(db, {
+      env: url.searchParams.get('env') ?? undefined,
+      model: url.searchParams.get('model') ?? undefined,
+      status: (url.searchParams.get('status') ?? undefined) as
+        | 'running'
+        | 'completed'
+        | 'errored'
+        | undefined,
+      q: url.searchParams.get('q') ?? undefined,
+      from: url.searchParams.get('from') ?? undefined,
+      to: url.searchParams.get('to') ?? undefined,
+      page: url.searchParams.get('page') ? Number(url.searchParams.get('page')) : 1,
+      pageSize: url.searchParams.get('page_size')
+        ? Number(url.searchParams.get('page_size'))
+        : undefined,
+    })
+    return json(result)
+  },
+  'GET /api/traces/:id': async ({ request, db }) => {
+    const traceId = new URL(request.url).pathname.split('/').pop()!
+    const { getTraceDetail } = await import('../tracing/query.js')
+    const detail = await getTraceDetail(db, traceId)
+    if (!detail) return json({ error: 'not-found' }, 404)
+    return json(detail)
+  },
+  'POST /api/traces/:id/feedback': async ({ request, db, authed }) => {
+    if (!authed) return json({ error: 'unauthorized' }, 401)
+    const traceId = new URL(request.url).pathname.split('/').slice(-2, -1)[0]!
+    let body: { score?: unknown; comment?: unknown; correction?: unknown }
+    try {
+      body = (await request.json()) as typeof body
+    } catch {
+      return json({ error: 'invalid JSON body' }, 400)
+    }
+    const score =
+      body.score === 'positive' || body.score === 'negative' || body.score === 'neutral'
+        ? body.score
+        : null
+    const { recordTraceFeedback } = await import('../tracing/query.js')
+    const { ensureGravelUser } = await import('../prompts/user-extra.js')
+    await ensureGravelUser(db, authed)
+    const result = await recordTraceFeedback(db, {
+      traceId,
+      score,
+      comment: typeof body.comment === 'string' ? body.comment : null,
+      correction: typeof body.correction === 'string' ? body.correction : null,
+      reporterUserId: authed.id,
+    })
+    return json({ ok: true, id: result.id })
+  },
 
-  // Datasets (v1)
-  'GET /api/datasets': async () => json({ datasets: [] }),
-  'POST /api/datasets': async () => json({ error: 'not-implemented' }, 501),
-  'POST /api/datasets/:id/traces': async () => json({ error: 'not-implemented' }, 501),
+  // Datasets — collections of traces flagged for review/eval.
+  'GET /api/datasets': async ({ db }) => {
+    const { listDatasets } = await import('../datasets/query.js')
+    const datasets = await listDatasets(db)
+    // `runPipelineConfigured` is a flag for "can we trigger evals from
+    // here yet?" — false until the eval-runner has been wired up to
+    // a real LLM provider in the customer's config. v0: false.
+    return json({ datasets, runPipelineConfigured: false })
+  },
+  'POST /api/datasets': async ({ request, db, authed }) => {
+    if (!authed) return json({ error: 'unauthorized' }, 401)
+    let body: { name?: unknown; description?: unknown }
+    try {
+      body = (await request.json()) as typeof body
+    } catch {
+      return json({ error: 'invalid JSON body' }, 400)
+    }
+    const name = typeof body.name === 'string' ? body.name.trim() : ''
+    if (!name) return json({ error: 'name required' }, 400)
+    const { createDataset } = await import('../datasets/query.js')
+    const { ensureGravelUser } = await import('../prompts/user-extra.js')
+    await ensureGravelUser(db, authed)
+    const result = await createDataset(db, {
+      name,
+      description: typeof body.description === 'string' ? body.description : null,
+      createdByUserId: authed.id,
+    })
+    return json({ ok: true, id: result.id })
+  },
+  'POST /api/datasets/:id/traces': async ({ request, db, authed }) => {
+    if (!authed) return json({ error: 'unauthorized' }, 401)
+    const datasetId = new URL(request.url).pathname.split('/').slice(-2, -1)[0]!
+    let body: { traceId?: unknown; trace_id?: unknown }
+    try {
+      body = (await request.json()) as typeof body
+    } catch {
+      return json({ error: 'invalid JSON body' }, 400)
+    }
+    const traceId =
+      (typeof body.traceId === 'string' && body.traceId) ||
+      (typeof body.trace_id === 'string' && body.trace_id) ||
+      null
+    if (!traceId) return json({ error: 'traceId required' }, 400)
+    const { addTraceToDataset } = await import('../datasets/query.js')
+    const result = await addTraceToDataset(db, { datasetId, traceId })
+    return json({ ok: true, id: result.id })
+  },
 
-  // Eval runs (v2)
-  'GET /api/evals/runs': async () => json({ runs: [] }),
-  'POST /api/evals/runs': async () => json({ error: 'not-implemented' }, 501),
-  'GET /api/evals/runs/:id': async () => json({ error: 'not-implemented' }, 501),
-  'POST /api/evals/runs/:id/cancel': async () => json({ error: 'not-implemented' }, 501),
+  // Eval runs — list + create + state + cancel.
+  // Full eval-runner kickoff (judge calls + per-row results) lands in
+  // a follow-up; right now create returns a queued run that the dev
+  // can hand to `runEval` from `evals/runner.ts` directly. The list /
+  // get / cancel endpoints work end-to-end against `gravel_eval_runs`.
+  'GET /api/evals/runs': async ({ db }) => {
+    const { listEvalRuns } = await import('../evals/query.js')
+    const runs = await listEvalRuns(db)
+    return json({ runs })
+  },
+  'POST /api/evals/runs': async ({ request, db, authed }) => {
+    if (!authed) return json({ error: 'unauthorized' }, 401)
+    let body: { datasetId?: unknown; dataset_id?: unknown; type?: unknown; totalRows?: unknown; total_rows?: unknown }
+    try {
+      body = (await request.json()) as typeof body
+    } catch {
+      return json({ error: 'invalid JSON body' }, 400)
+    }
+    const datasetId =
+      (typeof body.datasetId === 'string' && body.datasetId) ||
+      (typeof body.dataset_id === 'string' && body.dataset_id) ||
+      null
+    if (!datasetId) return json({ error: 'datasetId required' }, 400)
+    const type = body.type === 'live' ? 'live' : 'trace'
+    const totalRows =
+      typeof body.totalRows === 'number'
+        ? body.totalRows
+        : typeof body.total_rows === 'number'
+          ? body.total_rows
+          : 0
+    const { createEvalRun } = await import('../evals/query.js')
+    const { ensureGravelUser } = await import('../prompts/user-extra.js')
+    await ensureGravelUser(db, authed)
+    const result = await createEvalRun(db, {
+      datasetId,
+      type,
+      triggeredByUserId: authed.id,
+      totalRows,
+    })
+    return json({ ok: true, id: result.id, status: 'queued' })
+  },
+  'GET /api/evals/runs/:id': async ({ request, db }) => {
+    const runId = new URL(request.url).pathname.split('/').pop()!
+    const { getEvalRun } = await import('../evals/query.js')
+    const run = await getEvalRun(db, runId)
+    if (!run) return json({ error: 'not-found' }, 404)
+    return json({ run })
+  },
+  'POST /api/evals/runs/:id/cancel': async ({ request, db, authed }) => {
+    if (!authed) return json({ error: 'unauthorized' }, 401)
+    const runId = new URL(request.url).pathname.split('/').slice(-2, -1)[0]!
+    const { getEvalRun, setRunStatus } = await import('../evals/query.js')
+    const run = await getEvalRun(db, runId)
+    if (!run) return json({ error: 'not-found' }, 404)
+    if (run.status === 'completed' || run.status === 'errored' || run.status === 'cancelled') {
+      return json({ error: 'run is already terminal', status: run.status }, 409)
+    }
+    await setRunStatus(db, runId, 'cancelled', { completedAt: new Date() })
+    return json({ ok: true, status: 'cancelled' })
+  },
 
   // Mallet analysis (v3 paid)
   'GET /api/analysis/:id': async () => json({ error: 'not-implemented' }, 501),

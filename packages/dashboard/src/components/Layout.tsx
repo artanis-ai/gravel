@@ -15,14 +15,17 @@ interface User {
   role: 'user' | 'admin'
 }
 
+// Three tabs the domain expert understands. "Traces" was a developer-
+// shaped word; "Outputs" is what the AI produced. "Review" is where
+// flagged outputs go for inspection (folds in Datasets + Evals — they
+// are the same workflow from the DE's perspective). "Prompts" is the
+// manifest editor.
 const NAV_ITEMS = [
   // `/` is rendered by App.tsx as the prompts page; treat it as part of
-  // the Prompts tab so the highlight is correct on first load (the
-  // "tab not selected on initial render" bug surfaced by the demo).
+  // the Prompts tab so the highlight is correct on first load.
   { path: '/prompts', label: 'Prompts', match: ['/', '/prompts'] },
-  { path: '/traces', label: 'Traces', match: ['/traces'] },
-  { path: '/datasets', label: 'Datasets', match: ['/datasets'] },
-  { path: '/evals', label: 'Evals', match: ['/evals'] },
+  { path: '/traces', label: 'Outputs', match: ['/traces'] },
+  { path: '/review', label: 'Review', match: ['/review', '/datasets', '/evals'] },
 ]
 
 function isActive(location: string, prefixes: string[]): boolean {
@@ -66,42 +69,18 @@ export function Layout({ children, user }: { children: ReactNode; user?: User })
               )
             })}
           </nav>
-          {user ? (
-            <div className="border-t border-warm p-4 text-xs text-text-mid">
-              <div className="flex items-center justify-between gap-2">
-                <span className="truncate">Hi, {user.firstName}</span>
-                {isAdmin ? (
-                  <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
-                    Admin
-                  </span>
-                ) : null}
-              </div>
-              {/*
-                Sign out is only meaningful when there's a real session to
-                clear. On localhost the auth gate auto-elevates to admin
-                regardless of cookie state, so a logout button there would
-                visually flicker and re-admin on the next request — useless
-                noise for the dev. The localhost shortcut tags the user
-                with `id: 'localhost'`; everything else returns a real id.
-              */}
-              {user.id !== 'localhost' ? (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    await fetch(`${mountPath}/api/auth/logout`, {
-                      method: 'POST',
-                      credentials: 'same-origin',
-                    })
-                    window.location.href = `${mountPath}/`
-                  }}
-                  className="mt-2 text-text-muted hover:text-text-dark cursor-pointer"
-                  aria-label="Sign out"
-                >
-                  Sign out
-                </button>
-              ) : null}
-            </div>
-          ) : null}
+          {/*
+            No "Hi, {name}" footer. The dashboard is embedded chrome
+            inside the host app — a domain expert who's already logged
+            into the host doesn't need to be reminded who they are. The
+            only place we surface their identity is on the PR they
+            submit, where it actually carries information.
+
+            Sign out: not present here either. For real users, logout
+            belongs to the HOST app's auth UI, not the embed. For
+            localhost devs, the auth gate auto-elevates regardless, so
+            a button would just visually flicker.
+          */}
         </aside>
         <main className="flex-1 p-6 sm:p-8 overflow-y-auto">{children}</main>
       </div>
