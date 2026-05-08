@@ -443,14 +443,29 @@ async function runScanAndVerify(
     )
     if (foundEverything) break
 
+    // Detect now so the menu only offers `a` when an agent's actually
+    // available — and so the description names the agent the user
+    // actually has on PATH.
+    const agents = detectAgents()
+    const agentOption =
+      agents.claude && agents.codex
+        ? `${c.bold('Claude Code')} or ${c.bold('Codex')} (both installed; you'll pick one)`
+        : agents.claude
+          ? `${c.bold('Claude Code')}`
+          : agents.codex
+            ? `${c.bold('Codex')}`
+            : null
+
     say('')
     say(`OK, here are your options:`)
-    bullet(
-      `${c.bold('a')} — Run an agent search. Delegates to Claude Code or Codex (whichever ` +
-        `you have installed) to read your code and find prompts embedded in string ` +
-        `literals or template strings. Slower but thorough.`,
-      'plain',
-    )
+    if (agentOption) {
+      bullet(
+        `${c.bold('a')} — Delegate the search to ${agentOption}. It'll read your code ` +
+          `(Read/Grep/Glob, nothing leaves the machine) and find prompts hidden in ` +
+          `string literals or template strings. Slower but thorough.`,
+        'plain',
+      )
+    }
     bullet(
       `${c.bold('m')} — Add a file manually. You tell me the path (and optionally a line ` +
         `range); I add it to the manifest. Fastest if you already know where it is.`,
@@ -460,9 +475,14 @@ async function runScanAndVerify(
       `${c.bold('d')} — Done. Write what we have and move on.`,
       'plain',
     )
-    const choice = (
-      await askTextFn(`Choose ${c.bold('[a/m/d]')}:`, 'd')
-    )
+    if (!agentOption) {
+      note(
+        `(Want agent search? Install Claude Code (${c.cyan('https://claude.com/code')}) ` +
+          `or Codex (${c.cyan('https://github.com/openai/codex')}) and re-run \`gravel init\`.)`,
+      )
+    }
+    const menu = agentOption ? '[a/m/d]' : '[m/d]'
+    const choice = (await askTextFn(`Choose ${c.bold(menu)}:`, 'd'))
       .trim()
       .toLowerCase()
 
