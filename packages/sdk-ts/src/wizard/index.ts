@@ -444,11 +444,24 @@ async function runScanAndVerify(
     if (foundEverything) break
 
     say('')
+    say(`OK, here are your options:`)
+    bullet(
+      `${c.bold('a')} — Run an agent search. Delegates to Claude Code or Codex (whichever ` +
+        `you have installed) to read your code and find prompts embedded in string ` +
+        `literals or template strings. Slower but thorough.`,
+      'plain',
+    )
+    bullet(
+      `${c.bold('m')} — Add a file manually. You tell me the path (and optionally a line ` +
+        `range); I add it to the manifest. Fastest if you already know where it is.`,
+      'plain',
+    )
+    bullet(
+      `${c.bold('d')} — Done. Write what we have and move on.`,
+      'plain',
+    )
     const choice = (
-      await askTextFn(
-        `What now? ${c.bold('[a]')}gent search · ${c.bold('[m]')}anual entry · ${c.bold('[d]')}one`,
-        'd',
-      )
+      await askTextFn(`Choose ${c.bold('[a/m/d]')}:`, 'd')
     )
       .trim()
       .toLowerCase()
