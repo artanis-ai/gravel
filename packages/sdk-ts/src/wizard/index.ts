@@ -236,13 +236,16 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
         // doesn't drop dead-code into the user's repo.
         withTracingDeps: false,
       })
-      // gravel.config.ts is generated AFTER the pillar sections so we
-      // know whether to emit a `database` block. Prompts-only installs
-      // ship without one — the handler treats that as "DB is not
-      // configured" and never tries to open a connection. See
-      // generateConfigFile's `withDatabase` option.
+      // Write gravel.config.ts here, paired with the mount, so an
+      // interrupted wizard (Ctrl-C between pillars) never leaves a
+      // route that imports a missing config file. We default to NO
+      // database block — the handler treats that as "DB not
+      // configured" and short-circuits. The traces pillar overwrites
+      // this with `withDatabase: true` once the DB is provisioned.
+      await generateConfigFile(detection, cwd, { mountPath, withDatabase: false })
       sp.stop(`Wrote ${describeMount(detection, mountPath)}`)
       bullet(`Admin password saved to ${envFile}`, 'ok')
+      bullet('gravel.config.ts written', 'ok')
       dashboardWritten = true
     } catch (e) {
       sp.fail(`Mount failed: ${(e as Error).message}`)
@@ -358,24 +361,22 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
     }
   }
 
-  // ── gravel.config.ts ──
-  // Written here, after both pillars have resolved, so we can pass
-  // the right `withDatabase` flag. Prompts-only installs end up with
-  // no `database` block; adding traces later via `gravel init
-  // --traces` re-runs the wizard and overwrites with the block in
-  // place (the existing-file guard inside generateConfigFile is
-  // currently a no-op for re-runs — file gets re-written every time).
-  if (dashboardWritten) {
-    const sp = spinner('Writing gravel.config.ts…')
+  // ── gravel.config.ts (re-write only if traces wired up) ──
+  // The file was already written paired with the mount (see above).
+  // Re-write here only if the traces pillar succeeded so we can swap
+  // in the `database` block. Re-running `gravel init --traces` later
+  // hits this same path.
+  if (dashboardWritten && tracesAttempted) {
+    const sp = spinner('Updating gravel.config.ts with database block…')
     try {
       await generateConfigFile(detection, cwd, {
         mountPath,
-        withDatabase: tracesAttempted,
+        withDatabase: true,
       })
-      sp.stop('gravel.config.ts ready')
+      sp.stop('gravel.config.ts updated')
     } catch (e) {
-      sp.fail(`Could not write gravel.config.ts: ${(e as Error).message}`)
-      blockers.push(`Could not write gravel.config.ts: ${(e as Error).message}`)
+      sp.fail(`Could not update gravel.config.ts: ${(e as Error).message}`)
+      blockers.push(`Could not update gravel.config.ts: ${(e as Error).message}`)
     }
   }
 

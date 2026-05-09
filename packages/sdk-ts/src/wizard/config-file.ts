@@ -28,14 +28,16 @@ export async function generateConfigFile(
   cwd: string,
   opts: ConfigFileOptions,
 ): Promise<string> {
+  // Always overwrites. The wizard calls this twice intentionally:
+  // once paired with the mount (no DB block) and again after the
+  // traces pillar succeeds (with DB block). Hand-edited configs
+  // are out of scope for v0 — re-run `gravel init` to regenerate.
   if (detection.language === 'ts') {
     const path = join(cwd, 'gravel.config.ts')
-    if (await pathExists(path)) return path
     await fs.writeFile(path, tsConfigContent(detection, opts))
     return path
   }
   const path = join(cwd, 'gravel_config.py')
-  if (await pathExists(path)) return path
   await fs.writeFile(path, pyConfigContent(detection, opts))
   return path
 }
@@ -140,11 +142,3 @@ config = GravelConfig(
 `
 }
 
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await fs.access(path)
-    return true
-  } catch {
-    return false
-  }
-}

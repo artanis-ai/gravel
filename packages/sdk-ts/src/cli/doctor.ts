@@ -15,12 +15,18 @@ const PROBE_TIMEOUT_MS = 3_000
 interface ProbeResult {
   name: string
   ok: boolean
+  /** True when the probe didn't run (e.g. nothing to probe). Doesn't count as failure. */
+  skipped?: boolean
   detail: string
 }
 
 async function probeDb(databaseUrl?: string): Promise<ProbeResult> {
   const name = 'Database'
-  if (!databaseUrl) return { name, ok: false, detail: 'DATABASE_URL not set' }
+  if (!databaseUrl) {
+    // Prompts-only installs intentionally have no DATABASE_URL — not
+    // an error. `gravel init --traces` adds the DB.
+    return { name, ok: true, skipped: true, detail: 'not configured (prompts-only install)' }
+  }
   try {
     const { openDatabase, detectDialect } = await import('../db/index.js')
     const dialect = detectDialect(databaseUrl)
@@ -120,19 +126,27 @@ export async function runDoctor(): Promise<void> {
   console.log('')
   console.log('Probes')
   console.log('──────')
-  const probes = await Promise.all([
+  const [db, controlPlane, judge, githubApp] = await Promise.all([
     probeDb(env.DATABASE_URL ?? process.env.DATABASE_URL),
     probeControlPlane(),
     probeJudge(),
     probeGitHubApp(),
   ])
-  let anyFailed = false
-  for (const p of probes) {
-    const mark = p.ok ? '✓' : '✗'
+  // Fail-blocking probes are the ones the user's local install actually
+  // depends on. Judge + GitHub App are remote optional services (evals
+  // and PR creation) — they can be down or unprovisioned without
+  // breaking dashboard/prompts/traces, so we surface them as warnings.
+  const blocking = [db, controlPlane]
+  const advisory = [judge, githubApp]
+  for (const p of blocking) {
+    const mark = p.skipped ? '·' : p.ok ? '✓' : '✗'
     console.log(`${mark} ${p.name.padEnd(22)} ${p.detail}`)
-    if (!p.ok) anyFailed = true
   }
-  if (anyFailed) {
+  for (const p of advisory) {
+    const mark = p.ok ? '✓' : '!'
+    console.log(`${mark} ${p.name.padEnd(22)} ${p.detail}${p.ok ? '' : ' (advisory)'}`)
+  }
+  if (blocking.some((p) => !p.ok)) {
     process.exitCode = 1
   }
 }
