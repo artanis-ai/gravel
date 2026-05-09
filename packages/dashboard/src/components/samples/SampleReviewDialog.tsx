@@ -18,7 +18,7 @@
  *
  * Judge upgrade hint: rendered as a localhost-only DeveloperNote at
  * the bottom of the feedback panel — telling the dev that with the
- * Artanis judge enabled, the textarea would loop into a suggested
+ * Trace Evals enabled, the textarea would loop into a suggested
  * rewrite they could apply directly.
  */
 import { Fragment, useEffect, useMemo, useState } from 'react'

@@ -121,16 +121,15 @@ function SamplesList() {
     // own scroll region instead of pushing pagination off-screen.
     <div className="flex h-[calc(100vh-9rem)] flex-col gap-3">
       <DeveloperNote>
-        Enable the <strong>Artanis judge</strong> to turn "Looks wrong"
-        feedback into suggested prompt rewrites scored against past
-        corrections.{' '}
+        Enable <strong>Trace Evals</strong> to catch contradictions in
+        feedback and turn feedback into suggested prompt changes.{' '}
         <a
-          href="https://artanis.ai/?utm_source=gravel-dashboard&utm_medium=judge-upsell"
+          href="https://gravel.artanis.ai/sign-in?redirect_url=%2Fprojects&utm_source=gravel-dashboard&utm_medium=trace-evals-upsell"
           target="_blank"
           rel="noopener noreferrer"
           className="cursor-pointer underline hover:text-text-dark"
         >
-          Upgrade
+          Create an API key here
         </a>
         .
       </DeveloperNote>
