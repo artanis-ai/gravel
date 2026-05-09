@@ -106,9 +106,12 @@ function SamplesList() {
   return (
     <div className="space-y-4">
       <DeveloperNote>
-        Samples flow in once the app runs with Gravel tracing on. To diagnose, run{' '}
-        <CopyableCode>npx @artanis-ai/gravel doctor</CopyableCode>
-        .
+        Samples flow in once your app runs with Gravel tracing on. If nothing
+        shows up, check that <code className="font-mono">instrumentation.ts</code> imports{' '}
+        <code className="font-mono">@artanis-ai/gravel/auto</code> and wires{' '}
+        <code className="font-mono">setGravelTracingConfig</code>; re-run{' '}
+        <CopyableCode>npx @artanis-ai/gravel init --traces</CopyableCode>
+        if not.
       </DeveloperNote>
 
       <div className="flex flex-wrap items-center gap-3">
