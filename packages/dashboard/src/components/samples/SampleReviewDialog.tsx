@@ -1,0 +1,619 @@
+/**
+ * The Review-tab modal: read one sample, leave feedback, auto-advance
+ * to the next.
+ *
+ * Layout (top → bottom):
+ *   ┌─ toolbar: prev / next / position / close ────────────────────┐
+ *   ├─ metadata strip: model / env / status / duration / when ─────┤
+ *   ├─ INPUT (rendered messages)        OUTPUT (rendered) ─────────┤
+ *   └─ feedback panel ─────────────────────────────────────────────┘
+ *
+ * Feedback flow (matches the spec):
+ *   1. Two big buttons: "Looks good" / "Looks wrong".
+ *   2. "Looks wrong" reveals a textarea ("what's off?") plus Submit.
+ *   3. On submit → POST → invalidate → advance to next sample. If
+ *      we're already on the last one, close.
+ *   4. Existing feedback is shown above the form so reviewers don't
+ *      duplicate themselves.
+ *
+ * Judge upgrade hint: rendered as a localhost-only DeveloperNote at
+ * the bottom of the feedback panel — telling the dev that with the
+ * Artanis judge enabled, the textarea would loop into a suggested
+ * rewrite they could apply directly.
+ */
+import { useEffect, useMemo, useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import ReactMarkdown from 'react-markdown'
+import { api } from '../../lib/api'
+import {
+  type FeedbackItem,
+  type SampleDetailResponse,
+  type SampleListItem,
+  type SampleStatus,
+} from '../../lib/types'
+import { Dialog } from '../Dialog'
+import { Badge } from '../Badge'
+import { DeveloperNote } from '../DeveloperNote'
+import { SkeletonText } from '../Skeleton'
+import { cx, formatDuration, formatRelative } from '../../lib/format'
+
+interface Props {
+  /** All samples currently on screen (one page of the table). Drives prev/next. */
+  samples: SampleListItem[]
+  /** Index into `samples`. -1 means closed. */
+  index: number
+  onIndexChange: (next: number) => void
+  onClose: () => void
+}
+
+export function SampleReviewDialog({ samples, index, onIndexChange, onClose }: Props) {
+  const open = index >= 0 && index < samples.length
+  const sample = open ? samples[index] : null
+
+  // Keyboard nav: ←/→ jumps; Esc handled by Dialog.
+  useEffect(() => {
+    if (!open) return
+    function onKey(e: KeyboardEvent) {
+      // Don't hijack typing inside the textarea.
+      const t = e.target as HTMLElement | null
+      if (t?.tagName === 'TEXTAREA' || t?.tagName === 'INPUT') return
+      if (e.key === 'ArrowLeft' && index > 0) onIndexChange(index - 1)
+      else if (e.key === 'ArrowRight' && index < samples.length - 1) onIndexChange(index + 1)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, index, samples.length, onIndexChange])
+
+  return (
+    <Dialog open={open} onClose={onClose} ariaLabel="Review sample">
+      {sample && (
+        <DialogBody
+          sample={sample}
+          position={index + 1}
+          total={samples.length}
+          hasPrev={index > 0}
+          hasNext={index < samples.length - 1}
+          onPrev={() => onIndexChange(index - 1)}
+          onNext={() => onIndexChange(index + 1)}
+          onClose={onClose}
+          onAdvance={() => {
+            if (index < samples.length - 1) onIndexChange(index + 1)
+            else onClose()
+          }}
+        />
+      )}
+    </Dialog>
+  )
+}
+
+interface DialogBodyProps {
+  sample: SampleListItem
+  position: number
+  total: number
+  hasPrev: boolean
+  hasNext: boolean
+  onPrev: () => void
+  onNext: () => void
+  onClose: () => void
+  /** Called after a feedback submit lands. Default behaviour: jump to next, close on last. */
+  onAdvance: () => void
+}
+
+function DialogBody({
+  sample,
+  position,
+  total,
+  hasPrev,
+  hasNext,
+  onPrev,
+  onNext,
+  onClose,
+  onAdvance,
+}: DialogBodyProps) {
+  const detailQ = useQuery<SampleDetailResponse>({
+    queryKey: ['sample', sample.id],
+    queryFn: () => api.get<SampleDetailResponse>(`/api/samples/${sample.id}`),
+  })
+
+  return (
+    <>
+      <Toolbar
+        position={position}
+        total={total}
+        hasPrev={hasPrev}
+        hasNext={hasNext}
+        onPrev={onPrev}
+        onNext={onNext}
+        onClose={onClose}
+      />
+      <div className="flex-1 overflow-y-auto">
+        {detailQ.isLoading ? (
+          <div className="p-6">
+            <SkeletonText lines={2} />
+            <div className="mt-4">
+              <SkeletonText lines={8} />
+            </div>
+          </div>
+        ) : detailQ.isError || !detailQ.data ? (
+          <div className="p-6 text-sm text-primary-dark">
+            Failed to load: {(detailQ.error as Error)?.message ?? 'unknown error'}
+          </div>
+        ) : (
+          <DialogContent
+            data={detailQ.data}
+            sampleId={sample.id}
+            onAdvance={onAdvance}
+          />
+        )}
+      </div>
+    </>
+  )
+}
+
+function Toolbar({
+  position,
+  total,
+  hasPrev,
+  hasNext,
+  onPrev,
+  onNext,
+  onClose,
+}: {
+  position: number
+  total: number
+  hasPrev: boolean
+  hasNext: boolean
+  onPrev: () => void
+  onNext: () => void
+  onClose: () => void
+}) {
+  return (
+    <div className="flex shrink-0 items-center justify-between border-b border-warm bg-cream/95 px-4 py-2">
+      <div className="flex items-center gap-1">
+        <NavButton onClick={onPrev} disabled={!hasPrev} ariaLabel="Previous sample">
+          ←
+        </NavButton>
+        <NavButton onClick={onNext} disabled={!hasNext} ariaLabel="Next sample">
+          →
+        </NavButton>
+        <span className="ml-2 font-mono text-xs text-text-mid">
+          {position} / {total}
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close"
+        className="cursor-pointer rounded-md p-1.5 text-text-mid hover:bg-warm hover:text-text-dark"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      </button>
+    </div>
+  )
+}
+
+function NavButton({
+  children,
+  onClick,
+  disabled,
+  ariaLabel,
+}: {
+  children: React.ReactNode
+  onClick: () => void
+  disabled: boolean
+  ariaLabel: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={ariaLabel}
+      className={cx(
+        'inline-flex h-7 w-7 items-center justify-center rounded-md text-sm font-mono',
+        disabled ? 'cursor-not-allowed text-text-muted' : 'cursor-pointer text-text-mid hover:bg-warm hover:text-text-dark',
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
+function DialogContent({
+  data,
+  sampleId,
+  onAdvance,
+}: {
+  data: SampleDetailResponse
+  sampleId: string
+  onAdvance: () => void
+}) {
+  const { sample, feedback } = data
+  const messages = useMemo(() => extractMessages(sample.input), [sample.input])
+  const outputText = useMemo(() => extractOutputText(sample.output), [sample.output])
+
+  return (
+    <div className="flex flex-col">
+      <MetadataStrip sample={sample} />
+      <div className="grid gap-px bg-warm/60 md:grid-cols-2">
+        <Pane label="Input" subtitle={`${messages.length} message${messages.length === 1 ? '' : 's'}`}>
+          {messages.length > 0 ? (
+            <div className="space-y-3">
+              {messages.map((m, i) => (
+                <MessageView key={i} role={m.role} content={m.content} />
+              ))}
+            </div>
+          ) : (
+            <RawJson value={sample.input} />
+          )}
+        </Pane>
+        <Pane label="Output">
+          {outputText !== null ? (
+            <Markdown>{outputText}</Markdown>
+          ) : (
+            <RawJson value={sample.output} />
+          )}
+        </Pane>
+      </div>
+      <FeedbackPanel sampleId={sampleId} feedback={feedback} onSubmitted={onAdvance} />
+    </div>
+  )
+}
+
+function MetadataStrip({
+  sample,
+}: {
+  sample: SampleDetailResponse['sample']
+}) {
+  return (
+    <dl className="grid grid-cols-2 gap-px bg-warm/60 sm:grid-cols-4 md:grid-cols-6">
+      <Meta label="Name" value={<span className="font-mono">{sample.name}</span>} />
+      <Meta label="Model" value={<span className="font-mono">{sample.model ?? '—'}</span>} />
+      <Meta label="Env" value={sample.environment ?? '—'} />
+      <Meta label="Status" value={<StatusBadge status={sample.status} />} />
+      <Meta label="Duration" value={<span className="font-mono">{formatDuration(sample.duration_ms)}</span>} />
+      <Meta label="When" value={formatRelative(sample.started_at)} />
+    </dl>
+  )
+}
+
+function Meta({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="bg-cream px-3 py-2">
+      <dt className="text-[10px] font-medium uppercase tracking-wide text-text-muted">{label}</dt>
+      <dd className="mt-0.5 truncate text-xs text-text-dark">{value}</dd>
+    </div>
+  )
+}
+
+function Pane({
+  label,
+  subtitle,
+  children,
+}: {
+  label: string
+  subtitle?: string
+  children: React.ReactNode
+}) {
+  return (
+    <section className="flex min-h-[16rem] flex-col bg-cream">
+      <header className="flex items-baseline justify-between border-b border-warm/60 px-4 py-2">
+        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-text-mid">{label}</h3>
+        {subtitle && <span className="text-[11px] text-text-muted">{subtitle}</span>}
+      </header>
+      <div className="max-h-[40vh] overflow-y-auto px-4 py-3 text-sm text-text-dark">{children}</div>
+    </section>
+  )
+}
+
+function MessageView({ role, content }: { role: string; content: string }) {
+  const tone =
+    role === 'system'
+      ? 'border-warm bg-warm/20 text-text-mid'
+      : role === 'user'
+        ? 'border-primary/30 bg-primary/5 text-text-dark'
+        : 'border-forest/30 bg-forest/5 text-text-dark'
+  return (
+    <article className={cx('rounded-lg border p-3', tone)}>
+      <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+        {role}
+      </div>
+      <Markdown>{content}</Markdown>
+    </article>
+  )
+}
+
+function Markdown({ children }: { children: string }) {
+  return (
+    <div className="prose-sm max-w-none whitespace-pre-wrap break-words text-sm leading-relaxed text-text-dark [&_a]:text-primary [&_a]:underline [&_code]:rounded [&_code]:bg-warm/40 [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[12px] [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-warm/40 [&_pre]:p-2 [&_pre]:font-mono [&_pre]:text-[12px] [&_strong]:font-semibold [&_ul]:ml-4 [&_ul]:list-disc [&_ol]:ml-4 [&_ol]:list-decimal">
+      <ReactMarkdown>{children}</ReactMarkdown>
+    </div>
+  )
+}
+
+function RawJson({ value }: { value: unknown }) {
+  return (
+    <pre className="whitespace-pre-wrap rounded-md bg-warm/30 p-3 font-mono text-[11px] text-text-dark">
+      {safeJson(value)}
+    </pre>
+  )
+}
+
+function StatusBadge({ status }: { status: SampleStatus }) {
+  if (status === 'completed') return <Badge tone="good" icon="✓">ok</Badge>
+  if (status === 'errored') return <Badge tone="bad" icon="✕">error</Badge>
+  return <Badge tone="info" icon="●">running</Badge>
+}
+
+// ---------- Feedback ----------
+
+function FeedbackPanel({
+  sampleId,
+  feedback,
+  onSubmitted,
+}: {
+  sampleId: string
+  feedback: FeedbackItem[]
+  onSubmitted: () => void
+}) {
+  const queryClient = useQueryClient()
+  const [reason, setReason] = useState('')
+  const [showReason, setShowReason] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Reset local state when navigating samples.
+  useEffect(() => {
+    setReason('')
+    setShowReason(false)
+    setError(null)
+  }, [sampleId])
+
+  const submit = useMutation<unknown, Error, { score: 'positive' | 'negative'; comment: string | null }>({
+    mutationFn: ({ score, comment }) =>
+      api.post(`/api/samples/${sampleId}/feedback`, {
+        score,
+        comment,
+        correction: null,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sample', sampleId] })
+      queryClient.invalidateQueries({ queryKey: ['samples'] })
+      onSubmitted()
+    },
+    onError: (err) => setError(err.message),
+  })
+
+  function approve() {
+    setError(null)
+    submit.mutate({ score: 'positive', comment: null })
+  }
+
+  function flagBad() {
+    setShowReason(true)
+    setError(null)
+  }
+
+  function submitReason() {
+    if (!reason.trim()) {
+      setError('Tell us what was wrong so the next iteration can do better.')
+      return
+    }
+    submit.mutate({ score: 'negative', comment: reason.trim() })
+  }
+
+  return (
+    <section className="border-t border-warm bg-warm/20 px-4 py-3">
+      {feedback.length > 0 && <ExistingFeedback items={feedback} />}
+      {!showReason ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-text-mid">
+            How does this output look?
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={approve}
+              disabled={submit.isPending}
+              className="cursor-pointer rounded-lg border border-forest/40 bg-forest/10 px-3 py-1.5 text-sm font-medium text-forest hover:bg-forest/20 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              ✓ Looks good
+            </button>
+            <button
+              type="button"
+              onClick={flagBad}
+              disabled={submit.isPending}
+              className="cursor-pointer rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-sm font-medium text-primary-dark hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              ✕ Looks wrong
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <label className="block text-sm text-text-mid" htmlFor="feedback-reason">
+            What's wrong with it?
+          </label>
+          <textarea
+            id="feedback-reason"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            rows={3}
+            autoFocus
+            placeholder="Be specific — the next iteration learns from this."
+            className="w-full rounded-md border border-warm bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+          />
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setShowReason(false)
+                setReason('')
+                setError(null)
+              }}
+              className="cursor-pointer rounded-lg px-3 py-1.5 text-sm text-text-mid hover:text-text-dark"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={submitReason}
+              disabled={submit.isPending}
+              className="cursor-pointer rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {submit.isPending ? 'Saving…' : 'Submit feedback'}
+            </button>
+          </div>
+        </div>
+      )}
+      {error && <p className="mt-2 text-xs text-primary-dark">{error}</p>}
+      <DeveloperNote>
+        With the Artanis judge enabled, "Looks wrong" loops into a suggested
+        rewrite of the offending prompt, scored against your past corrections.
+        Right now it just records the comment. Upgrade at{' '}
+        <a
+          href="https://artanis.ai/?utm_source=gravel-dashboard&utm_medium=judge-upsell"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="cursor-pointer underline"
+        >
+          artanis.ai
+        </a>
+        .
+      </DeveloperNote>
+    </section>
+  )
+}
+
+function ExistingFeedback({ items }: { items: FeedbackItem[] }) {
+  return (
+    <ul className="mb-3 space-y-1.5">
+      {items.map((f) => (
+        <li key={f.id} className="rounded-md border border-warm bg-cream px-3 py-2 text-xs">
+          <div className="flex items-center gap-2 text-text-mid">
+            <Badge tone={f.score === 'positive' ? 'good' : f.score === 'negative' ? 'bad' : 'neutral'}>
+              {f.score === 'positive' ? '↑' : f.score === 'negative' ? '↓' : '·'}
+            </Badge>
+            <span>{formatRelative(f.created_at)}</span>
+          </div>
+          {f.comment && <p className="mt-1 text-text-dark">{f.comment}</p>}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+// ---------- Helpers ----------
+
+interface ChatMessage {
+  role: string
+  content: string
+}
+
+/** Pull a chat-message array out of common request shapes. Tolerant: returns []
+ *  when the input doesn't look like a chat completion (raw fetch, custom shape). */
+function extractMessages(input: unknown): ChatMessage[] {
+  if (!input || typeof input !== 'object') return []
+  // OpenAI / Anthropic raw-fetch shape: { url, method, body: { messages: [...] } }
+  const obj = input as Record<string, unknown>
+  const direct = obj.messages
+  if (Array.isArray(direct)) return normalizeMessages(direct)
+  const body = obj.body
+  if (body && typeof body === 'object') {
+    const m = (body as Record<string, unknown>).messages
+    if (Array.isArray(m)) return normalizeMessages(m)
+    // Anthropic: body.system + body.messages
+    const system = (body as Record<string, unknown>).system
+    const msgs = (body as Record<string, unknown>).messages
+    if (Array.isArray(msgs)) {
+      const out = normalizeMessages(msgs)
+      if (typeof system === 'string') out.unshift({ role: 'system', content: system })
+      return out
+    }
+  }
+  return []
+}
+
+function normalizeMessages(raw: unknown[]): ChatMessage[] {
+  const out: ChatMessage[] = []
+  for (const m of raw) {
+    if (!m || typeof m !== 'object') continue
+    const obj = m as Record<string, unknown>
+    const role = typeof obj.role === 'string' ? obj.role : 'unknown'
+    const content = obj.content
+    if (typeof content === 'string') out.push({ role, content })
+    else if (Array.isArray(content)) {
+      // Anthropic-style content blocks: [{type: 'text', text: '...'}, ...]
+      const text = content
+        .map((c) => {
+          if (!c || typeof c !== 'object') return ''
+          const block = c as Record<string, unknown>
+          if (typeof block.text === 'string') return block.text
+          return ''
+        })
+        .filter(Boolean)
+        .join('\n\n')
+      out.push({ role, content: text })
+    } else {
+      out.push({ role, content: safeJson(content) })
+    }
+  }
+  return out
+}
+
+/** Pull the assistant text out of common response shapes. */
+function extractOutputText(output: unknown): string | null {
+  if (output == null) return null
+  if (typeof output === 'string') return output
+  if (typeof output !== 'object') return String(output)
+  const obj = output as Record<string, unknown>
+  // OpenAI: { choices: [{ message: { content } }] }
+  const choices = obj.choices
+  if (Array.isArray(choices) && choices[0] && typeof choices[0] === 'object') {
+    const m = (choices[0] as Record<string, unknown>).message
+    if (m && typeof m === 'object') {
+      const c = (m as Record<string, unknown>).content
+      if (typeof c === 'string') return c
+    }
+    // Older completions: { choices: [{ text }] }
+    const t = (choices[0] as Record<string, unknown>).text
+    if (typeof t === 'string') return t
+  }
+  // Anthropic: { content: [{type: 'text', text}] }
+  const content = obj.content
+  if (Array.isArray(content)) {
+    const text = content
+      .map((c) => {
+        if (!c || typeof c !== 'object') return ''
+        const block = c as Record<string, unknown>
+        if (typeof block.text === 'string') return block.text
+        return ''
+      })
+      .filter(Boolean)
+      .join('\n\n')
+    if (text) return text
+  }
+  // Vercel AI: { text } (sometimes), or direct string
+  if (typeof obj.text === 'string') return obj.text
+  return null
+}
+
+function safeJson(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}

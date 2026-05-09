@@ -1,8 +1,7 @@
 /**
- * Outputs — list + detail. The dashboard tab the domain expert lands on
- * to look at AI calls; the tab label is "Outputs", the route is
- * /samples, and each row in the list is one sample (one input/output
- * exchange). A multi-step trace is samples sharing a group_id.
+ * Review tab — paginated list of AI samples + a modal reviewer for each.
+ * Route is /samples (the SDK still calls them samples internally); the
+ * tab label and UX is the domain expert's "Review" surface.
  *
  * Spec: gravel-cloud/docs/spec/dashboard.md §5.
  * Calls `GET /api/samples`, `GET /api/samples/:id`, `POST /api/samples/:id/feedback`.
@@ -24,7 +23,7 @@ import { CopyableCode } from '../components/CopyableCode'
 import { PayloadShape } from '../components/PayloadShape'
 import { SkeletonTable, SkeletonText } from '../components/Skeleton'
 import { Badge } from '../components/Badge'
-import { Sheet } from '../components/Sheet'
+import { SampleReviewDialog } from '../components/samples/SampleReviewDialog'
 import { cx, formatDuration, formatRelative, formatTokens } from '../lib/format'
 
 const PAGE_SIZE = 20
@@ -70,7 +69,9 @@ export function SamplesPage({ sampleId }: { sampleId?: string } = {}) {
 
 function SamplesList() {
   const [filters, setFilters] = useState<SampleFilters>(defaultFilters())
-  const [sheetSampleId, setSheetSampleId] = useState<string | null>(null)
+  // Index into the current page's samples; -1 means dialog closed.
+  // Index-based (vs id-based) so prev/next are O(1) array hops.
+  const [reviewIndex, setReviewIndex] = useState(-1)
   const queryString = buildTracesQueryString(filters)
   const path = `/api/samples?${queryString}`
 
@@ -104,11 +105,25 @@ function SamplesList() {
   const endIndex = Math.min(filters.page * PAGE_SIZE, total)
 
   return (
-    <div className="space-y-4">
+    // Fill the viewport below the dashboard chrome so the table gets its
+    // own scroll region instead of pushing pagination off-screen.
+    <div className="flex h-[calc(100vh-9rem)] flex-col gap-3">
       <DeveloperNote>
-        Samples flow in once your app runs with Gravel tracing on. If nothing
-        shows up, check that <code className="font-mono">instrumentation.ts</code> imports{' '}
-        <code className="font-mono">@artanis-ai/gravel/auto</code> and wires{' '}
+        Samples land here once your app runs with Gravel tracing on. With
+        the <strong>Artanis judge</strong> enabled, "Looks wrong" feedback
+        loops back as a suggested rewrite of the offending prompt scored
+        against your past corrections — until then, comments record but
+        don't drive iteration. Upgrade at{' '}
+        <a
+          href="https://artanis.ai/?utm_source=gravel-dashboard&utm_medium=judge-upsell"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="cursor-pointer underline hover:text-text-dark"
+        >
+          artanis.ai
+        </a>
+        . If samples don't appear at all, check{' '}
+        <code className="font-mono">instrumentation.ts</code> wires{' '}
         <code className="font-mono">setGravelTracingConfig</code>; re-run{' '}
         <CopyableCode>npx @artanis-ai/gravel init --traces</CopyableCode>
         if not.
@@ -146,7 +161,7 @@ function SamplesList() {
           sortBy={filters.sortBy}
           sortDir={filters.sortDir}
           onSort={toggleSort}
-          onRowClick={(t) => setSheetSampleId(t.id)}
+          onRowClick={(_t, idx) => setReviewIndex(idx)}
         />
       )}
 
@@ -161,34 +176,14 @@ function SamplesList() {
         />
       )}
 
-      <Sheet
-        open={sheetSampleId !== null}
-        onClose={() => setSheetSampleId(null)}
-        title={sheetSampleId ? <SheetTitle sampleId={sheetSampleId} /> : 'Output'}
-        subtitle={
-          sheetSampleId ? (
-            <Link
-              href={`/samples/${sheetSampleId}`}
-              className="cursor-pointer underline hover:text-text-dark"
-            >
-              Open full page
-            </Link>
-          ) : undefined
-        }
-      >
-        {sheetSampleId && <SampleDetailBody sampleId={sheetSampleId} />}
-      </Sheet>
+      <SampleReviewDialog
+        samples={samples}
+        index={reviewIndex}
+        onIndexChange={setReviewIndex}
+        onClose={() => setReviewIndex(-1)}
+      />
     </div>
   )
-}
-
-function SheetTitle({ sampleId }: { sampleId: string }) {
-  // Read straight from the cached query — avoids a second fetch.
-  const { data } = useQuery<SampleDetailResponse>({
-    queryKey: ['sample', sampleId],
-    queryFn: () => api.get<SampleDetailResponse>(`/api/samples/${sampleId}`),
-  })
-  return <span className="font-mono text-sm font-medium">{data?.sample.name ?? 'Output'}</span>
 }
 
 /**
@@ -324,12 +319,16 @@ function SamplesTable({
   sortBy: SortKey
   sortDir: SortDir
   onSort: (key: SortKey) => void
-  onRowClick: (t: SampleListItem) => void
+  /** Idx is the position within the current page — used for prev/next in the dialog. */
+  onRowClick: (sample: SampleListItem, idx: number) => void
 }) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-warm bg-cream">
+    // flex-1 + overflow-auto make the table own the remaining vertical
+    // space and scroll internally; the sticky header + pagination
+    // outside stay pinned.
+    <div className="flex-1 overflow-auto rounded-lg border border-warm bg-cream">
       <table className="w-full text-sm">
-        <thead className="border-b border-warm bg-warm/30 text-[11px] uppercase tracking-wide text-text-mid">
+        <thead className="sticky top-0 z-10 border-b border-warm bg-warm/80 text-[11px] uppercase tracking-wide text-text-mid backdrop-blur">
           <tr>
             <SortHeader label="When" col="started_at" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
             <th className="px-4 py-2 text-left font-medium">Name</th>
@@ -342,8 +341,8 @@ function SamplesTable({
           </tr>
         </thead>
         <tbody>
-          {samples.map((s) => (
-            <SampleRow key={s.id} sample={s} onClick={() => onRowClick(s)} />
+          {samples.map((s, idx) => (
+            <SampleRow key={s.id} sample={s} onClick={() => onRowClick(s, idx)} />
           ))}
         </tbody>
       </table>
