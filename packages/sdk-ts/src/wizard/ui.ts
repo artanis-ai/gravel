@@ -53,10 +53,10 @@ export function welcome(title: string, subtitle?: string): void {
   write('\n')
 }
 
-/** A "Step N of M — Title" heading with a divider underneath. */
+/** A "Step N of M: Title" heading with a divider underneath. */
 export function stepHeader(num: number, total: number, title: string): void {
   if (!HAS_COLOR) {
-    write(`\nStep ${num} of ${total} — ${title}\n${'─'.repeat(40)}\n\n`)
+    write(`\nStep ${num} of ${total}: ${title}\n${'─'.repeat(40)}\n\n`)
     return
   }
   const headLine = `${c.brand(`Step ${num} of ${total}`)}  ${c.bold(title)}`

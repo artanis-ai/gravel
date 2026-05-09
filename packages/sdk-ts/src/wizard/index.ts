@@ -162,7 +162,7 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
     'Embedded prompt management and evals for domain experts',
   )
   say(
-    `Detected ${c.bold(detection.framework)} (${detection.language}, ${detection.packageManager}, db=${detection.database.driver}). I'll walk you through three things — you can skip any.`,
+    `Detected ${c.bold(detection.framework)} (${detection.language}, ${detection.packageManager}, db=${detection.database.driver}). I'll walk you through three things; you can skip any.`,
   )
   if (detection.nextHasBothRouters) {
     bullet(
@@ -195,7 +195,7 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
   stepHeader(1, 3, 'Dashboard')
   say(
     `First I'll mount the embedded admin UI. This is where your domain ` +
-      `experts open Gravel — they'll see prompts to edit and (later) LLM ` +
+      `experts open Gravel: they'll see prompts to edit and (later) LLM ` +
       `outputs to review. I'll also write a ${c.bold('gravel.config.ts')} so you can ` +
       `wire up your own ${c.bold('getUser')} callback later if you want to use your own auth.`,
   )
@@ -279,7 +279,7 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
     say(
       `Now I'll scan your repo for prompt files (${c.bold('.md')} / ${c.bold('.txt')} ` +
         `under ${c.bold('prompts/')}, ${c.bold('templates/')}, etc.) and write a manifest. ` +
-        `Your team edits these from the dashboard; nothing is sent anywhere — no DB needed.`,
+        `Your team edits these from the dashboard; nothing is sent anywhere, no DB needed.`,
     )
     const wantPrompts =
       wantPromptsResolved === true ? true : await ask('Continue?', true)
@@ -318,7 +318,7 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
         say('')
         say(
           `Open the ${c.bold('Prompts')} tab in the dashboard and try editing one. ` +
-            `Drafts pile up locally — to actually open a PR you'll need the ` +
+            `Drafts pile up locally; to actually open a PR you'll need the ` +
             `Gravel GitHub App, but the dashboard walks you through that when you ` +
             `click ${c.bold('Submit changes')}.`,
         )
@@ -504,19 +504,19 @@ async function runScanAndVerify(
     say(`OK, here are your options:`)
     if (agentOption) {
       bullet(
-        `${c.bold('a')} — Delegate the search to ${agentOption}. It'll read your code ` +
-          `(Read/Grep/Glob, nothing leaves the machine) and find prompts hidden in ` +
+        `${c.bold('a')}: Delegate the search to ${agentOption}. It'll read your code ` +
+          `(Read/Grep/Glob; nothing leaves the machine) and find prompts hidden in ` +
           `string literals or template strings. Slower but thorough.`,
         'plain',
       )
     }
     bullet(
-      `${c.bold('m')} — Add a file manually. You tell me the path (and optionally a line ` +
+      `${c.bold('m')}: Add a file manually. You tell me the path (and optionally a line ` +
         `range); I add it to the manifest. Fastest if you already know where it is.`,
       'plain',
     )
     bullet(
-      `${c.bold('d')} — Done. Write what we have and move on.`,
+      `${c.bold('d')}: Done. Write what we have and move on.`,
       'plain',
     )
     if (!agentOption) {
@@ -698,7 +698,7 @@ async function addPromptInteractive(
     })
   ).trim()
   if (!rawPath) {
-    bullet('No path given — cancelled.', 'skip')
+    bullet('No path given. Cancelled.', 'skip')
     return null
   }
   const path = toRepoRelative(cwd, rawPath)
@@ -770,7 +770,7 @@ async function addPromptInteractive(
       charStart = cs
       charEnd = ce
     } else {
-      bullet('Invalid char range — falling back to full lines', 'warn')
+      bullet('Invalid char range; falling back to full lines', 'warn')
     }
   }
 
@@ -827,7 +827,7 @@ async function runTracesPillar(
         `${c.bold('gravel init --traces')} when you're ready. The dashboard's ` +
         `Outputs tab will keep nudging you until tables exist.`,
     )
-    return { ranBootstrap: false, skipped: 'No DATABASE_URL — fix .env.local and run `gravel init --traces`.' }
+    return { ranBootstrap: false, skipped: 'No DATABASE_URL. Fix .env.local and run `gravel init --traces`.' }
   }
   if (probe.kind === 'placeholder') {
     sp.fail(`DATABASE_URL still has placeholder credentials`)
@@ -857,7 +857,7 @@ async function runTracesPillar(
     if (skipNow) {
       return {
         ranBootstrap: false,
-        skipped: `DB unreachable — fix and re-run \`gravel init --traces\`.`,
+        skipped: `DB unreachable. Fix and re-run \`gravel init --traces\`.`,
       }
     }
     return { ranBootstrap: false, skipped: 'DB unreachable.' }
@@ -889,7 +889,7 @@ async function runTracesPillar(
     } else {
       return {
         ranBootstrap: false,
-        skipped: 'Tables not created — run `gravel migrate` later.',
+        skipped: 'Tables not created. Run `gravel migrate` later.',
       }
     }
   }
@@ -897,7 +897,7 @@ async function runTracesPillar(
   await maybeInstallTracingHooks(detection, cwd, opts, state)
   say('')
   say(
-    `Trigger an LLM call from your app — auto-tracing's on, so the call ` +
+    `Trigger an LLM call from your app: auto-tracing's on, so the call ` +
       `lands in the ${c.bold('Outputs')} tab as soon as it completes.`,
   )
   return { ranBootstrap }
