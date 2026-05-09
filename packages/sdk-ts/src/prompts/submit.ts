@@ -24,7 +24,14 @@
  *     `charStart` to keep offsets valid through sequential applies.
  *   - File-type prompts replace the entire file content.
  */
-import { readManifest, type ManifestPrompt, type ManifestPromptEmbedded } from '../manifest/index.js'
+import {
+  MANIFEST_PATH,
+  readManifest,
+  type Manifest,
+  type ManifestPrompt,
+  type ManifestPromptEmbedded,
+} from '../manifest/index.js'
+import { hashPrompt } from '../manifest/hash.js'
 import { githubAPI } from '../github/api.js'
 import { createPullRequest, type PromptChange, type CreatePullRequestResult } from '../github/create-pr.js'
 
@@ -109,6 +116,11 @@ export async function submitDrafts(args: SubmitArgs): Promise<CreatePullRequestR
   }
 
   const changes: PromptChange[] = []
+  // Track each path's new content so we can recompute manifest entries
+  // (offsets, line numbers, hashes) below. Keys are repo-relative paths
+  // (the manifest's native form); empty when no embedded edit landed
+  // for that path.
+  const newContentByPath = new Map<string, string>()
   for (const [path, items] of byPath) {
     const fileChanges = items.filter((i) => i.entry.type === 'file')
     const embeddedChanges = items.filter((i) => i.entry.type === 'embedded')
@@ -116,7 +128,7 @@ export async function submitDrafts(args: SubmitArgs): Promise<CreatePullRequestR
     if (fileChanges.length > 0 && embeddedChanges.length > 0) {
       throw new SubmitError(
         'unknown_prompt',
-        `Path ${path} has both file-type and embedded-type prompts in the same submit — ambiguous`,
+        `Path ${path} has both file-type and embedded-type prompts in the same submit (ambiguous).`,
       )
     }
 
@@ -128,7 +140,9 @@ export async function submitDrafts(args: SubmitArgs): Promise<CreatePullRequestR
     }
 
     if (fileChanges.length === 1) {
-      changes.push({ path, content: fileChanges[0]!.draft.newText })
+      const newText = fileChanges[0]!.draft.newText
+      changes.push({ path, content: newText })
+      newContentByPath.set(path, newText)
       continue
     }
 
@@ -152,7 +166,70 @@ export async function submitDrafts(args: SubmitArgs): Promise<CreatePullRequestR
       next = next.slice(0, entry.charStart) + draft.newText + next.slice(entry.charEnd)
     }
     changes.push({ path, content: next })
+    newContentByPath.set(path, next)
   }
+
+  // Manifest update: every edit shifts subsequent embedded prompts'
+  // char/line offsets, and every edited prompt needs a new hash. If we
+  // skipped this, the merged repo would have a stale manifest pointing
+  // at the wrong byte ranges and `gravel manifest --check` would fail.
+  // Include the regenerated `.gravel/manifest.json` as another change
+  // in the same PR so the update is atomic.
+  const editedIds = new Set(resolved.map((r) => r.entry.id))
+  const editsByPathMap = new Map<string, Map<number, string>>()
+  for (const r of resolved) {
+    if (r.entry.type !== 'embedded') continue
+    const m = editsByPathMap.get(r.entry.path) ?? new Map<number, string>()
+    m.set(r.entry.charStart, r.draft.newText)
+    editsByPathMap.set(r.entry.path, m)
+  }
+  const promptsByPath = new Map<string, ManifestPrompt[]>()
+  for (const p of manifest.prompts) {
+    const arr = promptsByPath.get(p.path) ?? []
+    arr.push(p)
+    promptsByPath.set(p.path, arr)
+  }
+  const updatedPrompts: ManifestPrompt[] = manifest.prompts.map((entry) => {
+    const newContent = newContentByPath.get(entry.path)
+    if (newContent === undefined) return entry // file untouched
+    if (entry.type === 'file') {
+      return { ...entry, hash: hashPrompt(newContent) }
+    }
+    // Embedded: walk same-file embedded entries with smaller charStart
+    // and accumulate the length deltas they introduced.
+    const edits = editsByPathMap.get(entry.path) ?? new Map<number, string>()
+    const sameFileEmbedded = (promptsByPath.get(entry.path) ?? []).filter(
+      (p): p is ManifestPromptEmbedded => p.type === 'embedded',
+    )
+    let delta = 0
+    for (const e of sameFileEmbedded) {
+      if (e.charStart < entry.charStart && edits.has(e.charStart)) {
+        const newText = edits.get(e.charStart)!
+        delta += newText.length - (e.charEnd - e.charStart)
+      }
+    }
+    const newCharStart = entry.charStart + delta
+    let newCharEnd: number
+    let newHash: string
+    if (editedIds.has(entry.id)) {
+      const newText = edits.get(entry.charStart)!
+      newCharEnd = newCharStart + newText.length
+      newHash = hashPrompt(newText)
+    } else {
+      newCharEnd = entry.charEnd + delta
+      newHash = entry.hash // text unchanged
+    }
+    return {
+      ...entry,
+      charStart: newCharStart,
+      charEnd: newCharEnd,
+      lineStart: charOffsetToLine(newContent, newCharStart),
+      lineEnd: charOffsetToLine(newContent, Math.max(newCharStart, newCharEnd - 1)),
+      hash: newHash,
+    }
+  })
+  const updatedManifest: Manifest = { ...manifest, prompts: updatedPrompts }
+  changes.push({ path: MANIFEST_PATH, content: serializeManifest(updatedManifest) })
 
   try {
     return await createPullRequest({
@@ -168,6 +245,21 @@ export async function submitDrafts(args: SubmitArgs): Promise<CreatePullRequestR
   } catch (err) {
     throw new SubmitError('github_failed', 'Failed to open PR', err)
   }
+}
+
+/** 1-indexed line number for the line containing char at `offset`. */
+function charOffsetToLine(text: string, offset: number): number {
+  let line = 1
+  const limit = Math.min(offset, text.length)
+  for (let i = 0; i < limit; i++) {
+    if (text[i] === '\n') line++
+  }
+  return line
+}
+
+/** Same shape as `writeManifest` but returns the string instead of writing. */
+function serializeManifest(manifest: Manifest): string {
+  return JSON.stringify(manifest, null, 2) + '\n'
 }
 
 function decodeBase64Utf8(content: string, encoding: string): string {

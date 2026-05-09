@@ -90,7 +90,14 @@ describe('submitDrafts', () => {
     expect(githubAPISpy).not.toHaveBeenCalled()
     expect(createPullRequestSpy).toHaveBeenCalledOnce()
     const args = createPullRequestSpy.mock.calls[0]![0] as { changes: Array<{ path: string; content: string }> }
-    expect(args.changes).toEqual([{ path: 'prompts/sys.md', content: 'NEW WHOLE FILE' }])
+    const fileChange = args.changes.find((c) => c.path === 'prompts/sys.md')
+    expect(fileChange).toEqual({ path: 'prompts/sys.md', content: 'NEW WHOLE FILE' })
+    // Manifest update lands in the same PR with the new hash.
+    const manifestChange = args.changes.find((c) => c.path === '.gravel/manifest.json')
+    expect(manifestChange).toBeDefined()
+    const updated = JSON.parse(manifestChange!.content) as { prompts: Array<{ id: string; hash: string }> }
+    expect(updated.prompts[0]!.hash).toMatch(/^sha256:[a-f0-9]{64}$/)
+    expect(updated.prompts[0]!.hash).not.toBe('h')
     expect(result.prUrl).toBe('https://github.com/acme/app/pull/1')
   })
 
@@ -126,9 +133,64 @@ describe('submitDrafts', () => {
     ])
 
     const args = createPullRequestSpy.mock.calls[0]![0] as { changes: Array<{ path: string; content: string }> }
-    expect(args.changes).toEqual([
-      { path: 'src/prompts.ts', content: 'const A = `P1!`; const B = `P2!!`;' },
+    const fileChange = args.changes.find((c) => c.path === 'src/prompts.ts')
+    expect(fileChange).toEqual({ path: 'src/prompts.ts', content: 'const A = `P1!`; const B = `P2!!`;' })
+    expect(args.changes.some((c) => c.path === '.gravel/manifest.json')).toBe(true)
+  })
+
+  it('embedded prompts: manifest entries cascade-shift after a length change', async () => {
+    // Two embedded prompts in the same file; edit the FIRST one to be
+    // longer. The SECOND prompt's charStart/charEnd must shift by the
+    // length delta, both prompts get rehashed where text changed, and
+    // line numbers must reflect any new newlines.
+    const PROMPT_ONE = 'short'
+    const PROMPT_TWO = 'second'
+    const original = `const A = \`${PROMPT_ONE}\`;\nconst B = \`${PROMPT_TWO}\`;`
+    const oneStart = original.indexOf(PROMPT_ONE)
+    const twoStart = original.indexOf(PROMPT_TWO)
+    const oneEnd = oneStart + PROMPT_ONE.length
+    const twoEnd = twoStart + PROMPT_TWO.length
+    const b64 = Buffer.from(original, 'utf-8').toString('base64')
+    githubAPISpy.mockResolvedValue({ content: b64, encoding: 'base64' })
+
+    await writeManifest([
+      { id: 'p_first', type: 'embedded', path: 'src/prompts.ts', hash: 'h1', lineStart: 1, lineEnd: 1, charStart: oneStart, charEnd: oneEnd },
+      { id: 'p_second', type: 'embedded', path: 'src/prompts.ts', hash: 'h2', lineStart: 2, lineEnd: 2, charStart: twoStart, charEnd: twoEnd },
     ])
+    createPullRequestSpy.mockResolvedValue({
+      prUrl: 'https://github.com/acme/app/pull/3',
+      prNumber: 3,
+      branchName: baseArgs.draftBranch,
+    })
+
+    const newOne = 'much\nlonger\nfirst'
+    await call([{ promptId: 'p_first', newText: newOne }])
+
+    const args = createPullRequestSpy.mock.calls[0]![0] as { changes: Array<{ path: string; content: string }> }
+    const manifestChange = args.changes.find((c) => c.path === '.gravel/manifest.json')
+    expect(manifestChange).toBeDefined()
+    const updated = JSON.parse(manifestChange!.content) as {
+      prompts: Array<{ id: string; charStart: number; charEnd: number; lineStart: number; lineEnd: number; hash: string }>
+    }
+    const first = updated.prompts.find((p) => p.id === 'p_first')!
+    const second = updated.prompts.find((p) => p.id === 'p_second')!
+
+    // First prompt: charEnd grew by (newLen - oldLen); spans 3 lines now.
+    const delta = newOne.length - PROMPT_ONE.length
+    expect(first.charStart).toBe(oneStart)
+    expect(first.charEnd).toBe(oneStart + newOne.length)
+    expect(first.lineStart).toBe(1)
+    expect(first.lineEnd).toBe(3)
+    expect(first.hash).toMatch(/^sha256:/)
+    expect(first.hash).not.toBe('h1')
+
+    // Second prompt: text didn't change but offsets cascade-shift.
+    // Two extra newlines in the new content push it onto line 4.
+    expect(second.charStart).toBe(twoStart + delta)
+    expect(second.charEnd).toBe(twoEnd + delta)
+    expect(second.lineStart).toBe(4)
+    expect(second.lineEnd).toBe(4)
+    expect(second.hash).toBe('h2') // text unchanged → hash unchanged
   })
 
   it('rejects mixed file + embedded drafts on the same path', async () => {
