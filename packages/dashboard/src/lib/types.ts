@@ -85,6 +85,8 @@ export interface ManifestPromptListItem {
   type: PromptType
   path: string
   hash: string
+  /** First ~280 chars of the prompt body, trimmed. Used by the grid card preview. */
+  preview: string
   // embedded only
   lineStart?: number
   lineEnd?: number

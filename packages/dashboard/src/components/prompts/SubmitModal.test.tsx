@@ -47,6 +47,7 @@ function makeEntry(overrides: Partial<SubmitDraftEntry> = {}): SubmitDraftEntry 
       type: 'file',
       path: 'prompts/triage.md',
       hash: 'abc',
+      preview: 'You are a helpful assistant.',
     },
     before: 'You are a helpful assistant.',
     ...overrides,

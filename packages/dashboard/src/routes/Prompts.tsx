@@ -71,8 +71,6 @@ function PromptsList() {
     )
   }, [promptsQ.data, search])
 
-  const grouped = useMemo(() => groupByDirectory(filtered), [filtered])
-
   // For the SubmitModal we need each draft paired with the prompt's *current*
   // text so we can show a meaningful diff. Fetch on demand only when the
   // modal opens.
@@ -159,13 +157,12 @@ function PromptsList() {
           body={`Nothing matches "${search}". Try a different path or var name.`}
         />
       ) : (
-        <div className="space-y-4">
-          {grouped.map((group) => (
-            <DirectoryGroup
-              key={group.dir}
-              dir={group.dir}
-              prompts={group.prompts}
-              draftsByPromptId={draftsByPromptId}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {filtered.map((p) => (
+            <PromptCard
+              key={p.id}
+              prompt={p}
+              hasDraft={draftsByPromptId.has(p.id)}
             />
           ))}
         </div>
@@ -185,85 +182,53 @@ function PromptsList() {
   )
 }
 
-interface Group {
-  dir: string
-  prompts: ManifestPromptListItem[]
-}
-
-function groupByDirectory(prompts: ManifestPromptListItem[]): Group[] {
-  const map = new Map<string, ManifestPromptListItem[]>()
-  for (const p of prompts) {
-    const dir = p.path.includes('/') ? p.path.slice(0, p.path.lastIndexOf('/')) : '.'
-    const arr = map.get(dir) ?? []
-    arr.push(p)
-    map.set(dir, arr)
-  }
-  return Array.from(map.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([dir, prompts]) => ({
-      dir,
-      prompts: prompts.slice().sort((a, b) => a.path.localeCompare(b.path)),
-    }))
-}
-
-function DirectoryGroup({
-  dir,
-  prompts,
-  draftsByPromptId,
+function PromptCard({
+  prompt,
+  hasDraft,
 }: {
-  dir: string
-  prompts: ManifestPromptListItem[]
-  draftsByPromptId: Map<string, LocalDraft>
+  prompt: ManifestPromptListItem
+  hasDraft: boolean
 }) {
-  const [open, setOpen] = useState(true)
+  const file = prompt.path.includes('/')
+    ? prompt.path.slice(prompt.path.lastIndexOf('/') + 1)
+    : prompt.path
+  const dir = prompt.path.includes('/')
+    ? prompt.path.slice(0, prompt.path.lastIndexOf('/'))
+    : ''
   return (
-    <section className="overflow-hidden rounded-2xl border border-warm bg-cream">
-      <button
-        type="button"
-        className="flex w-full cursor-pointer items-center justify-between bg-warm/40 px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-text-mid hover:bg-warm/60"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-      >
-        <span>
-          <span aria-hidden="true">{open ? '▾' : '▸'}</span> {dir}
-        </span>
-        <span className="font-mono text-[11px] text-text-muted">{prompts.length}</span>
-      </button>
-      {open && (
-        <ul>
-          {prompts.map((p) => {
-            const file = p.path.includes('/') ? p.path.slice(p.path.lastIndexOf('/') + 1) : p.path
-            const hasDraft = draftsByPromptId.has(p.id)
-            return (
-              <li key={p.id} className="border-t border-warm">
-                <Link
-                  href={`/prompts/${p.id}`}
-                  className="flex cursor-pointer items-center justify-between gap-3 px-4 py-2 text-sm hover:bg-warm/30"
-                  data-testid={`prompt-row-${p.id}`}
-                >
-                  <span className="flex items-center gap-2">
-                    <span className="font-mono text-text-dark">{file}</span>
-                    {p.varName && (
-                      <span className="font-mono text-xs text-text-muted">{p.varName}</span>
-                    )}
-                  </span>
-                  <span className="flex items-center gap-2">
-                    {hasDraft && (
-                      <span
-                        title="Unsubmitted draft"
-                        aria-label="Has draft"
-                        className="inline-block h-2 w-2 rounded-full bg-primary"
-                      />
-                    )}
-                    <PromptBadge type={p.type} />
-                  </span>
-                </Link>
-              </li>
-            )
-          })}
-        </ul>
-      )}
-    </section>
+    <Link
+      href={`/prompts/${prompt.id}`}
+      className="group flex cursor-pointer flex-col overflow-hidden rounded-2xl border border-warm bg-cream p-4 shadow-sm transition hover:border-primary/50 hover:shadow-md"
+      data-testid={`prompt-card-${prompt.id}`}
+    >
+      <header className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="truncate font-mono text-sm font-medium text-text-dark">
+            {file}
+          </div>
+          {(dir || prompt.varName) && (
+            <div className="mt-0.5 truncate font-mono text-[11px] text-text-muted">
+              {prompt.varName ? prompt.varName : dir}
+            </div>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {hasDraft && (
+            <span
+              title="Unsubmitted draft"
+              aria-label="Has draft"
+              className="inline-block h-2 w-2 rounded-full bg-primary"
+            />
+          )}
+          <PromptBadge type={prompt.type} />
+        </div>
+      </header>
+      <p className="mt-3 line-clamp-5 whitespace-pre-wrap text-xs leading-snug text-text-mid">
+        {prompt.preview || (
+          <span className="italic text-text-muted">(empty)</span>
+        )}
+      </p>
+    </Link>
   )
 }
 

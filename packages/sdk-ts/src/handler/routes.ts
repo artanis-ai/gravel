@@ -205,8 +205,26 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
   // edit + submit-as-PR pending (depends on dashboard wiring).
   'GET /api/prompts': async () => {
     const { readManifest } = await import('../manifest/io.js')
+    const { promises: fs } = await import('node:fs')
+    const { join } = await import('node:path')
     const manifest = await readManifest(repoRoot())
-    return json({ prompts: manifest.prompts, last_scan_at: manifest.lastFullScanAt })
+    // Inline a short preview per prompt so the dashboard's grid can
+    // render content without an N+1 fetch. Read failures degrade to
+    // an empty preview rather than failing the whole list.
+    const prompts = await Promise.all(
+      manifest.prompts.map(async (p) => {
+        let preview = ''
+        try {
+          const text = await fs.readFile(join(repoRoot(), p.path), 'utf8')
+          const slice = p.type === 'embedded' ? text.slice(p.charStart, p.charEnd) : text
+          preview = slice.trim().slice(0, 280)
+        } catch {
+          /* file gone since manifest scan; return blank preview */
+        }
+        return { ...p, preview }
+      }),
+    )
+    return json({ prompts, last_scan_at: manifest.lastFullScanAt })
   },
   'GET /api/prompts/:id': async ({ path }) => {
     const id = path.split('/').pop()

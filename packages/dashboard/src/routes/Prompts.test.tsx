@@ -39,6 +39,7 @@ function makePrompt(overrides: Partial<ManifestPromptListItem> = {}): ManifestPr
     type: 'file',
     path: 'prompts/triage.md',
     hash: 'h1',
+    preview: 'You are a triage assistant.',
     ...overrides,
   }
 }
