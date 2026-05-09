@@ -177,10 +177,12 @@ export default defineConfig(({ command }) => ({
     'window.__GRAVEL_MOUNT_PATH__': JSON.stringify(MOUNT_PATH),
   },
   server: {
-    port: 5173,
-    // No proxy — the gravelDevHandler plugin (above) mounts the SDK
-    // handler in-process so Vite serves the dashboard SPA AND the
-    // /api/* routes from the same Node process.
+    // Off the default 5173 so we don't collide with Console's vite or
+    // the other workspace vite instances (Multiland uses 5273+).
+    // strictPort: refuse to drift if 5300 is taken — better to fail
+    // loudly than start somewhere unexpected and surprise the browser.
+    port: 5300,
+    strictPort: true,
   },
   test: {
     environment: 'jsdom',
