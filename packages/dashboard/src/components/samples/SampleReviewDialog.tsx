@@ -287,7 +287,16 @@ function DialogContent({
           {messages.length > 0 ? (
             <div className="space-y-3">
               {messages.map((m, i) => (
-                <MessageView key={i} message={m} initiallyOpen={initialOpen(m, i)} />
+                <MessageView
+                  // Embed sampleId in the key so the component
+                  // remounts on navigation — otherwise React reuses
+                  // the previous sample's MessageView and its
+                  // useState(initiallyOpen) keeps stale open/closed
+                  // state, and a single-message sample lands collapsed.
+                  key={`${sampleId}:${i}`}
+                  message={m}
+                  initiallyOpen={initialOpen(m, i)}
+                />
               ))}
             </div>
           ) : (
@@ -298,7 +307,12 @@ function DialogContent({
           {output.length > 0 ? (
             <div className="space-y-3">
               {output.map((m, i) => (
-                <MessageView key={i} message={m} initiallyOpen omitHeader={output.length === 1} />
+                <MessageView
+                  key={`${sampleId}:out:${i}`}
+                  message={m}
+                  initiallyOpen
+                  omitHeader={output.length === 1}
+                />
               ))}
             </div>
           ) : (
@@ -473,19 +487,22 @@ function ImageBlock({ block }: { block: Extract<ContentBlock, { type: 'image' }>
 function FileBlock({ block }: { block: Extract<ContentBlock, { type: 'file' }> }) {
   const isPdf = (block.mediaType ?? '').includes('pdf') || (block.name ?? '').toLowerCase().endsWith('.pdf')
   if (isPdf && block.url) {
+    // Take the full pane height (the parent is the message-card body
+    // inside the scrolling input pane). 80vh keeps a strip visible at
+    // the top so the user can still see role/metadata.
     return (
-      <div className="overflow-hidden rounded-md border border-warm">
-        <iframe src={block.url} title={block.name ?? 'PDF'} className="h-72 w-full bg-white" />
-        <div className="border-t border-warm bg-warm/20 px-3 py-1.5 text-[10px] text-text-muted">
+      <div className="flex h-[80vh] flex-col overflow-hidden rounded-md border border-warm">
+        <iframe
+          src={block.url}
+          title={block.name ?? 'PDF'}
+          className="h-full w-full flex-1 bg-white"
+        />
+        <div className="shrink-0 border-t border-warm bg-warm/20 px-3 py-1.5 text-[10px] text-text-muted">
           📄 {block.name ?? 'document'}{block.mediaType ? ` · ${block.mediaType}` : ''}
-          {block.url && (
-            <>
-              {' · '}
-              <a href={block.url} target="_blank" rel="noopener noreferrer" className="cursor-pointer underline">
-                open
-              </a>
-            </>
-          )}
+          {' · '}
+          <a href={block.url} target="_blank" rel="noopener noreferrer" className="cursor-pointer underline">
+            open in tab
+          </a>
         </div>
       </div>
     )
