@@ -101,6 +101,12 @@ async function mountNextAppRouter(
     `import { createGravelHandler } from '@artanis-ai/gravel/next'
 import { config } from '${configImport}'
 
+// Force-dynamic so Next never caches a snapshot of the manifest /
+// samples / auth state. The dashboard polls these endpoints; cached
+// responses make new prompts (or freshly-written drafts) invisible
+// until the dev server restarts.
+export const dynamic = 'force-dynamic'
+
 const handler = createGravelHandler({ config })
 
 export const GET = handler

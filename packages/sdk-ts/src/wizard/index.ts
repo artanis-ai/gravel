@@ -321,9 +321,9 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
         say('')
         say(
           `Open the ${c.bold('Prompts')} tab in the dashboard and try editing one. ` +
-            `Drafts pile up locally; to actually open a PR you'll need the ` +
-            `Gravel GitHub App, but the dashboard walks you through that when you ` +
-            `click ${c.bold('Submit changes')}.`,
+            `Drafts are saved in the browser; to allow your team to submit changes, ` +
+            `you'll need to connect the Gravel GitHub App, which you can do any time ` +
+            `via the dashboard. PRs will be opened by ${c.bold('gravel[bot]')}.`,
         )
         await pause()
       }
