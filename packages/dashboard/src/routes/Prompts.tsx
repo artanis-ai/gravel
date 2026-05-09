@@ -345,7 +345,6 @@ function GithubBanner() {
     <div className="flex flex-wrap items-center justify-between gap-3">
       <span>
         Install the Gravel GitHub App on your repo so domain experts can submit prompt edits as PRs.
-        The repo binds at install time, no separate repo-picker step.
       </span>
       <button
         type="button"
