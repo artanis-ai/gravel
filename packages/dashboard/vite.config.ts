@@ -19,7 +19,9 @@ import react from '@vitejs/plugin-react'
  *      real SDK code without a separate Next/Express fixture
  *      running. Full HMR for the SPA, zero infra to start. Set
  *      `GRAVEL_DEV_DATABASE_URL=file:./gravel.dev.db` to enable
- *      traces; default is prompts-only.
+ *      traces; default is prompts-only. Set
+ *      `GRAVEL_REPO_ROOT=/path/to/your/app` to read prompts from a
+ *      real repo (default: this package's cwd, which is empty).
  */
 const MOUNT_PATH = process.env.GRAVEL_DEV_MOUNT_PATH ?? '/admin/ai'
 const DEV_PASSWORD = process.env.GRAVEL_DEV_PASSWORD ?? 'dev'
@@ -66,10 +68,15 @@ function gravelDevHandler(): Plugin {
 
       const handler = sdk.createGravelHandler({ config })
 
+      const repoRoot = process.env.GRAVEL_REPO_ROOT ?? process.cwd()
       // eslint-disable-next-line no-console
       console.log(
         `\n[gravel-dev] in-process handler mounted at ${MOUNT_PATH}/api/* ` +
-          `(password: ${DEV_PASSWORD}${config.database ? `, db: ${config.database.url}` : ', no DB'})\n`,
+          `(password: ${DEV_PASSWORD}${config.database ? `, db: ${config.database.url}` : ', no DB'})\n` +
+          `[gravel-dev] reading manifest + prompt files from: ${repoRoot}\n` +
+          (process.env.GRAVEL_REPO_ROOT
+            ? ''
+            : `[gravel-dev] (set GRAVEL_REPO_ROOT=/path/to/your/app to point at a real repo)\n`),
       )
 
       const apiPrefix = `${MOUNT_PATH}/api`

@@ -24,6 +24,17 @@ import {
 } from './dashboard-bundle.js'
 import { getVersionInfo } from './version.js'
 
+/**
+ * Where to read the manifest / prompt files from. Honors
+ * `GRAVEL_REPO_ROOT` so a dev running the dashboard's HMR Vite server
+ * (whose `process.cwd()` is `packages/dashboard`) can point it at
+ * their actual app's repo root and see real prompts. In production,
+ * `process.cwd()` is the user's app root.
+ */
+function repoRoot(): string {
+  return process.env.GRAVEL_REPO_ROOT ?? process.cwd()
+}
+
 interface RouteCtx {
   config: ResolvedGravelConfig
   /**
@@ -194,7 +205,7 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
   // edit + submit-as-PR pending (depends on dashboard wiring).
   'GET /api/prompts': async () => {
     const { readManifest } = await import('../manifest/io.js')
-    const manifest = await readManifest(process.cwd())
+    const manifest = await readManifest(repoRoot())
     return json({ prompts: manifest.prompts, last_scan_at: manifest.lastFullScanAt })
   },
   'GET /api/prompts/:id': async ({ path }) => {
@@ -203,11 +214,11 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
     const { readManifest } = await import('../manifest/io.js')
     const { promises: fs } = await import('node:fs')
     const { join } = await import('node:path')
-    const manifest = await readManifest(process.cwd())
+    const manifest = await readManifest(repoRoot())
     const entry = manifest.prompts.find((p) => p.id === id)
     if (!entry) return json({ error: 'not found' }, 404)
 
-    const fullText = await fs.readFile(join(process.cwd(), entry.path), 'utf8')
+    const fullText = await fs.readFile(join(repoRoot(), entry.path), 'utf8')
     if (entry.type === 'file') {
       return json({ id: entry.id, type: entry.type, path: entry.path, content: fullText })
     }
@@ -303,7 +314,7 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
           ? body.submitterName.trim()
           : authed.firstName
       const result = await submitDrafts({
-        repoRoot: process.cwd(),
+        repoRoot: repoRoot(),
         drafts,
         draftBranch: draftBranchFor(authed.id),
         accessToken: token.token,
