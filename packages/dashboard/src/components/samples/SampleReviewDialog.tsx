@@ -21,7 +21,7 @@
  * Artanis judge enabled, the textarea would loop into a suggested
  * rewrite they could apply directly.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import ReactMarkdown from 'react-markdown'
 import { api } from '../../lib/api'
@@ -304,7 +304,7 @@ function DialogContent({
           )}
         </Pane>
       </div>
-      <FeedbackPanel sampleId={sampleId} feedback={feedback} onSubmitted={onAdvance} />
+      <FeedbackPanel sampleId={sampleId} feedback={feedback} onAdvance={onAdvance} />
     </div>
   )
 }
@@ -508,9 +508,9 @@ function ToolCallBlock({ block }: { block: Extract<ContentBlock, { type: 'tool_c
         <span className="font-mono font-medium text-text-dark">{block.name || '(no name)'}</span>
         {block.id && <span className="font-mono text-[10px] text-text-muted">#{block.id.slice(-6)}</span>}
       </div>
-      <pre className="mt-1.5 overflow-x-auto whitespace-pre-wrap rounded bg-cream p-2 font-mono text-[11px] text-text-dark">
-        {safeJson(block.input)}
-      </pre>
+      <div className="mt-1.5">
+        <HumanValue value={block.input} />
+      </div>
     </div>
   )
 }
@@ -527,11 +527,108 @@ function ToolResultBlock({ block }: { block: Extract<ContentBlock, { type: 'tool
           <span className="font-mono text-[10px] text-text-muted">#{block.toolCallId.slice(-6)}</span>
         )}
       </div>
-      <pre className="mt-1.5 overflow-x-auto whitespace-pre-wrap rounded bg-cream p-2 font-mono text-[11px] text-text-dark">
-        {typeof block.output === 'string' ? block.output : safeJson(block.output)}
-      </pre>
+      <div className="mt-1.5">
+        <HumanValue value={parseMaybeJson(block.output)} />
+      </div>
     </div>
   )
+}
+
+/**
+ * Human-readable renderer for arbitrary JSON values. Maps:
+ *   - Null/empty            → "(none)"
+ *   - Primitives (str/num)  → plain text (mono for non-strings)
+ *   - Arrays of primitives  → comma-separated chips
+ *   - Objects (flat)        → definition list of key: value rows
+ *   - Nested objects/arrays → recursive
+ *
+ * Falls back to a `<pre>` JSON dump only when the structure is too
+ * dense to read inline (10+ keys, or 4+ levels of nesting).
+ */
+function HumanValue({ value, depth = 0 }: { value: unknown; depth?: number }) {
+  if (value == null) return <span className="text-text-muted italic">(none)</span>
+  if (typeof value === 'string') {
+    if (value === '') return <span className="text-text-muted italic">(empty string)</span>
+    return <span className="break-words text-text-dark">{value}</span>
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return <span className="font-mono text-text-dark">{String(value)}</span>
+  }
+  if (typeof value !== 'object') {
+    return <span className="font-mono text-text-dark">{String(value)}</span>
+  }
+  // Bail to JSON for very deep / large structures — render quality
+  // tanks below this threshold and the user is better off with a code
+  // dump they can copy.
+  if (depth >= 4) {
+    return (
+      <pre className="overflow-x-auto whitespace-pre-wrap rounded bg-cream p-2 font-mono text-[11px] text-text-dark">
+        {safeJson(value)}
+      </pre>
+    )
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return <span className="text-text-muted italic">(empty list)</span>
+    }
+    const allPrim = value.every((v) => v == null || typeof v !== 'object')
+    if (allPrim) {
+      return (
+        <div className="flex flex-wrap gap-1">
+          {value.map((v, i) => (
+            <span key={i} className="rounded bg-cream px-1.5 py-0.5 font-mono text-[11px] text-text-dark">
+              {v == null ? 'null' : String(v)}
+            </span>
+          ))}
+        </div>
+      )
+    }
+    return (
+      <ol className="list-decimal space-y-1 pl-5">
+        {value.map((v, i) => (
+          <li key={i}>
+            <HumanValue value={v} depth={depth + 1} />
+          </li>
+        ))}
+      </ol>
+    )
+  }
+  const entries = Object.entries(value as Record<string, unknown>)
+  if (entries.length === 0) {
+    return <span className="text-text-muted italic">(empty object)</span>
+  }
+  if (entries.length > 10) {
+    return (
+      <pre className="overflow-x-auto whitespace-pre-wrap rounded bg-cream p-2 font-mono text-[11px] text-text-dark">
+        {safeJson(value)}
+      </pre>
+    )
+  }
+  return (
+    <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+      {entries.map(([k, v]) => (
+        <Fragment key={k}>
+          <dt className="font-mono text-[11px] text-text-mid">{k}</dt>
+          <dd className="text-xs text-text-dark">
+            <HumanValue value={v} depth={depth + 1} />
+          </dd>
+        </Fragment>
+      ))}
+    </dl>
+  )
+}
+
+/** Tool-result `output` from OpenAI tool messages comes through as a JSON
+ *  string; parse if it looks like one so HumanValue can render fields. */
+function parseMaybeJson(value: unknown): unknown {
+  if (typeof value !== 'string') return value
+  const trimmed = value.trim()
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return value
+  try {
+    return JSON.parse(trimmed)
+  } catch {
+    return value
+  }
 }
 
 function summarizeBlocks(blocks: ContentBlock[]): string {
@@ -582,11 +679,12 @@ function StatusBadge({ status }: { status: SampleStatus }) {
 function FeedbackPanel({
   sampleId,
   feedback,
-  onSubmitted,
+  onAdvance,
 }: {
   sampleId: string
   feedback: FeedbackItem[]
-  onSubmitted: () => void
+  /** Called after a feedback submit OR a Skip — both advance to the next sample. */
+  onAdvance: () => void
 }) {
   const queryClient = useQueryClient()
   const [reason, setReason] = useState('')
@@ -610,22 +708,21 @@ function FeedbackPanel({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sample', sampleId] })
       queryClient.invalidateQueries({ queryKey: ['samples'] })
-      onSubmitted()
+      onAdvance()
     },
     onError: (err) => setError(err.message),
   })
 
-  function approve() {
+  const approve = () => {
     setError(null)
     submit.mutate({ score: 'positive', comment: null })
   }
-
-  function flagBad() {
+  const flagBad = () => {
     setShowReason(true)
     setError(null)
   }
-
-  function submitReason() {
+  const skip = () => onAdvance()
+  const submitReason = () => {
     if (!reason.trim()) {
       setError('Tell us what was wrong so the next iteration can do better.')
       return
@@ -633,27 +730,45 @@ function FeedbackPanel({
     submit.mutate({ score: 'negative', comment: reason.trim() })
   }
 
+  // Keyboard shortcuts: C / W / S when not typing in a textarea/input.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const t = e.target as HTMLElement | null
+      if (t?.tagName === 'TEXTAREA' || t?.tagName === 'INPUT') return
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      const k = e.key.toLowerCase()
+      if (k === 'c') {
+        e.preventDefault()
+        approve()
+      } else if (k === 'w') {
+        e.preventDefault()
+        flagBad()
+      } else if (k === 's') {
+        e.preventDefault()
+        skip()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // approve/flagBad/skip close over `submit` and `onAdvance`, both
+    // captured per-render via the mutation hook.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sampleId, showReason])
+
   return (
     <section className="border-t border-warm bg-warm/20 px-4 py-3">
       {feedback.length > 0 && <ExistingFeedback items={feedback} />}
       {!showReason ? (
         <div className="flex items-center justify-center gap-3">
-          <button
-            type="button"
-            onClick={approve}
-            disabled={submit.isPending}
-            className="cursor-pointer rounded-lg border border-forest/40 bg-forest/10 px-4 py-1.5 text-sm font-medium text-forest hover:bg-forest/20 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            ✓ Looks good
-          </button>
-          <button
-            type="button"
-            onClick={flagBad}
-            disabled={submit.isPending}
-            className="cursor-pointer rounded-lg border border-primary/40 bg-primary/10 px-4 py-1.5 text-sm font-medium text-primary-dark hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            ✕ Looks wrong
-          </button>
+          <FeedbackButton tone="correct" shortcut="C" onClick={approve} disabled={submit.isPending}>
+            ✓ Correct
+          </FeedbackButton>
+          <FeedbackButton tone="wrong" shortcut="W" onClick={flagBad} disabled={submit.isPending}>
+            ✕ Wrong
+          </FeedbackButton>
+          <FeedbackButton tone="skip" shortcut="S" onClick={skip} disabled={submit.isPending}>
+            ↷ Skip
+          </FeedbackButton>
         </div>
       ) : (
         <div className="space-y-2">
@@ -704,7 +819,7 @@ function ExistingFeedback({ items }: { items: FeedbackItem[] }) {
         <li key={f.id} className="rounded-md border border-warm bg-cream px-3 py-2 text-xs">
           <div className="flex items-center gap-2 text-text-mid">
             <Badge tone={f.score === 'positive' ? 'good' : f.score === 'negative' ? 'bad' : 'neutral'}>
-              {f.score === 'positive' ? '↑' : f.score === 'negative' ? '↓' : '·'}
+              {f.score === 'positive' ? '✓ correct' : f.score === 'negative' ? '✕ wrong' : 'noted'}
             </Badge>
             <span>{formatRelative(f.created_at)}</span>
           </div>
@@ -712,6 +827,43 @@ function ExistingFeedback({ items }: { items: FeedbackItem[] }) {
         </li>
       ))}
     </ul>
+  )
+}
+
+function FeedbackButton({
+  tone,
+  shortcut,
+  onClick,
+  disabled,
+  children,
+}: {
+  tone: 'correct' | 'wrong' | 'skip'
+  shortcut: string
+  onClick: () => void
+  disabled?: boolean
+  children: React.ReactNode
+}) {
+  const styles = {
+    correct: 'border-forest/40 bg-forest/10 text-forest hover:bg-forest/20',
+    wrong: 'border-primary/40 bg-primary/10 text-primary-dark hover:bg-primary/20',
+    skip: 'border-warm bg-cream text-text-mid hover:bg-warm/40',
+  }[tone]
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={`Shortcut: ${shortcut}`}
+      className={cx(
+        'group inline-flex cursor-pointer items-center gap-2 rounded-lg border px-4 py-1.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50',
+        styles,
+      )}
+    >
+      <span>{children}</span>
+      <kbd className="rounded border border-current/30 bg-cream/60 px-1.5 py-0 font-mono text-[10px] font-semibold text-current/70">
+        {shortcut}
+      </kbd>
+    </button>
   )
 }
 
