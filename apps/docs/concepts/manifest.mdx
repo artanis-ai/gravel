@@ -1,9 +1,9 @@
 ---
 title: Prompt manifest
-description: "Git-first prompt tracking via .artanis/manifest.json."
+description: "Git-first prompt tracking via .gravel/manifest.json."
 ---
 
-Every prompt Gravel knows about is recorded in `.artanis/manifest.json` at your repo root. The file is **committed alongside your code**. A pre-commit hook keeps it in sync.
+Every prompt Gravel knows about is recorded in `.gravel/manifest.json` at your repo root. The file is **committed alongside your code**. A pre-commit hook keeps it in sync.
 
 ## Why a manifest
 
@@ -56,7 +56,7 @@ The wizard installs a polite-blocking pre-commit hook by default. It runs `npx @
 ```
 Gravel: Your prompt manifest is out of date.
 Run:    npx @artanis-ai/gravel manifest --update
-Then:   git add .artanis/manifest.json && git commit
+Then:   git add .gravel/manifest.json && git commit
 
 (To bypass: git commit --no-verify)
 ```

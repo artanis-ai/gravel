@@ -157,7 +157,7 @@ describe('runWizard', () => {
     expect(summary.pillars.traces).toBe(false)
     expect(summary.ranBootstrap).toBe(false)
     // Manifest got written.
-    const manifest = JSON.parse(await fs.readFile(join(cwd, '.artanis/manifest.json'), 'utf8'))
+    const manifest = JSON.parse(await fs.readFile(join(cwd, '.gravel/manifest.json'), 'utf8'))
     expect(manifest.prompts.length).toBeGreaterThanOrEqual(1)
   })
 
@@ -180,7 +180,7 @@ describe('runWizard', () => {
     // Manifest should NOT have been touched.
     let manifestExists = true
     try {
-      await fs.stat(join(cwd, '.artanis/manifest.json'))
+      await fs.stat(join(cwd, '.gravel/manifest.json'))
     } catch {
       manifestExists = false
     }

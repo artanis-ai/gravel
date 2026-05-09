@@ -1,9 +1,21 @@
 /**
- * `.artanis/manifest.json` schema. See gravel-cloud/docs/spec/manifest.md §2.
+ * `.gravel/manifest.json` schema. See gravel-cloud/docs/spec/manifest.md §2.
+ *
+ * Renamed from `.artanis/` 2026-05-09 — the SDK is `gravel`, the
+ * hidden directory should match the product name. Existing
+ * installs with `.artanis/` keep working; `readManifest` falls back
+ * to that path when `.gravel/` is missing, and the wizard's hook +
+ * pre-commit installer migrates on next run.
  */
 
 export const MANIFEST_VERSION = 1
-export const MANIFEST_PATH = '.artanis/manifest.json'
+export const MANIFEST_PATH = '.gravel/manifest.json'
+/**
+ * Legacy path. `readManifest` falls back here when `MANIFEST_PATH`
+ * isn't found, so existing customers don't need to migrate manually.
+ * Remove once we're confident nobody's running pre-rename installs.
+ */
+export const LEGACY_MANIFEST_PATH = '.artanis/manifest.json'
 
 export type PromptType = 'file' | 'embedded'
 

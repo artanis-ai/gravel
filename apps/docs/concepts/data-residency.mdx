@@ -12,7 +12,7 @@ Gravel creates tables prefixed `gravel_` in *your* Postgres or SQLite:
 - `gravel_samples` — one row per LLM call (the unit). `input`, `output`, `metadata` are JSONB on Postgres / TEXT on SQLite. A multi-step "trace" is samples sharing a `group_id` — there is no separate trace table.
 - `gravel_feedback` — DE labels, corrections, and free-form comments attached to a sample.
 
-That's the whole data plane (as of the 2026-05-08 simplification). No mirrored users, datasets, evals, or prompt drafts in your DB — drafts live in the editor's browser localStorage; the manifest lives in your repo at `.artanis/manifest.json`.
+That's the whole data plane (as of the 2026-05-08 simplification). No mirrored users, datasets, evals, or prompt drafts in your DB — drafts live in the editor's browser localStorage; the manifest lives in your repo at `.gravel/manifest.json`.
 
 You own these tables. We never touch them. You can drop them and Gravel is gone.
 

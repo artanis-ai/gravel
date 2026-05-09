@@ -170,7 +170,7 @@ function renderPrompts(status: OnboardingStatus, userId: string | null): React.R
             Click any prompt below to open the editor. Try changing a word — Gravel
             will save it as a draft you can submit when you're ready.
             <span className="block pt-1 text-xs text-text-muted">
-              Prompts are read from your repo's manifest at <code className="font-mono">.artanis/manifest.json</code>.
+              Prompts are read from your repo's manifest at <code className="font-mono">.gravel/manifest.json</code>.
             </span>
           </>
         }

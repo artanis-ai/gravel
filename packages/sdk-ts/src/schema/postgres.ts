@@ -60,7 +60,7 @@ export const gravelSamples = pgTable(
     durationMs: bigint('duration_ms', { mode: 'number' }),
     commitSha: text('commit_sha'),
     /** Manifest entry id this sample's prompt pinned to. Plain text;
-     * the manifest at .artanis/manifest.json is the source of truth. */
+     * the manifest at .gravel/manifest.json is the source of truth. */
     promptId: text('prompt_id'),
     createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
   },

@@ -19,12 +19,12 @@ class HookInstallResult:
 
 
 _NATIVE_BODY = """#!/usr/bin/env sh
-# Added by Gravel — keep .artanis/manifest.json in sync with prompts in your code.
+# Added by Gravel — keep .gravel/manifest.json in sync with prompts in your code.
 python -m artanis_gravel manifest --check || {
   echo ""
   echo "Gravel: Your prompt manifest is out of date."
   echo "Run:    python -m artanis_gravel manifest --update"
-  echo "Then:   git add .artanis/manifest.json && git commit"
+  echo "Then:   git add .gravel/manifest.json && git commit"
   echo ""
   echo "(To bypass: git commit --no-verify)"
   exit 1

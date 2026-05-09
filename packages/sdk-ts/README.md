@@ -30,7 +30,7 @@ src/
 ├── auth/                     # default password mode + getUser delegation
 ├── handler/                  # createGravelHandler core
 ├── integrations/             # framework-specific adapters
-├── manifest/                 # .artanis/manifest.json read/write/scan + hook
+├── manifest/                 # .gravel/manifest.json read/write/scan + hook
 ├── tracing/                  # auto-patches for OpenAI/Anthropic/etc.
 └── cli/                      # init, migrate, manifest, scan, doctor
 ```

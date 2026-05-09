@@ -18,8 +18,8 @@ Usage: gravel <command> [options]
 Commands:
   init                       Run the install wizard (always local — no
                              cloud sign-in from the CLI).
-  manifest --check           Verify .artanis/manifest.json is in sync (used by hook).
-  manifest --update          Regenerate .artanis/manifest.json from working tree.
+  manifest --check           Verify .gravel/manifest.json is in sync (used by hook).
+  manifest --update          Regenerate .gravel/manifest.json from working tree.
   manifest --list            Print human-readable summary of current manifest.
   scan --deep                Run LLM-assisted prompt detection (uses OPENAI_API_KEY).
                              --print-only inspects without writing the manifest.

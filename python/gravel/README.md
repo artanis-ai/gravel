@@ -22,7 +22,7 @@ src/artanis_gravel/
 ├── db/                     # connector + bootstrap
 ├── auth/                   # default password mode + getUser delegation
 ├── handler/                # core HTTP handler + route table
-├── manifest/               # .artanis/manifest.json read/write/scan + hook
+├── manifest/               # .gravel/manifest.json read/write/scan + hook
 ├── tracing/                # auto-patches for OpenAI/Anthropic/etc.
 ├── fastapi.py              # create_gravel_router(config) for FastAPI
 ├── django.py               # gravel_urls for Django

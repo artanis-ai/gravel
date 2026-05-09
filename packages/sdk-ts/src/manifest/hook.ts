@@ -13,13 +13,13 @@ import { join } from 'node:path'
 import { constants as fsConstants } from 'node:fs'
 
 const NATIVE_HOOK_BODY = `#!/usr/bin/env sh
-# Added by Gravel — keep .artanis/manifest.json in sync with prompts in your code.
+# Added by Gravel — keep .gravel/manifest.json in sync with prompts in your code.
 # Polite-blocking: bypass with \`git commit --no-verify\`.
 npx --no-install @artanis-ai/gravel manifest --check || {
   echo ""
   echo "Gravel: Your prompt manifest is out of date."
   echo "Run:    npx @artanis-ai/gravel manifest --update"
-  echo "Then:   git add .artanis/manifest.json && git commit"
+  echo "Then:   git add .gravel/manifest.json && git commit"
   echo ""
   echo "(To bypass: git commit --no-verify)"
   exit 1

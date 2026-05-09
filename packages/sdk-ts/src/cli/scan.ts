@@ -1,7 +1,7 @@
 /**
  * `gravel scan --deep` — LLM-assisted prompt detection. Walks the
  * source tree, identifies prompt strings inside code, and merges them
- * into `.artanis/manifest.json`.
+ * into `.gravel/manifest.json`.
  *
  * Two paths:
  *   - Preferred: delegate to a local coding agent (Claude Code or
