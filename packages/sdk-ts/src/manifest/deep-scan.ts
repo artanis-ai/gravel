@@ -34,7 +34,6 @@ const SKIP_DIRS = new Set([
   'dist',
   'build',
   '.gravel',
-  '.artanis',
   'out',
 ])
 

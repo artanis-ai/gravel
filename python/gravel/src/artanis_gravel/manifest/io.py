@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 
 from .types import (
-    LEGACY_MANIFEST_PATH,
     MANIFEST_PATH,
     MANIFEST_VERSION,
     Manifest,
@@ -50,15 +49,8 @@ def _prompt_to_dict(p) -> dict:
 
 
 def read_manifest(repo_root: str | Path) -> Manifest:
-    # Try the canonical .gravel/ path first; fall back to .artanis/
-    # for installs that pre-date the 2026-05-09 rename.
-    root = Path(repo_root)
-    for rel in (MANIFEST_PATH, LEGACY_MANIFEST_PATH):
-        candidate = root / rel
-        if candidate.exists():
-            path = candidate
-            break
-    else:
+    path = Path(repo_root) / MANIFEST_PATH
+    if not path.exists():
         return empty_manifest()
     raw = json.loads(path.read_text(encoding="utf-8"))
     if raw.get("version") != MANIFEST_VERSION:

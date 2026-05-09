@@ -6,9 +6,6 @@ from typing import Literal
 
 MANIFEST_VERSION = 1
 MANIFEST_PATH = ".gravel/manifest.json"
-# Pre-2026-05-09 path. Read-only fallback in `io.py :: read_manifest`
-# so existing installs don't break on upgrade.
-LEGACY_MANIFEST_PATH = ".artanis/manifest.json"
 
 PromptType = Literal["file", "embedded"]
 

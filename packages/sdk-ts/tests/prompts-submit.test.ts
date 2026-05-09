@@ -19,9 +19,9 @@ vi.mock('../src/github/create-pr.js', () => ({
 let workdir: string
 
 async function writeManifest(prompts: unknown[]) {
-  await fs.mkdir(join(workdir, '.artanis'), { recursive: true })
+  await fs.mkdir(join(workdir, '.gravel'), { recursive: true })
   await fs.writeFile(
-    join(workdir, '.artanis', 'manifest.json'),
+    join(workdir, '.gravel', 'manifest.json'),
     JSON.stringify(
       {
         version: 1,

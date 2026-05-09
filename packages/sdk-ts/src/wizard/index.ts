@@ -988,17 +988,11 @@ async function inspectState(
     }
   }
 
-  // Check both the new path and the legacy `.artanis/` for re-run
-  // detection. Either one being present means "this project has been
-  // through the prompts pillar before".
-  let manifestRel: string | null = null
-  if (await exists('.gravel/manifest.json')) manifestRel = '.gravel/manifest.json'
-  else if (await exists('.artanis/manifest.json')) manifestRel = '.artanis/manifest.json'
-  const manifestExists = manifestRel !== null
+  const manifestExists = await exists('.gravel/manifest.json')
   let promptCount = 0
-  if (manifestRel) {
+  if (manifestExists) {
     try {
-      const raw = await fs.readFile(join(cwd, manifestRel), 'utf8')
+      const raw = await fs.readFile(join(cwd, '.gravel/manifest.json'), 'utf8')
       const parsed = JSON.parse(raw) as { prompts?: unknown[] }
       promptCount = Array.isArray(parsed.prompts) ? parsed.prompts.length : 0
     } catch {
