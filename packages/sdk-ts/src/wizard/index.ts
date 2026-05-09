@@ -494,11 +494,11 @@ async function runScanAndVerify(
     const agents = detectAgents()
     const agentOption =
       agents.claude && agents.codex
-        ? `${c.bold('Claude Code')} or ${c.bold('Codex')} (both installed; you'll pick one)`
+        ? `your local ${c.bold('Claude Code')} or ${c.bold('Codex')} (both detected on your PATH; you'll pick one)`
         : agents.claude
-          ? `${c.bold('Claude Code')}`
+          ? `your local ${c.bold('Claude Code')} (detected on your PATH)`
           : agents.codex
-            ? `${c.bold('Codex')}`
+            ? `your local ${c.bold('Codex')} (detected on your PATH)`
             : null
 
     say('')
@@ -649,30 +649,17 @@ async function pickAgent(
   available: { claude: boolean; codex: boolean },
   ask: (q: string, defaultYes?: boolean) => Promise<boolean>,
 ): Promise<AgentName | null> {
+  // The user already picked "a" in the outer menu — don't re-confirm.
+  // Only ask when both are installed and we genuinely need a choice.
   if (available.claude && available.codex) {
     const useClaude = await ask(
-      `I see ${c.bold('Claude Code')} and ${c.bold('Codex')} installed. Use Claude Code? ${c.dim('(n = Codex)')}`,
+      `Use ${c.bold('Claude Code')}? ${c.dim('(n = Codex)')}`,
       true,
     )
     return useClaude ? 'claude' : 'codex'
   }
-  if (available.claude) {
-    // Default-no on the agent delegation: it spawns a sub-process
-    // that can take 30s+ and runs against the user's agent quota /
-    // session. Explicit consent feels right here — even on --yes.
-    const ok = await ask(
-      `I see ${c.bold('Claude Code')} installed. Delegate the scan to it?`,
-      false,
-    )
-    return ok ? 'claude' : null
-  }
-  if (available.codex) {
-    const ok = await ask(
-      `I see ${c.bold('Codex')} installed. Delegate the scan to it?`,
-      false,
-    )
-    return ok ? 'codex' : null
-  }
+  if (available.claude) return 'claude'
+  if (available.codex) return 'codex'
   return null
 }
 
