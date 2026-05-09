@@ -22,7 +22,7 @@
  * rewrite they could apply directly.
  */
 import { useEffect, useMemo, useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import ReactMarkdown from 'react-markdown'
 import { api } from '../../lib/api'
 import {
@@ -48,6 +48,7 @@ interface Props {
 export function SampleReviewDialog({ samples, index, onIndexChange, onClose }: Props) {
   const open = index >= 0 && index < samples.length
   const sample = open ? samples[index] : null
+  const queryClient = useQueryClient()
 
   // Keyboard nav: ←/→ jumps; Esc handled by Dialog.
   useEffect(() => {
@@ -62,6 +63,16 @@ export function SampleReviewDialog({ samples, index, onIndexChange, onClose }: P
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [open, index, samples.length, onIndexChange])
+
+  // Prefetch the next + previous few samples so prev/next feels
+  // instant. The detail query is cheap (single `/api/samples/:id`
+  // hit) and React Query dedupes against the active query, so
+  // re-prefetching while one is in-flight is a no-op.
+  useEffect(() => {
+    if (!open) return
+    const ids = neighbouringIds(samples, index, 3)
+    for (const id of ids) prefetchSample(queryClient, id)
+  }, [open, index, samples, queryClient])
 
   return (
     <Dialog open={open} onClose={onClose} ariaLabel="Review sample">
@@ -166,24 +177,32 @@ function Toolbar({
   onNext: () => void
   onClose: () => void
 }) {
+  // 3-column grid keeps the position counter visually centred even
+  // though the close button is on the right; the empty cell + close
+  // cell on the right balance the empty cell + nav-cluster on the left.
   return (
-    <div className="flex shrink-0 items-center justify-between border-b border-warm bg-cream/95 px-4 py-2">
-      <div className="flex items-center gap-1">
+    <div className="grid shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b border-warm bg-cream/95 px-4 py-2">
+      <div /> {/* spacer */}
+      <div className="flex items-center gap-2 justify-self-center">
         <NavButton onClick={onPrev} disabled={!hasPrev} ariaLabel="Previous sample">
           ←
         </NavButton>
+        <span
+          // Fixed width so the counter doesn't jiggle the arrows when
+          // the digit count grows (1/9 → 10/99 → 100/999).
+          className="inline-block w-20 text-center font-mono text-xs tabular-nums text-text-mid"
+        >
+          {position} / {total}
+        </span>
         <NavButton onClick={onNext} disabled={!hasNext} ariaLabel="Next sample">
           →
         </NavButton>
-        <span className="ml-2 font-mono text-xs text-text-mid">
-          {position} / {total}
-        </span>
       </div>
       <button
         type="button"
         onClick={onClose}
         aria-label="Close"
-        className="cursor-pointer rounded-md p-1.5 text-text-mid hover:bg-warm hover:text-text-dark"
+        className="cursor-pointer justify-self-end rounded-md p-1.5 text-text-mid hover:bg-warm hover:text-text-dark"
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -331,12 +350,41 @@ function MessageView({ role, content }: { role: string; content: string }) {
       : role === 'user'
         ? 'border-primary/30 bg-primary/5 text-text-dark'
         : 'border-forest/30 bg-forest/5 text-text-dark'
+  // System messages are usually long, static instructions — collapse
+  // them by default so the user-visible content of the call (the
+  // user/assistant turn) is what dominates the pane.
+  const collapsible = role === 'system'
+  const [open, setOpen] = useState(!collapsible)
   return (
-    <article className={cx('rounded-lg border p-3', tone)}>
-      <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-text-muted">
-        {role}
-      </div>
-      <Markdown>{content}</Markdown>
+    <article className={cx('rounded-lg border', tone)}>
+      <button
+        type="button"
+        onClick={collapsible ? () => setOpen((o) => !o) : undefined}
+        disabled={!collapsible}
+        className={cx(
+          'flex w-full items-center gap-2 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wide text-text-muted',
+          collapsible && 'cursor-pointer hover:text-text-dark',
+        )}
+        aria-expanded={collapsible ? open : undefined}
+      >
+        {collapsible && (
+          <span aria-hidden="true" className="font-mono text-[10px]">
+            {open ? '▾' : '▸'}
+          </span>
+        )}
+        <span>{role}</span>
+        {collapsible && !open && (
+          <span className="ml-2 truncate font-normal normal-case text-text-muted">
+            {content.replace(/\s+/g, ' ').slice(0, 80)}
+            {content.length > 80 ? '…' : ''}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className="border-t border-current/10 px-3 py-2">
+          <Markdown>{content}</Markdown>
+        </div>
+      )}
     </article>
   )
 }
@@ -423,28 +471,23 @@ function FeedbackPanel({
     <section className="border-t border-warm bg-warm/20 px-4 py-3">
       {feedback.length > 0 && <ExistingFeedback items={feedback} />}
       {!showReason ? (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-text-mid">
-            How does this output look?
-          </p>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={approve}
-              disabled={submit.isPending}
-              className="cursor-pointer rounded-lg border border-forest/40 bg-forest/10 px-3 py-1.5 text-sm font-medium text-forest hover:bg-forest/20 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              ✓ Looks good
-            </button>
-            <button
-              type="button"
-              onClick={flagBad}
-              disabled={submit.isPending}
-              className="cursor-pointer rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-sm font-medium text-primary-dark hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              ✕ Looks wrong
-            </button>
-          </div>
+        <div className="flex items-center justify-center gap-3">
+          <button
+            type="button"
+            onClick={approve}
+            disabled={submit.isPending}
+            className="cursor-pointer rounded-lg border border-forest/40 bg-forest/10 px-4 py-1.5 text-sm font-medium text-forest hover:bg-forest/20 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            ✓ Looks good
+          </button>
+          <button
+            type="button"
+            onClick={flagBad}
+            disabled={submit.isPending}
+            className="cursor-pointer rounded-lg border border-primary/40 bg-primary/10 px-4 py-1.5 text-sm font-medium text-primary-dark hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            ✕ Looks wrong
+          </button>
         </div>
       ) : (
         <div className="space-y-2">
@@ -607,4 +650,24 @@ function safeJson(value: unknown): string {
   } catch {
     return String(value)
   }
+}
+
+/** IDs for the `radius` samples on each side of `index`, clamped to the array. */
+function neighbouringIds(samples: SampleListItem[], index: number, radius: number): string[] {
+  const ids: string[] = []
+  for (let d = 1; d <= radius; d++) {
+    if (index - d >= 0) ids.push(samples[index - d]!.id)
+    if (index + d < samples.length) ids.push(samples[index + d]!.id)
+  }
+  return ids
+}
+
+function prefetchSample(qc: QueryClient, id: string): void {
+  void qc.prefetchQuery({
+    queryKey: ['sample', id],
+    queryFn: () => api.get<SampleDetailResponse>(`/api/samples/${id}`),
+    // Keep the prefetched detail fresh long enough that arrowing
+    // through 3-5 samples doesn't refetch each time.
+    staleTime: 60_000,
+  })
 }
