@@ -2,8 +2,41 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Warm-toned scrollbar */
-* { scrollbar-width: thin; scrollbar-color: #D4A76A transparent; }
-*::-webkit-scrollbar { width: 10px; height: 10px; }
-*::-webkit-scrollbar-thumb { background-color: #D4A76A; border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
-*::-webkit-scrollbar-thumb:hover { background-color: #6B5744; }
+/*
+ * Warm-toned scrollbar. The thumb is mostly transparent at rest and
+ * fades to a stronger earth tone on hover so the chrome only asserts
+ * itself when you're actually using it.
+ *
+ * `border: 3px solid transparent` + `background-clip: padding-box`
+ * shrinks the visible thumb inside its track so it floats off the
+ * edges without per-container padding.
+ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(107, 87, 68, 0.35) transparent;
+}
+*::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: rgba(107, 87, 68, 0.28);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  transition: background-color 120ms ease;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(107, 87, 68, 0.55);
+}
+*::-webkit-scrollbar-thumb:active {
+  background-color: rgba(107, 87, 68, 0.7);
+}
+/* Corner where horizontal + vertical scrollbars meet: blank, not the
+   browser's default rectangle. */
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
