@@ -86,7 +86,7 @@ describe('Samples list', () => {
     expect(paginationNav.textContent?.replace(/\s+/g, ' ')).toMatch(/Showing 1.{1,3}3 of 3/i)
   })
 
-  it('refetches when a filter changes', async () => {
+  it('refetches when the search filter changes (debounced)', async () => {
     mockedGet.mockImplementation(async (path: string) => withDefaults(makeSamples(1))(path))
     const user = userEvent.setup()
     renderRoute(<SamplesPage />)
@@ -95,14 +95,14 @@ describe('Samples list', () => {
       mockedGet.mock.calls.filter((c) => String(c[0]).startsWith('/api/samples')).length
     const initial = samplesCallCount()
 
-    await user.type(screen.getByLabelText(/filter by environment/i), 'prod')
+    await user.type(screen.getByLabelText(/search samples/i), 'pomodoro')
 
     await waitFor(() => {
       const lastSamplesCall = mockedGet.mock.calls
         .map((c) => String(c[0]))
         .filter((p) => p.startsWith('/api/samples'))
         .at(-1)
-      expect(lastSamplesCall).toContain('env=prod')
+      expect(lastSamplesCall).toContain('q=pomodoro')
     })
     expect(samplesCallCount()).toBeGreaterThan(initial)
   })

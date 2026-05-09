@@ -8,7 +8,7 @@
  * SampleListItem / SampleDetailResponse` exactly. Don't drift one
  * without the other.
  */
-import { and, desc, eq, gte, inArray, like, lte, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, like, lte, or, sql } from 'drizzle-orm'
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 
@@ -105,7 +105,20 @@ export async function listSamples(db: Database, filters: SampleFilters): Promise
     if (filters.status) conds.push(eq(gravelSamples.status, filters.status))
     if (filters.from) conds.push(gte(gravelSamples.timestamp, new Date(filters.from)))
     if (filters.to) conds.push(lte(gravelSamples.timestamp, new Date(filters.to)))
-    if (filters.q) conds.push(like(gravelSamples.name, `%${filters.q}%`))
+    if (filters.q) {
+      // Search across name + input + output + model + environment so a
+      // free-text query lands hits on prompt/response content, not just
+      // the function name. JSON columns are cast to text first.
+      const needle = `%${filters.q}%`
+      const qCond = or(
+        like(gravelSamples.name, needle),
+        like(sql<string>`${gravelSamples.input}::text`, needle),
+        like(sql<string>`${gravelSamples.output}::text`, needle),
+        like(gravelSamples.model, needle),
+        like(gravelSamples.environment, needle),
+      )
+      if (qCond) conds.push(qCond)
+    }
 
     const whereClause = conds.length > 0 ? and(...conds) : undefined
 
@@ -181,7 +194,20 @@ export async function listSamples(db: Database, filters: SampleFilters): Promise
   if (filters.status) conds.push(eq(gravelSamples.status, filters.status))
   if (filters.from) conds.push(gte(gravelSamples.timestamp, new Date(filters.from).getTime()))
   if (filters.to) conds.push(lte(gravelSamples.timestamp, new Date(filters.to).getTime()))
-  if (filters.q) conds.push(like(gravelSamples.name, `%${filters.q}%`))
+  if (filters.q) {
+    // SQLite stores input/output as TEXT already (we JSON.stringify on
+    // write), so plain LIKE works across them. Search name + payload
+    // text + model + environment.
+    const needle = `%${filters.q}%`
+    const qCond = or(
+      like(gravelSamples.name, needle),
+      like(gravelSamples.input, needle),
+      like(gravelSamples.output, needle),
+      like(gravelSamples.model, needle),
+      like(gravelSamples.environment, needle),
+    )
+    if (qCond) conds.push(qCond)
+  }
   const whereClause = conds.length > 0 ? and(...conds) : undefined
 
   const totalRows = drz

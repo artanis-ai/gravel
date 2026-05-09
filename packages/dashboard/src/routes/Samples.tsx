@@ -6,7 +6,7 @@
  * Spec: gravel-cloud/docs/spec/dashboard.md §5.
  * Calls `GET /api/samples`, `GET /api/samples/:id`, `POST /api/samples/:id/feedback`.
  */
-import { useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link } from 'wouter'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
@@ -31,9 +31,10 @@ type SortKey = 'started_at' | 'duration_ms' | 'tokens_in' | 'tokens_out' | 'feed
 type SortDir = 'asc' | 'desc'
 
 interface SampleFilters {
-  env: string
-  model: string
-  status: '' | SampleStatus
+  /** Free-text search; the SDK matches on `name` (and any column it
+   *  cares to expand later). One field, full coverage — env / model /
+   *  status all live in the row text already, so a search hit on
+   *  "errored" or "gpt-4o" works for the common case. */
   q: string
   from: string
   to: string
@@ -43,14 +44,11 @@ interface SampleFilters {
 }
 
 function defaultFilters(): SampleFilters {
-  return { env: '', model: '', status: '', q: '', from: '', to: '', page: 1, sortBy: 'started_at', sortDir: 'desc' }
+  return { q: '', from: '', to: '', page: 1, sortBy: 'started_at', sortDir: 'desc' }
 }
 
 function buildTracesQueryString(f: SampleFilters): string {
   const params = new URLSearchParams()
-  if (f.env) params.set('env', f.env)
-  if (f.model) params.set('model', f.model)
-  if (f.status) params.set('status', f.status)
   if (f.q) params.set('q', f.q)
   if (f.from) params.set('from', f.from)
   if (f.to) params.set('to', f.to)
@@ -68,6 +66,21 @@ export function SamplesPage({ sampleId }: { sampleId?: string } = {}) {
 
 function SamplesList() {
   const [filters, setFilters] = useState<SampleFilters>(defaultFilters())
+  // Search has its own immediate state — typing should feel instant
+  // even though the network call only fires after a 250ms pause.
+  const [searchInput, setSearchInput] = useState('')
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      if (searchInput !== filters.q) {
+        setFilters((prev) => ({ ...prev, q: searchInput, page: 1 }))
+      }
+    }, 250)
+    return () => window.clearTimeout(t)
+    // We intentionally only depend on searchInput; checking filters.q
+    // inside the timeout avoids resetting the page when other filters
+    // change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchInput])
   // Index into the current page's samples; -1 means dialog closed.
   // Index-based (vs id-based) so prev/next are O(1) array hops.
   const [reviewIndex, setReviewIndex] = useState(-1)
@@ -124,7 +137,12 @@ function SamplesList() {
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex-1 min-w-0">
-          <SamplesFilters filters={filters} onChange={update} />
+          <SamplesFilters
+            filters={filters}
+            searchInput={searchInput}
+            onSearchInputChange={setSearchInput}
+            onChange={update}
+          />
         </div>
         <button
           type="button"
@@ -220,84 +238,87 @@ function RefreshIcon({ spinning }: { spinning: boolean }) {
 
 function SamplesFilters({
   filters,
+  searchInput,
+  onSearchInputChange,
   onChange,
 }: {
   filters: SampleFilters
+  searchInput: string
+  onSearchInputChange: (next: string) => void
   onChange: <K extends keyof SampleFilters>(key: K, value: SampleFilters[K]) => void
 }) {
   return (
-    <div className="grid grid-cols-1 gap-3 rounded-2xl border border-warm bg-cream p-4 sm:grid-cols-2 lg:grid-cols-6">
-      <Field label="Environment">
-        <input
-          type="text"
-          value={filters.env}
-          placeholder="prod"
-          onChange={(e) => onChange('env', e.target.value)}
-          aria-label="Filter by environment"
-          className="w-full rounded-md border border-warm bg-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-        />
-      </Field>
-      <Field label="Model">
-        <input
-          type="text"
-          value={filters.model}
-          placeholder="gpt-4o"
-          onChange={(e) => onChange('model', e.target.value)}
-          aria-label="Filter by model"
-          className="w-full rounded-md border border-warm bg-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-        />
-      </Field>
-      <Field label="Status">
-        <select
-          value={filters.status}
-          onChange={(e) => onChange('status', e.target.value as SampleFilters['status'])}
-          aria-label="Filter by status"
-          className="w-full cursor-pointer rounded-md border border-warm bg-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-        >
-          <option value="">All</option>
-          <option value="completed">Completed</option>
-          <option value="errored">Errored</option>
-          <option value="running">Running</option>
-        </select>
-      </Field>
-      <Field label="Search">
+    <div className="flex flex-wrap items-center gap-2">
+      {/* Search takes the available width; date range sits to its right. */}
+      <div className="relative min-w-0 flex-1">
+        <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-text-muted">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="11" cy="11" r="7" />
+            <line x1="21" y1="21" x2="16.5" y2="16.5" />
+          </svg>
+        </span>
         <input
           type="search"
-          value={filters.q}
-          placeholder="prompt text…"
-          onChange={(e) => onChange('q', e.target.value)}
-          aria-label="Search outputs"
-          className="w-full rounded-md border border-warm bg-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+          value={searchInput}
+          onChange={(e) => onSearchInputChange(e.target.value)}
+          placeholder="Search prompts, responses, models…"
+          aria-label="Search samples"
+          className="w-full rounded-lg border border-warm bg-white py-2 pl-9 pr-9 text-sm placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
-      </Field>
-      <Field label="From">
+        {searchInput && (
+          <button
+            type="button"
+            onClick={() => onSearchInputChange('')}
+            aria-label="Clear search"
+            className="absolute inset-y-0 right-2 flex cursor-pointer items-center px-1 text-text-muted hover:text-text-dark"
+          >
+            ✕
+          </button>
+        )}
+      </div>
+      <div className="flex items-center gap-1 text-xs text-text-mid">
         <input
           type="date"
           value={filters.from}
           onChange={(e) => onChange('from', e.target.value)}
-          aria-label="Filter from date"
-          className="w-full cursor-pointer rounded-md border border-warm bg-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+          aria-label="From date"
+          className="cursor-pointer rounded-md border border-warm bg-white px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
-      </Field>
-      <Field label="To">
+        <span className="text-text-muted">→</span>
         <input
           type="date"
           value={filters.to}
           onChange={(e) => onChange('to', e.target.value)}
-          aria-label="Filter to date"
-          className="w-full cursor-pointer rounded-md border border-warm bg-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+          aria-label="To date"
+          className="cursor-pointer rounded-md border border-warm bg-white px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
-      </Field>
+        {(filters.from || filters.to) && (
+          <button
+            type="button"
+            onClick={() => {
+              onChange('from', '')
+              onChange('to', '')
+            }}
+            aria-label="Clear date range"
+            title="Clear dates"
+            className="cursor-pointer rounded-md p-1 text-text-muted hover:bg-warm hover:text-text-dark"
+          >
+            ✕
+          </button>
+        )}
+      </div>
     </div>
-  )
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1 text-xs font-medium text-text-mid">
-      {label}
-      {children}
-    </label>
   )
 }
 
