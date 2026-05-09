@@ -33,7 +33,6 @@ import {
 } from '../../lib/types'
 import { Dialog } from '../Dialog'
 import { Badge } from '../Badge'
-import { DeveloperNote } from '../DeveloperNote'
 import { SkeletonText } from '../Skeleton'
 import { cx, formatDuration, formatRelative } from '../../lib/format'
 
@@ -126,7 +125,7 @@ function DialogBody({
         onNext={onNext}
         onClose={onClose}
       />
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex flex-1 min-h-0 flex-col">
         {detailQ.isLoading ? (
           <div className="p-6">
             <SkeletonText lines={2} />
@@ -245,10 +244,14 @@ function DialogContent({
   const messages = useMemo(() => extractMessages(sample.input), [sample.input])
   const outputText = useMemo(() => extractOutputText(sample.output), [sample.output])
 
+  // The dialog body is a vertical flex column inside a 100vh-2rem
+  // shell. The two-pane row (`flex-1`) takes everything between the
+  // metadata strip and the feedback panel, with each pane scrolling
+  // its own content.
   return (
-    <div className="flex flex-col">
+    <div className="flex h-full flex-col">
       <MetadataStrip sample={sample} />
-      <div className="grid gap-px bg-warm/60 md:grid-cols-2">
+      <div className="grid flex-1 min-h-0 gap-px bg-warm/60 md:grid-cols-2">
         <Pane label="Input" subtitle={`${messages.length} message${messages.length === 1 ? '' : 's'}`}>
           {messages.length > 0 ? (
             <div className="space-y-3">
@@ -309,12 +312,14 @@ function Pane({
   children: React.ReactNode
 }) {
   return (
-    <section className="flex min-h-[16rem] flex-col bg-cream">
-      <header className="flex items-baseline justify-between border-b border-warm/60 px-4 py-2">
+    // `min-h-0` is what lets the inner `overflow-y-auto` actually scroll
+    // inside a flex parent — without it the pane grows to fit content.
+    <section className="flex min-h-0 flex-col bg-cream">
+      <header className="flex shrink-0 items-baseline justify-between border-b border-warm/60 px-4 py-2">
         <h3 className="text-[11px] font-semibold uppercase tracking-wide text-text-mid">{label}</h3>
         {subtitle && <span className="text-[11px] text-text-muted">{subtitle}</span>}
       </header>
-      <div className="max-h-[40vh] overflow-y-auto px-4 py-3 text-sm text-text-dark">{children}</div>
+      <div className="flex-1 overflow-y-auto px-4 py-3 text-sm text-text-dark">{children}</div>
     </section>
   )
 }
@@ -479,20 +484,6 @@ function FeedbackPanel({
         </div>
       )}
       {error && <p className="mt-2 text-xs text-primary-dark">{error}</p>}
-      <DeveloperNote>
-        With the Artanis judge enabled, "Looks wrong" loops into a suggested
-        rewrite of the offending prompt, scored against your past corrections.
-        Right now it just records the comment. Upgrade at{' '}
-        <a
-          href="https://artanis.ai/?utm_source=gravel-dashboard&utm_medium=judge-upsell"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="cursor-pointer underline"
-        >
-          artanis.ai
-        </a>
-        .
-      </DeveloperNote>
     </section>
   )
 }

@@ -19,7 +19,6 @@ import {
 } from '../lib/types'
 import { EmptyState } from '../components/EmptyState'
 import { DeveloperNote } from '../components/DeveloperNote'
-import { CopyableCode } from '../components/CopyableCode'
 import { PayloadShape } from '../components/PayloadShape'
 import { SkeletonTable, SkeletonText } from '../components/Skeleton'
 import { Badge } from '../components/Badge'
@@ -109,24 +108,18 @@ function SamplesList() {
     // own scroll region instead of pushing pagination off-screen.
     <div className="flex h-[calc(100vh-9rem)] flex-col gap-3">
       <DeveloperNote>
-        Samples land here once your app runs with Gravel tracing on. With
-        the <strong>Artanis judge</strong> enabled, "Looks wrong" feedback
-        loops back as a suggested rewrite of the offending prompt scored
-        against your past corrections — until then, comments record but
-        don't drive iteration. Upgrade at{' '}
+        Enable the <strong>Artanis judge</strong> to turn "Looks wrong"
+        feedback into suggested prompt rewrites scored against past
+        corrections.{' '}
         <a
           href="https://artanis.ai/?utm_source=gravel-dashboard&utm_medium=judge-upsell"
           target="_blank"
           rel="noopener noreferrer"
           className="cursor-pointer underline hover:text-text-dark"
         >
-          artanis.ai
+          Upgrade
         </a>
-        . If samples don't appear at all, check{' '}
-        <code className="font-mono">instrumentation.ts</code> wires{' '}
-        <code className="font-mono">setGravelTracingConfig</code>; re-run{' '}
-        <CopyableCode>npx @artanis-ai/gravel init --traces</CopyableCode>
-        if not.
+        .
       </DeveloperNote>
 
       <div className="flex flex-wrap items-center gap-3">

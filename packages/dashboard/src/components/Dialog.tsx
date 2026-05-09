@@ -18,11 +18,12 @@ interface DialogProps {
   /** ARIA label for the dialog itself; required for screen readers. */
   ariaLabel: string
   children: ReactNode
-  /** Override the default max-width (`max-w-6xl`). */
-  maxWidthClass?: string
+  /** Default near-full-screen ("fullscreen"); pass "centred" for the
+   *  smaller capped variant when a tighter modal makes sense. */
+  size?: 'fullscreen' | 'centred'
 }
 
-export function Dialog({ open, onClose, ariaLabel, children, maxWidthClass = 'max-w-6xl' }: DialogProps) {
+export function Dialog({ open, onClose, ariaLabel, children, size = 'fullscreen' }: DialogProps) {
   useEffect(() => {
     if (!open) return
     function onKey(e: KeyboardEvent) {
@@ -40,9 +41,16 @@ export function Dialog({ open, onClose, ariaLabel, children, maxWidthClass = 'ma
 
   if (!open) return null
 
+  const sizing =
+    size === 'centred'
+      ? 'max-h-[90vh] max-w-6xl rounded-2xl'
+      : // Fullscreen: leave a 1rem gutter so the rounded edge + shadow read
+        // as a layer over the table behind, not as a permanent page.
+        'h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] rounded-xl'
+
   const modal = (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6"
+      className="fixed inset-0 z-50 flex items-center justify-center"
       role="presentation"
     >
       {/* Backdrop: click-to-close. Pointer-events on the backdrop only;
@@ -57,7 +65,7 @@ export function Dialog({ open, onClose, ariaLabel, children, maxWidthClass = 'ma
         role="dialog"
         aria-modal="true"
         aria-label={ariaLabel}
-        className={`relative flex max-h-[90vh] w-full ${maxWidthClass} flex-col overflow-hidden rounded-2xl bg-cream shadow-2xl ring-1 ring-warm`}
+        className={`relative flex ${sizing} flex-col overflow-hidden bg-cream shadow-2xl ring-1 ring-warm`}
         onClick={(e) => e.stopPropagation()}
       >
         {children}
