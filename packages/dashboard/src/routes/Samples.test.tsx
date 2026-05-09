@@ -72,7 +72,7 @@ describe('Samples list', () => {
       return withDefaults(empty)(path)
     })
     renderRoute(<SamplesPage />)
-    expect(await screen.findByText(/no outputs yet/i)).toBeInTheDocument()
+    expect(await screen.findByText(/nothing to review yet/i)).toBeInTheDocument()
     // Developer-only hint visible because auth/me reports localhost.
     expect(await screen.findByText(/gravel doctor/i)).toBeInTheDocument()
     expect(screen.getByText(/visible only on localhost/i)).toBeInTheDocument()

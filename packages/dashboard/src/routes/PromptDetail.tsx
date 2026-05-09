@@ -1,20 +1,22 @@
 /**
- * Prompt editor — read current text, accept a draft, save / discard, show
- * inline diff + Mallet analysis as the DE types.
+ * Prompt editor — single-pane CodeMirror surface (Mallet-shaped) where
+ * the DE's edits show as Google-Docs-style suggestions: insertions
+ * underlined green, deletions struck through inline. The actual edit
+ * commits to a localStorage draft on save; the PR is opened from the
+ * Prompts list "Submit changes" flow.
  *
- * Drafts persist in this browser's localStorage (see lib/drafts.ts).
+ * Drafts live in this browser's localStorage (see lib/drafts.ts).
  *
- * Spec: gravel-cloud/docs/spec/prompts.md §2 (edit flow), §5 (inline diff +
- * Mallet on edits).
+ * Spec: gravel-cloud/docs/spec/prompts.md §2 (edit flow), §5 (inline diff).
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'wouter'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { SkeletonText } from '../components/Skeleton'
 import { Badge } from '../components/Badge'
 import { PromptBadge } from '../components/prompts/PromptBadge'
-import { DiffView } from '../components/prompts/DiffView'
+import { SuggestionEditor } from '../components/prompts/SuggestionEditor'
 import { cx } from '../lib/format'
 import {
   draftBranchFor,
@@ -24,7 +26,7 @@ import {
   type LocalDraft,
 } from '../lib/drafts'
 import { useCurrentUser } from '../lib/useCurrentUser'
-import type { AnalysisResponse, MalletIssue, PromptDetailResponse } from '../lib/types'
+import type { PromptDetailResponse } from '../lib/types'
 
 export function PromptDetail({ promptId }: { promptId: string }) {
   const [, navigate] = useLocation()
@@ -44,6 +46,10 @@ export function PromptDetail({ promptId }: { promptId: string }) {
 
   const existingDraft = draftQ.data ?? null
   const [draftText, setDraftText] = useState<string | null>(null)
+  const [stats, setStats] = useState<{ insertions: number; deletions: number }>({
+    insertions: 0,
+    deletions: 0,
+  })
   const [toast, setToast] = useState<string | null>(null)
 
   // Seed the editor once we know the current text + any existing draft.
@@ -103,7 +109,7 @@ export function PromptDetail({ promptId }: { promptId: string }) {
   const draftBranch = userId ? draftBranchFor(userId) : null
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div>
         <Link href="/prompts" className="cursor-pointer text-xs text-text-mid hover:text-text-dark">
           ← Back to prompts
@@ -121,40 +127,27 @@ export function PromptDetail({ promptId }: { promptId: string }) {
         )}
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <section>
-          <h2 className="mb-1 text-xs font-medium uppercase tracking-wide text-text-mid">
-            Current
-          </h2>
-          <pre
-            className="h-80 overflow-auto whitespace-pre-wrap rounded-xl border border-warm bg-warm/30 p-3 font-mono text-xs leading-relaxed text-text-dark"
-            data-testid="current-pane"
-          >
-            {detail.content}
-          </pre>
-        </section>
-        <section>
-          <h2 className="mb-1 text-xs font-medium uppercase tracking-wide text-text-mid">
-            Draft
-          </h2>
-          <textarea
-            value={editorText}
-            onChange={(e) => setDraftText(e.target.value)}
-            spellCheck={false}
-            aria-label="Draft prompt text"
-            className="h-80 w-full resize-none rounded-xl border border-warm bg-white p-3 font-mono text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </section>
+      <div className="flex items-center justify-between gap-3 px-1 text-[11px] text-text-mid">
+        <span>
+          Edits show as suggestions: insertions underlined,{' '}
+          <span className="italic">deletions struck through</span>.
+        </span>
+        {(stats.insertions > 0 || stats.deletions > 0) && (
+          <span className="font-mono text-text-muted">
+            <span className="text-forest">+{stats.insertions}</span>{' '}
+            <span className="text-primary-dark">−{stats.deletions}</span>
+          </span>
+        )}
       </div>
 
-      <section>
-        <h2 className="mb-1 text-xs font-medium uppercase tracking-wide text-text-mid">
-          Inline diff
-        </h2>
-        <DiffView before={detail.content} after={editorText} />
-      </section>
-
-      <MalletPanel text={editorText} />
+      <div className="h-[28rem]">
+        <SuggestionEditor
+          original={detail.content}
+          value={editorText}
+          onChange={setDraftText}
+          onDiffStats={setStats}
+        />
+      </div>
 
       <div className="flex flex-wrap items-center gap-2">
         <button
@@ -170,6 +163,15 @@ export function PromptDetail({ promptId }: { promptId: string }) {
         >
           {save.isPending ? 'Saving…' : 'Save draft'}
         </button>
+        {dirty && (
+          <button
+            type="button"
+            className="cursor-pointer rounded-lg border border-warm px-3 py-1.5 text-sm font-medium text-text-mid hover:bg-warm/40"
+            onClick={() => setDraftText(detail.content)}
+          >
+            Reset
+          </button>
+        )}
         {existingDraft && (
           <button
             type="button"
@@ -191,72 +193,5 @@ export function PromptDetail({ promptId }: { promptId: string }) {
         )}
       </div>
     </div>
-  )
-}
-
-/**
- * Mallet analysis panel. Debounces draft text changes and POSTs them to
- * `/api/analysis`. The endpoint may not exist in every embedding app — if
- * we get a 404 we render a friendly fallback rather than a scary error.
- */
-function MalletPanel({ text }: { text: string }) {
-  const [debounced, setDebounced] = useState(text)
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  useEffect(() => {
-    if (timer.current) clearTimeout(timer.current)
-    timer.current = setTimeout(() => setDebounced(text), 800)
-    return () => {
-      if (timer.current) clearTimeout(timer.current)
-    }
-  }, [text])
-
-  const analyzeQ = useQuery<AnalysisResponse, Error>({
-    queryKey: ['analysis', debounced],
-    enabled: debounced.trim().length > 0,
-    queryFn: () => api.post<AnalysisResponse>('/api/analysis', { prompt: debounced }),
-  })
-
-  const notAvailable = analyzeQ.isError && /\b404\b/.test(analyzeQ.error?.message ?? '')
-
-  return (
-    <section className="rounded-2xl border border-warm bg-cream p-3" data-testid="mallet-panel">
-      <header className="flex items-center justify-between">
-        <h2 className="text-xs font-medium uppercase tracking-wide text-text-mid">
-          Mallet analysis
-        </h2>
-        {analyzeQ.isFetching && <span className="text-[11px] text-text-muted">analyzing…</span>}
-      </header>
-      {notAvailable ? (
-        <p className="mt-2 text-xs text-text-mid">
-          Mallet analysis not available in this build.
-        </p>
-      ) : analyzeQ.isError ? (
-        <p className="mt-2 font-mono text-xs text-primary-dark">{analyzeQ.error.message}</p>
-      ) : !analyzeQ.data ? (
-        <p className="mt-2 text-xs text-text-muted">
-          Edit the draft to see live analysis.
-        </p>
-      ) : analyzeQ.data.issues.length === 0 ? (
-        <p className="mt-2 text-xs text-text-mid">No issues found.</p>
-      ) : (
-        <ul className="mt-2 space-y-1.5">
-          {analyzeQ.data.issues.map((issue, i) => (
-            <IssueRow key={`${issue.type}-${issue.range[0]}-${i}`} issue={issue} />
-          ))}
-        </ul>
-      )}
-    </section>
-  )
-}
-
-function IssueRow({ issue }: { issue: MalletIssue }) {
-  const tone =
-    issue.severity === 'error' ? 'bad' : issue.severity === 'warning' ? 'warn' : 'info'
-  return (
-    <li className="flex items-start gap-2 text-xs">
-      <Badge tone={tone}>{issue.severity}</Badge>
-      <span className="text-text-dark">{issue.message}</span>
-    </li>
   )
 }

@@ -106,7 +106,7 @@ function SamplesList() {
   return (
     <div className="space-y-4">
       <DeveloperNote>
-        Outputs flow in once the app runs with Gravel tracing on. To diagnose, run{' '}
+        Samples flow in once the app runs with Gravel tracing on. To diagnose, run{' '}
         <CopyableCode>npx @artanis-ai/gravel doctor</CopyableCode>
         .
       </DeveloperNote>
@@ -134,7 +134,7 @@ function SamplesList() {
         </div>
       ) : samples.length === 0 ? (
         <EmptyState
-          title="No outputs yet"
+          title="Nothing to review yet"
           body="Once your app produces AI output, it'll appear here so you can flag any that need a closer look."
         />
       ) : (

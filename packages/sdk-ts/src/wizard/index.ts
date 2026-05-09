@@ -335,11 +335,28 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
   let tracesAttempted = false
   if (wantTracesResolved !== false) {
     stepHeader(3, 3, 'Traces')
+    // Tailor the copy to what we actually detected. db=unknown gets a
+    // shorter sentence ("I'll set up two tables" — let migrate prompt
+    // for the URL); known DB names it explicitly. LLM libs we found get
+    // listed verbatim so the user sees we'll patch their stack, not
+    // some abstract list of supported SDKs.
+    const dbName =
+      detection.database.driver === 'postgres'
+        ? 'Postgres'
+        : detection.database.driver === 'sqlite'
+          ? 'SQLite'
+          : null
+    const dbPhrase = dbName
+      ? `your ${c.bold(dbName)} database`
+      : `your database (you'll wire ${c.bold('DATABASE_URL')} in a moment)`
+    const tracerPhrase =
+      detection.llmLibs.length > 0
+        ? `auto-tracing for ${detection.llmLibs.map((l) => c.bold(l)).join(', ')}, plus raw fetch`
+        : `auto-tracing for raw fetch (no LLM SDKs detected; install one and re-run to add it)`
     say(
-      `Last step: capture every LLM call your app makes. I'll add ${c.bold('two tables')} to ` +
-        `your database (gravel_samples, gravel_feedback) and turn on auto-tracing for ` +
-        `OpenAI, Anthropic, LangChain, Vercel AI, and raw fetch. Your team will see ` +
-        `the calls in the ${c.bold('Outputs')} tab.`,
+      `Last step: capture every LLM call your app makes. I'll add ${c.bold('two tables')} ` +
+        `(gravel_samples, gravel_feedback) to ${dbPhrase} and turn on ${tracerPhrase}. ` +
+        `Your team reviews the calls in the ${c.bold('Review')} tab.`,
     )
     const wantTraces =
       wantTracesResolved === true ? true : await ask('Continue?', true)
@@ -813,7 +830,7 @@ async function runTracesPillar(
     say(
       `Set ${c.bold('DATABASE_URL')} in ${c.bold('.env.local')} and re-run ` +
         `${c.bold('gravel init --traces')} when you're ready. The dashboard's ` +
-        `Outputs tab will keep nudging you until tables exist.`,
+        `Review tab will keep nudging you until tables exist.`,
     )
     return { ranBootstrap: false, skipped: 'No DATABASE_URL. Fix .env.local and run `gravel init --traces`.' }
   }

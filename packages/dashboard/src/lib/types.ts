@@ -57,21 +57,6 @@ export interface SampleDetailResponse {
   related: SampleListItem[]
 }
 
-export interface MalletIssue {
-  type: 'contradiction' | 'ambiguity' | 'best-practice' | string
-  severity: 'error' | 'warning' | 'info' | string
-  range: [number, number]
-  message: string
-}
-
-export interface AnalysisResponse {
-  issues: MalletIssue[]
-  rate_limit?: {
-    limit: number
-    remaining: number
-    reset_at: string
-  }
-}
 
 // ---------- Prompts ----------
 //

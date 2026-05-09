@@ -2,3 +2,6 @@
 # bundle is large (hundreds of KiB of base64) and would churn on every
 # dashboard change. Built fresh in CI before publish.
 src/handler/dashboard-bundle.ts
+
+# Test scratch — wizard E2E tests write a manifest into cwd.
+.gravel/

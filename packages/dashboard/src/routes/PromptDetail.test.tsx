@@ -1,11 +1,13 @@
 /**
- * Tests for the prompt editor (load + edit + save + discard + diff +
- * Mallet-404 fallback).
+ * Tests for the prompt editor (load + edit + save + discard).
  *
- * Drafts persist in localStorage now; tests seed/inspect that directly.
+ * The CodeMirror-backed SuggestionEditor is mocked to a plain textarea
+ * so the tests assert behaviour (drafts persisting to localStorage,
+ * dirty-state buttons, navigation) without coupling to CM 6 internals
+ * that don't render predictably in jsdom.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 vi.mock('../lib/api', () => ({
@@ -15,6 +17,27 @@ vi.mock('../lib/api', () => ({
     put: vi.fn(),
     delete: vi.fn(),
   },
+}))
+
+// Replace CodeMirror with a textarea that surfaces value/onChange the
+// same way the parent already wires them up. The decoration logic has
+// its own unit test; this lets us focus on flow.
+vi.mock('../components/prompts/SuggestionEditor', () => ({
+  SuggestionEditor: ({
+    value,
+    onChange,
+    ariaLabel,
+  }: {
+    value: string
+    onChange: (next: string) => void
+    ariaLabel?: string
+  }) => (
+    <textarea
+      aria-label={ariaLabel ?? 'Prompt draft'}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  ),
 }))
 
 import { api } from '../lib/api'
@@ -38,14 +61,8 @@ beforeEach(() => {
   localStorage.clear()
 })
 
-interface Setup {
-  detail?: PromptDetailResponse
-  analysis?: unknown
-  analysisFails?: 'not-found' | 'other'
-}
-
-function setup(opts: Setup = {}) {
-  const detail: PromptDetailResponse = opts.detail ?? {
+function setup(detail?: PromptDetailResponse) {
+  const d: PromptDetailResponse = detail ?? {
     id: 'p_abc',
     type: 'file',
     path: 'prompts/triage.md',
@@ -55,49 +72,25 @@ function setup(opts: Setup = {}) {
     if (path === '/api/auth/me') {
       return { user: { id: USER_ID, firstName: 'Developer', role: 'admin' } }
     }
-    if (path.startsWith('/api/prompts/')) return detail
+    if (path.startsWith('/api/prompts/')) return d
     throw new Error(`unmocked GET ${path}`)
-  })
-  mockedPost.mockImplementation(async (path: string) => {
-    if (path === '/api/analysis') {
-      if (opts.analysisFails === 'not-found') throw new Error('404 Not Found')
-      if (opts.analysisFails === 'other') throw new Error('500 boom')
-      return opts.analysis ?? { issues: [] }
-    }
-    throw new Error(`unmocked POST ${path}`)
   })
 }
 
 describe('PromptDetail', () => {
-  it('loads current text into both panes and renders the diff inline', async () => {
+  it('seeds the editor with the current text', async () => {
     setup()
     renderRoute(<PromptsPage promptId="p_abc" />)
     await screen.findByText('prompts/triage.md')
-    const current = screen.getByTestId('current-pane')
-    expect(current).toHaveTextContent('You are a helpful assistant.')
-    const ta = screen.getByLabelText(/draft prompt text/i) as HTMLTextAreaElement
+    const ta = screen.getByLabelText(/prompt draft/i) as HTMLTextAreaElement
     expect(ta.value).toBe('You are a helpful assistant.')
-    expect(screen.getByTestId('diff-view')).toBeInTheDocument()
-  })
-
-  it('renders insertions in the diff when the draft text changes', async () => {
-    setup()
-    const user = userEvent.setup()
-    renderRoute(<PromptsPage promptId="p_abc" />)
-    const ta = (await screen.findByLabelText(/draft prompt text/i)) as HTMLTextAreaElement
-    await user.clear(ta)
-    await user.type(ta, 'You are an honest assistant.')
-    const diff = screen.getByTestId('diff-view')
-    await waitFor(() => {
-      expect(diff.querySelector('ins[data-op="insert"]')).not.toBeNull()
-    })
   })
 
   it('saves the draft to localStorage and shows a toast', async () => {
     setup()
     const user = userEvent.setup()
     renderRoute(<PromptsPage promptId="p_abc" />)
-    const ta = (await screen.findByLabelText(/draft prompt text/i)) as HTMLTextAreaElement
+    const ta = (await screen.findByLabelText(/prompt draft/i)) as HTMLTextAreaElement
     await user.clear(ta)
     await user.type(ta, 'You are a careful assistant.')
     await user.click(screen.getByRole('button', { name: /save draft/i }))
@@ -108,6 +101,19 @@ describe('PromptDetail', () => {
     })
     expect(mockedPut).not.toHaveBeenCalled()
     expect(await screen.findByText(/draft saved on branch/i)).toBeInTheDocument()
+  })
+
+  it('reset reverts the draft to the original', async () => {
+    setup()
+    const user = userEvent.setup()
+    renderRoute(<PromptsPage promptId="p_abc" />)
+    const ta = (await screen.findByLabelText(/prompt draft/i)) as HTMLTextAreaElement
+    await user.clear(ta)
+    await user.type(ta, 'changed')
+    await user.click(screen.getByRole('button', { name: /reset/i }))
+    expect(ta.value).toBe('You are a helpful assistant.')
+    // Reset clears the dirty state, so Save should disable.
+    expect(screen.getByRole('button', { name: /save draft/i })).toBeDisabled()
   })
 
   it('discards an existing draft from localStorage', async () => {
@@ -124,18 +130,5 @@ describe('PromptDetail', () => {
       expect(getDraft(USER_ID, 'p_abc')).toBeNull()
     })
     expect(mockedDelete).not.toHaveBeenCalled()
-  })
-
-  it('shows the Mallet-not-available fallback on 404', async () => {
-    setup({ analysisFails: 'not-found' })
-    const user = userEvent.setup()
-    renderRoute(<PromptsPage promptId="p_abc" />)
-    const ta = (await screen.findByLabelText(/draft prompt text/i)) as HTMLTextAreaElement
-    await user.clear(ta)
-    await user.type(ta, 'try analysis')
-    const panel = screen.getByTestId('mallet-panel')
-    await waitFor(() => expect(within(panel).getByText(/not available in this build/i)).toBeInTheDocument(), {
-      timeout: 2500,
-    })
   })
 })

@@ -15,18 +15,16 @@ interface User {
   role: 'user' | 'admin'
 }
 
-// Two tabs. "Traces" was a developer-shaped word; "Outputs" is what
-// the AI produced (one row = one sample = one input/output exchange).
-// "Prompts" is the manifest editor.
-//
-// (A "Review" tab — flagged samples + regression issues — was folded
-// out 2026-05-08 because it was just a filter over Outputs. Bring it
-// back as a dedicated tab when the workflow earns its own surface.)
+// Two tabs. "Prompts" is the manifest editor; "Review" is the queue of
+// AI samples the domain expert flags / corrects (one row = one sample
+// = one input/output exchange). The route stays /samples because that's
+// what the SDK serves; the label is what the DE actually thinks about
+// they're doing here.
 const NAV_ITEMS: NavItem[] = [
   // `/` is rendered by App.tsx as the prompts page; treat it as part of
   // the Prompts tab so the highlight is correct on first load.
   { path: '/prompts', label: 'Prompts', match: ['/', '/prompts'], icon: PromptsIcon },
-  { path: '/samples', label: 'Outputs', match: ['/samples'], icon: OutputsIcon },
+  { path: '/samples', label: 'Review', match: ['/samples'], icon: ReviewIcon },
 ]
 
 interface NavItem {
@@ -136,7 +134,9 @@ function PromptsIcon({ className }: { className?: string }) {
   )
 }
 
-function OutputsIcon({ className }: { className?: string }) {
+function ReviewIcon({ className }: { className?: string }) {
+  // Magnifier over a document — "look closely at AI output", which is
+  // the actual job of the Review tab.
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -149,7 +149,10 @@ function OutputsIcon({ className }: { className?: string }) {
       aria-hidden="true"
       className={iconClass(className)}
     >
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+      <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6" />
+      <polyline points="14 3 14 9 20 9" />
+      <circle cx="17" cy="17" r="3" />
+      <line x1="19.2" y1="19.2" x2="22" y2="22" />
     </svg>
   )
 }

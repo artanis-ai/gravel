@@ -50,8 +50,16 @@ export interface DetectionResult {
   database: { driver: DbDriver; envVar: string | null }
   auth: AuthProvider
   existingTracers: string[]
+  /**
+   * LLM SDKs we detected on the project's manifest. Used by the wizard
+   * to tell the user exactly which auto-tracers will fire (rather than
+   * listing every SDK Gravel theoretically supports).
+   */
+  llmLibs: LlmLib[]
   hasGit: boolean
 }
+
+export type LlmLib = 'OpenAI' | 'Anthropic' | 'LangChain' | 'Vercel AI'
 
 export async function detect(cwd: string = process.cwd()): Promise<DetectionResult> {
   const tsResult = await detectTs(cwd)
@@ -69,6 +77,7 @@ export async function detect(cwd: string = process.cwd()): Promise<DetectionResu
     database: { driver: 'unknown', envVar: null },
     auth: 'unknown',
     existingTracers: [],
+    llmLibs: [],
     hasGit: await pathExists(join(cwd, '.git')),
   }
 }
@@ -137,6 +146,19 @@ async function detectTs(cwd: string): Promise<DetectionResult | null> {
   if (allDeps['langsmith']) existingTracers.push('LangSmith')
   if (allDeps['langfuse']) existingTracers.push('Langfuse')
 
+  const llmLibs: LlmLib[] = []
+  if (allDeps['openai']) llmLibs.push('OpenAI')
+  if (allDeps['@anthropic-ai/sdk']) llmLibs.push('Anthropic')
+  if (
+    allDeps['@langchain/core'] ||
+    allDeps['@langchain/openai'] ||
+    allDeps['@langchain/anthropic'] ||
+    allDeps['langchain']
+  ) {
+    llmLibs.push('LangChain')
+  }
+  if (allDeps['ai']) llmLibs.push('Vercel AI')
+
   return {
     cwd,
     language: 'ts',
@@ -147,6 +169,7 @@ async function detectTs(cwd: string): Promise<DetectionResult | null> {
     database,
     auth,
     existingTracers,
+    llmLibs,
     hasGit: await pathExists(join(cwd, '.git')),
   }
 }
@@ -186,6 +209,11 @@ async function detectPython(cwd: string): Promise<DetectionResult | null> {
   if (allText.includes('langsmith')) existingTracers.push('LangSmith')
   if (allText.includes('langfuse')) existingTracers.push('Langfuse')
 
+  const llmLibs: LlmLib[] = []
+  if (/\bopenai\b/.test(allText)) llmLibs.push('OpenAI')
+  if (/\banthropic\b/.test(allText)) llmLibs.push('Anthropic')
+  if (/\blangchain\b/.test(allText)) llmLibs.push('LangChain')
+
   return {
     cwd,
     language: 'python',
@@ -196,6 +224,7 @@ async function detectPython(cwd: string): Promise<DetectionResult | null> {
     database,
     auth,
     existingTracers,
+    llmLibs,
     hasGit: await pathExists(join(cwd, '.git')),
   }
 }
