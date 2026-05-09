@@ -27,7 +27,7 @@ src/artanis_gravel/
 ├── fastapi.py              # create_gravel_router(config) for FastAPI
 ├── django.py               # gravel_urls for Django
 ├── asgi.py                 # generic ASGI / WSGI handler
-└── cli/                    # init, migrate, manifest, scan, doctor
+└── cli/                    # init, migrate, manifest, scan
 ```
 
 ## Schema parity

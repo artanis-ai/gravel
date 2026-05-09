@@ -7,7 +7,6 @@
  */
 import { runWizard } from '../wizard/index.js'
 import { runManifestCheck, runManifestUpdate } from './manifest.js'
-import { runDoctor } from './doctor.js'
 import { runMigrate } from './migrate.js'
 import { runDeepScan } from './scan.js'
 
@@ -24,7 +23,6 @@ Commands:
   scan --deep                Run LLM-assisted prompt detection (uses OPENAI_API_KEY).
                              --print-only inspects without writing the manifest.
   migrate                    Apply pending DB migrations (uses bootstrap.ts in v0).
-  doctor                     Diagnostic: DB, manifest, hook, tracing.
   help                       Show this message.
 
 Init flags:
@@ -140,10 +138,6 @@ async function main(): Promise<void> {
 
     case 'migrate':
       await runMigrate()
-      break
-
-    case 'doctor':
-      await runDoctor()
       break
 
     case 'help':

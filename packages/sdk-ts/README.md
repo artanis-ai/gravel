@@ -32,5 +32,5 @@ src/
 ├── integrations/             # framework-specific adapters
 ├── manifest/                 # .gravel/manifest.json read/write/scan + hook
 ├── tracing/                  # auto-patches for OpenAI/Anthropic/etc.
-└── cli/                      # init, migrate, manifest, scan, doctor
+└── cli/                      # init, migrate, manifest, scan
 ```

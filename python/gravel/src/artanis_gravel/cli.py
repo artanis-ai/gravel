@@ -88,13 +88,6 @@ def migrate() -> None:
     click.echo("Schema bootstrap complete.")
 
 
-@cli.command()
-def doctor() -> None:
-    """Self-diagnostic."""
-    from .wizard.doctor import run_doctor
-    run_doctor()
-
-
 def main() -> None:
     cli()
 
