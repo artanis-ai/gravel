@@ -263,13 +263,31 @@ function normalizeContent(content: unknown): ContentBlock[] {
       let rawSize: number | undefined
       if (file) {
         if (typeof file.url === 'string') url = file.url
+        if (typeof file.file_url === 'string') url = file.file_url as string
         if (typeof file.filename === 'string') name = file.filename
         if (typeof file.media_type === 'string') mediaType = file.media_type
         if (typeof file.mediaType === 'string') mediaType = file.mediaType
-        if (typeof file.data === 'string') {
-          const mt = mediaType ?? 'application/octet-stream'
-          url = `data:${mt};base64,${file.data}`
-          rawSize = (file.data as string).length
+        // OpenAI Chat Completions inline file part: `file.file_data`
+        // is base64. Older variants used `file.data`.
+        const inlineData =
+          typeof file.file_data === 'string'
+            ? (file.file_data as string)
+            : typeof file.data === 'string'
+              ? (file.data as string)
+              : undefined
+        if (inlineData) {
+          // Strip an existing data: prefix if the upstream already
+          // pre-formatted one (OpenAI accepts `file_data` either way).
+          const m = inlineData.match(/^data:([^;]+);base64,(.*)$/)
+          if (m) {
+            mediaType = mediaType ?? m[1]!
+            url = inlineData
+            rawSize = m[2]!.length
+          } else {
+            const mt = mediaType ?? 'application/octet-stream'
+            url = `data:${mt};base64,${inlineData}`
+            rawSize = inlineData.length
+          }
         }
       }
       // Vercel-AI file part: { type: 'file', mediaType, data | url, filename? }

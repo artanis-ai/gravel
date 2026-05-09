@@ -265,6 +265,7 @@ function DialogContent({
   const output = useMemo(() => extractOutput(sample.output), [sample.output])
 
   // Collapse defaults:
+  //   - Single message: always open (no benefit to making the reviewer click).
   //   - system: collapsed (long static instructions).
   //   - user: collapsed except the LAST user message, which is the
   //     turn the assistant responded to and what the reviewer needs
@@ -272,6 +273,7 @@ function DialogContent({
   //   - assistant / tool / other: open.
   const lastUserIdx = messages.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1)
   const initialOpen = (m: NormalizedMessage, i: number) => {
+    if (messages.length === 1) return true
     if (m.role === 'system') return false
     if (m.role === 'user') return i === lastUserIdx
     return true

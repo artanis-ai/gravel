@@ -159,6 +159,39 @@ describe('extractMessages — Anthropic Messages', () => {
   })
 })
 
+describe('extractMessages — OpenAI file attachment', () => {
+  it('inline file_data (Chat Completions) becomes a data URL', () => {
+    const input = {
+      body: {
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Summarise.' },
+              {
+                type: 'file',
+                file: {
+                  filename: 'doc.pdf',
+                  file_data: 'aGVsbG8=',
+                  media_type: 'application/pdf',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    }
+    const out = extractMessages(input)
+    const fileBlock = out[0]!.blocks.find((b) => b.type === 'file')
+    expect(fileBlock).toMatchObject({
+      type: 'file',
+      name: 'doc.pdf',
+      mediaType: 'application/pdf',
+    })
+    expect((fileBlock as { url: string }).url).toBe('data:application/pdf;base64,aGVsbG8=')
+  })
+})
+
 describe('extractMessages — OpenAI Responses API', () => {
   it('input items with input_text + input_image', () => {
     const input = {
