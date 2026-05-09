@@ -192,9 +192,6 @@ function PromptCard({
   const file = prompt.path.includes('/')
     ? prompt.path.slice(prompt.path.lastIndexOf('/') + 1)
     : prompt.path
-  const dir = prompt.path.includes('/')
-    ? prompt.path.slice(0, prompt.path.lastIndexOf('/'))
-    : ''
   return (
     <Link
       href={`/prompts/${prompt.id}`}
@@ -206,9 +203,9 @@ function PromptCard({
           <div className="truncate font-mono text-sm font-medium text-text-dark">
             {file}
           </div>
-          {(dir || prompt.varName) && (
+          {prompt.varName && (
             <div className="mt-0.5 truncate font-mono text-[11px] text-text-muted">
-              {prompt.varName ? prompt.varName : dir}
+              {prompt.varName}
             </div>
           )}
         </div>
@@ -307,18 +304,25 @@ function GithubBanner() {
     },
   })
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <span>
-        Install the Gravel GitHub App on your repo so domain experts can submit prompt edits as PRs.
-      </span>
-      <button
-        type="button"
-        disabled={install.isPending}
-        className="cursor-pointer rounded-lg bg-primary px-3 py-1 text-xs font-medium text-white hover:bg-primary-dark disabled:cursor-not-allowed disabled:bg-primary/60"
-        onClick={() => install.mutate()}
-      >
-        {install.isPending ? 'Redirecting…' : 'Install GitHub App'}
-      </button>
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span>
+          Install the Gravel GitHub App on your repo so domain experts can submit prompt edits as PRs.
+        </span>
+        <button
+          type="button"
+          disabled={install.isPending}
+          className="cursor-pointer rounded-lg bg-primary px-3 py-1 text-xs font-medium text-white hover:bg-primary-dark disabled:cursor-not-allowed disabled:bg-primary/60"
+          onClick={() => install.mutate()}
+        >
+          {install.isPending ? 'Redirecting…' : 'Install GitHub App'}
+        </button>
+      </div>
+      {install.error && (
+        <div className="rounded-md border border-rose-300/60 bg-rose-50 px-3 py-2 text-xs text-rose-900">
+          Install failed: {install.error.message}
+        </div>
+      )}
     </div>
   )
 }

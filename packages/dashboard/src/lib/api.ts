@@ -28,7 +28,18 @@ async function fetchJson(url: string, init?: RequestInit) {
     credentials: 'include',
   })
   if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`)
+    // Surface the server's `{ error: ... }` body if it sent one — most
+    // SDK routes do, and the message is usually actionable
+    // (e.g. "GRAVEL_PROJECT_ID not set" tells the dev exactly what's
+    // missing). Falls back to the status line otherwise.
+    let detail = ''
+    try {
+      const body = await response.clone().json()
+      if (body && typeof body.error === 'string') detail = body.error
+    } catch {
+      /* not JSON */
+    }
+    throw new Error(detail || `${response.status} ${response.statusText}`)
   }
   return response.json()
 }
