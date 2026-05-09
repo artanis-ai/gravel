@@ -250,11 +250,23 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
     }
   }
 
+  // Best-effort port guess for the URL we tell the user to open.
+  // Reads the host's `dev` script for explicit --port / -p / PORT
+  // overrides and falls back to the framework's documented default.
+  // Returns null when we can't be confident, in which case we drop
+  // the host:port from the URL and just tell them the path.
+  const guessedPort = await guessDevPort(cwd, detection)
+  const dashboardUrl = guessedPort
+    ? `http://localhost:${guessedPort}${mountPath}`
+    : mountPath
+  const dashboardUrlLabel = guessedPort ? c.cyan(dashboardUrl) : c.bold(dashboardUrl)
+
   if (dashboardWritten) {
     say('')
     say(
-      `When your dev server's running, open ${c.cyan('http://localhost:3000' + mountPath)} ` +
-        `and log in with the password from ${c.bold(envFile)}.`,
+      guessedPort
+        ? `When your dev server's running, open ${dashboardUrlLabel} and log in with the password from ${c.bold(envFile)}.`
+        : `When your dev server's running, open ${dashboardUrlLabel} on whatever host:port your app uses, and log in with the password from ${c.bold(envFile)}.`,
     )
     await pause('Press Enter once you can see the dashboard (or Enter to skip ahead)')
   }
@@ -371,7 +383,9 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
   say('')
   done('Done.')
   bullet(
-    `Dashboard at ${c.cyan('http://localhost:3000' + mountPath)} (password in ${envFile})`,
+    guessedPort
+      ? `Dashboard at ${dashboardUrlLabel} (password in ${envFile})`
+      : `Dashboard at ${dashboardUrlLabel}, mount path under your app (password in ${envFile})`,
     'ok',
   )
   if (promptsRan) {
@@ -1033,6 +1047,97 @@ function describeMount(detection: Awaited<ReturnType<typeof detect>>, mountPath:
   }
   if (detection.framework === 'fastapi') return 'gravel_route.py'
   return 'mount file'
+}
+
+/**
+ * Best-effort guess of the port the user's dev server will listen on,
+ * so the wizard can hand them a concrete URL to open. Returns null
+ * when nothing in the project signals a port and we don't have a
+ * confident framework default. Order:
+ *   1. Scan TS package.json `dev`/`start` scripts for `--port N`,
+ *      `-p N`, or `PORT=N`. Any of those wins.
+ *   2. Fall back to the framework's documented default port.
+ *   3. Otherwise null (caller drops the host:port and shows just
+ *      the path).
+ *
+ * No port-probe / sniffing — that'd race the user's actual dev
+ * server. This is purely about what we KNOW from the project's
+ * config.
+ */
+async function guessDevPort(
+  cwd: string,
+  detection: Awaited<ReturnType<typeof detect>>,
+): Promise<number | null> {
+  const scripted = await scanScriptsForPort(cwd, detection.language)
+  if (scripted) return scripted
+  return frameworkDefaultPort(detection.framework)
+}
+
+async function scanScriptsForPort(
+  cwd: string,
+  language: 'ts' | 'python',
+): Promise<number | null> {
+  if (language !== 'ts') return null
+  let pkg: { scripts?: Record<string, string> }
+  try {
+    const raw = await fs.readFile(join(cwd, 'package.json'), 'utf8')
+    pkg = JSON.parse(raw) as typeof pkg
+  } catch {
+    return null
+  }
+  const candidates = ['dev', 'start', 'serve']
+  for (const name of candidates) {
+    const script = pkg.scripts?.[name]
+    if (!script) continue
+    const port = extractPortFlag(script)
+    if (port !== null) return port
+  }
+  return null
+}
+
+/**
+ * Pulls a port number out of a script string. Handles the common
+ * shapes: `next dev -p 4000`, `next dev --port 4000`, `PORT=4000
+ * next dev`, `vite --port 4000`. Returns null if nothing matches.
+ */
+function extractPortFlag(script: string): number | null {
+  // PORT=4000 anywhere in the env-var prefix
+  const envMatch = /\bPORT=(\d+)/.exec(script)
+  if (envMatch) return Number(envMatch[1])
+  // --port 4000 or --port=4000
+  const longFlag = /--port[=\s]+(\d+)/.exec(script)
+  if (longFlag) return Number(longFlag[1])
+  // -p 4000 (short flag, surrounded by spaces / start / end)
+  const shortFlag = /(?:^|\s)-p\s+(\d+)/.exec(script)
+  if (shortFlag) return Number(shortFlag[1])
+  return null
+}
+
+function frameworkDefaultPort(
+  framework: Awaited<ReturnType<typeof detect>>['framework'],
+): number | null {
+  // Default ports the framework documents and most users keep.
+  // We're explicit per-framework rather than guessing, so wrong
+  // numbers don't slip in.
+  switch (framework) {
+    case 'next-app-router':
+    case 'next-pages-router':
+    case 'express':
+    case 'fastify':
+    case 'hono':
+      return 3000
+    case 'fastapi':
+    case 'django':
+      return 8000
+    case 'flask':
+      return 5000
+    case 'generic-node':
+    case 'generic-asgi':
+    case 'generic-wsgi':
+      return null
+    default:
+      return null
+  }
 }
 
 function mountFilePath(detection: Awaited<ReturnType<typeof detect>>): string {
