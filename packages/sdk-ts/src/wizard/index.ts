@@ -903,7 +903,7 @@ async function runTracesPillar(
   say('')
   say(
     `Trigger an LLM call from your app: auto-tracing's on, so the call ` +
-      `lands in the ${c.bold('Outputs')} tab as soon as it completes.`,
+      `lands in the ${c.bold('Review')} tab as soon as it completes.`,
   )
   return { ranBootstrap }
 }

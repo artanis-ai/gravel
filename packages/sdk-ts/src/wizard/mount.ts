@@ -431,7 +431,40 @@ async function ensureNextInstrumentation(cwd: string, srcLayout: boolean): Promi
     }
   }
 
-  if (existing && existingBody.includes('@artanis-ai/gravel/auto')) return
+  if (
+    existing &&
+    existingBody.includes('@artanis-ai/gravel/auto') &&
+    existingBody.includes('setGravelTracingConfig')
+  ) {
+    return
+  }
+
+  // The instrumentation needs to import the user's gravel.config so it
+  // can wire the DB into the tracer at boot — without this, the first
+  // LLM call before any /admin/ai/* request fires has nowhere to
+  // persist (the in-handler `setGravelTracingConfig` call hasn't run
+  // yet) and the trace is dropped.
+  const configImport = srcLayout ? '../gravel.config' : './gravel.config'
+  const body = `// Added by Gravel wizard. Next.js calls register() once on server
+// startup — the canonical place to bootstrap server-side instrumentation.
+// We import \`@artanis-ai/gravel/auto\` so the SDK's monkey-patches for
+// OpenAI / Anthropic / LangChain / Vercel AI / raw fetch install
+// before any LLM call fires, then we hand the resolved config to
+// setGravelTracingConfig so traces have a DB to land in straight away
+// (without this, the first LLM call before any /admin/ai/* request
+// gets dropped because the handler hasn't initialised the DB yet).
+//
+// See https://nextjs.org/docs/app/building-your-application/optimizing/instrumentation
+export async function register() {
+  if (process.env.NEXT_RUNTIME !== 'nodejs') return
+  await import('@artanis-ai/gravel/auto')
+  const [{ setGravelTracingConfig, resolveConfig }, { config }] = await Promise.all([
+    import('@artanis-ai/gravel'),
+    import('${configImport}'),
+  ])
+  setGravelTracingConfig(resolveConfig(config))
+}
+`
 
   if (existing && /\bregister\s*\(/.test(existingBody)) {
     // Hand-written instrumentation with its own register(). Don't risk
@@ -439,10 +472,16 @@ async function ensureNextInstrumentation(cwd: string, srcLayout: boolean): Promi
     await fs.writeFile(
       existing + '.gravel.instrumentation.suggestion.txt',
       `// Add this inside your existing register() function so gravel's
-// auto-patches install on Next.js server boot:
+// auto-patches install on Next.js server boot AND the tracer has a
+// DB to write to before the first request:
 
 if (process.env.NEXT_RUNTIME === 'nodejs') {
   await import('@artanis-ai/gravel/auto')
+  const [{ setGravelTracingConfig, resolveConfig }, { config }] = await Promise.all([
+    import('@artanis-ai/gravel'),
+    import('${configImport}'),
+  ])
+  setGravelTracingConfig(resolveConfig(config))
 }
 `,
     )
@@ -456,22 +495,7 @@ if (process.env.NEXT_RUNTIME === 'nodejs') {
   // Fresh write. Pick the first preferred path that doesn't exist.
   const target = existing ?? candidates[0]!
   if (existing) await safeBackup(existing)
-  await fs.writeFile(
-    target,
-    `// Added by Gravel wizard. Next.js calls register() once on server
-// startup — the canonical place to bootstrap server-side instrumentation.
-// We import \`@artanis-ai/gravel/auto\` so the SDK's monkey-patches for
-// OpenAI / Anthropic / LangChain / Vercel AI / raw fetch install
-// before any LLM call fires, and traces flow into gravel_traces.
-//
-// See https://nextjs.org/docs/app/building-your-application/optimizing/instrumentation
-export async function register() {
-  if (process.env.NEXT_RUNTIME === 'nodejs') {
-    await import('@artanis-ai/gravel/auto')
-  }
-}
-`,
-  )
+  await fs.writeFile(target, body)
 }
 
 /**
