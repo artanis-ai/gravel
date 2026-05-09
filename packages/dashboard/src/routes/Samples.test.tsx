@@ -54,22 +54,12 @@ function makeSamples(n: number): SamplesResponse {
   }
 }
 
-// Default mocks for the auxiliary endpoints the page also fetches
-// (auth/me, onboarding/status). Test-specific responses for the main
-// data fetches are layered on top.
+// Default mock for the auth/me endpoint the page also fetches.
+// Test-specific responses for the samples fetch are layered on top.
 function withDefaults(samples: unknown): (path: string) => unknown {
   return (path: string) => {
     if (path === '/api/auth/me') {
       return { user: { id: 'localhost', firstName: 'Developer', role: 'admin' } }
-    }
-    if (path === '/api/onboarding/status') {
-      // Tests assume tracing is fully wired so the OnboardingCard
-      // doesn't render any "click to set up" copy on top of the list.
-      return {
-        prompts: { manifestExists: true, promptCount: 5, hookInstalled: true },
-        traces: { tablesExist: true, sampleCount: 100, hasFeedback: true },
-        githubApp: { connected: true, repoOwner: 'acme', repoName: 'app' },
-      }
     }
     return samples
   }
@@ -79,24 +69,12 @@ describe('Samples list', () => {
   it('renders the empty state when no samples are returned', async () => {
     mockedGet.mockImplementation(async (path: string) => {
       const empty: SamplesResponse = { samples: [], total: 0, page: 1, page_size: 20 }
-      // Override traces to reflect "tables exist but no samples yet"
-      // so the OnboardingCard renders the "trigger an LLM call" step
-      // instead of being absent.
-      if (path === '/api/onboarding/status') {
-        return {
-          prompts: { manifestExists: true, promptCount: 0, hookInstalled: false },
-          traces: { tablesExist: true, sampleCount: 0, hasFeedback: false },
-          githubApp: { connected: false, repoOwner: null, repoName: null },
-        }
-      }
       return withDefaults(empty)(path)
     })
     renderRoute(<SamplesPage />)
     expect(await screen.findByText(/no outputs yet/i)).toBeInTheDocument()
     // Developer-only hint visible because auth/me reports localhost.
-    // Both the DeveloperNote and the OnboardingCard mention gravel doctor —
-    // we just need at least one.
-    expect((await screen.findAllByText(/gravel doctor/i)).length).toBeGreaterThan(0)
+    expect(await screen.findByText(/gravel doctor/i)).toBeInTheDocument()
     expect(screen.getByText(/visible only on localhost/i)).toBeInTheDocument()
   })
 

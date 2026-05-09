@@ -15,7 +15,6 @@ import { api } from '../lib/api'
 import { EmptyState } from '../components/EmptyState'
 import { DeveloperNote } from '../components/DeveloperNote'
 import { CopyableCode } from '../components/CopyableCode'
-import { OnboardingCard } from '../components/OnboardingCard'
 import { SkeletonText } from '../components/Skeleton'
 import { PromptBadge } from '../components/prompts/PromptBadge'
 import { SubmitModal, type SubmitDraftEntry } from '../components/prompts/SubmitModal'
@@ -100,11 +99,17 @@ function PromptsList() {
 
   return (
     <div className="space-y-6">
-      <OnboardingCard pillar="prompts" />
       <DeveloperNote>
-        To re-scan your codebase for prompts, run{' '}
-        <CopyableCode>npx @artanis-ai/gravel manifest --update</CopyableCode>
-        .
+        <p>
+          To re-scan your codebase for prompts, run{' '}
+          <CopyableCode>npx @artanis-ai/gravel manifest --update</CopyableCode>
+          .
+        </p>
+        {ghQ.data && !ghConnected && (
+          <div className="mt-3 border-t border-accent/40 pt-3">
+            <GithubBanner />
+          </div>
+        )}
       </DeveloperNote>
 
       <header className="flex flex-wrap items-center gap-3">
@@ -119,19 +124,6 @@ function PromptsList() {
           </button>
         )}
       </header>
-
-      {/*
-        GH App install is dev-only setup. Domain experts can't (and
-        shouldn't) wire up a bot; they just want to edit a prompt. When
-        the App is installed by the dev once on the repo, every viewer's
-        "Submit changes" goes through it. The repo binds at install time
-        on github.com — no separate repo-picker needed.
-      */}
-      {ghQ.data && !ghConnected && (
-        <DeveloperNote>
-          <GithubBanner />
-        </DeveloperNote>
-      )}
 
       {submittedPrUrl && (
         <div className="rounded-2xl border border-forest/30 bg-forest/5 p-3 text-sm text-forest">
@@ -350,10 +342,10 @@ function GithubBanner() {
     },
   })
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-accent/40 bg-accent/15 p-3 text-sm text-earth-dark">
+    <div className="flex flex-wrap items-center justify-between gap-3">
       <span>
         Install the Gravel GitHub App on your repo so domain experts can submit prompt edits as PRs.
-        The repo binds at install time — no separate repo-picker step.
+        The repo binds at install time, no separate repo-picker step.
       </span>
       <button
         type="button"

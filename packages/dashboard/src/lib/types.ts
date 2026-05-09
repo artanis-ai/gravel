@@ -122,24 +122,3 @@ export interface GithubStatusResponse {
   connectedAt: string | null
 }
 
-/**
- * Mirrors `GET /api/onboarding/status` in handler/routes.ts. Drives
- * the OnboardingCard on Prompts + Outputs tabs.
- */
-export interface OnboardingStatus {
-  prompts: {
-    manifestExists: boolean
-    promptCount: number
-    hookInstalled: boolean
-  }
-  traces: {
-    tablesExist: boolean
-    sampleCount: number
-    hasFeedback: boolean
-  }
-  githubApp: {
-    connected: boolean
-    repoOwner: string | null
-    repoName: string | null
-  }
-}

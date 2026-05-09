@@ -85,23 +85,14 @@ describe('handler with no database (prompts-only install)', () => {
     expect(response.headers.get('location')).toContain('/login?error=1')
   })
 
-  it('GET /api/samples returns an empty page with onboarding hint, not 500', async () => {
+  it('GET /api/samples returns an empty page, not 500, when DB is not configured', async () => {
     const handler = buildHandler()
     // Authed via the localhost shortcut — request is from 127.0.0.1.
     const response = await request(handler, 'GET', '/admin/ai/api/samples')
     expect(response.status).toBe(200)
-    const body = (await response.json()) as { samples: unknown[]; _onboarding?: { tablesExist: boolean; dbConfigured: boolean } }
+    const body = (await response.json()) as { samples: unknown[]; total: number }
     expect(body.samples).toEqual([])
-    expect(body._onboarding).toEqual({ tablesExist: false, dbConfigured: false })
-  })
-
-  it('GET /api/onboarding/status reports tracesExist=false without crashing', async () => {
-    const handler = buildHandler()
-    const response = await request(handler, 'GET', '/admin/ai/api/onboarding/status')
-    expect(response.status).toBe(200)
-    const body = (await response.json()) as { traces: { tablesExist: boolean; sampleCount: number } }
-    expect(body.traces.tablesExist).toBe(false)
-    expect(body.traces.sampleCount).toBe(0)
+    expect(body.total).toBe(0)
   })
 
   it('GET /api/auth/me returns the localhost admin without touching a DB', async () => {

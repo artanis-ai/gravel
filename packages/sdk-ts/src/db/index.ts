@@ -21,10 +21,9 @@ export interface Database {
 
 /**
  * Lightweight probe: are the gravel_* tables present? Returns false on
- * any error (table missing, DB unreachable, etc) — callers use this to
- * gate the Outputs UI and the onboarding-status endpoint, both of
- * which need to handle "user hasn't run `gravel init --traces` yet"
- * gracefully.
+ * any error (table missing, DB unreachable, etc). Callers use this to
+ * short-circuit the Outputs UI when the user hasn't run
+ * `gravel init --traces` yet.
  */
 export async function gravelTablesExist(db: Database | null): Promise<boolean> {
   if (!db) return false

@@ -21,7 +21,6 @@ import {
 import { EmptyState } from '../components/EmptyState'
 import { DeveloperNote } from '../components/DeveloperNote'
 import { CopyableCode } from '../components/CopyableCode'
-import { OnboardingCard } from '../components/OnboardingCard'
 import { PayloadShape } from '../components/PayloadShape'
 import { SkeletonTable, SkeletonText } from '../components/Skeleton'
 import { Badge } from '../components/Badge'
@@ -106,7 +105,6 @@ function SamplesList() {
 
   return (
     <div className="space-y-4">
-      <OnboardingCard pillar="traces" />
       <DeveloperNote>
         Outputs flow in once the app runs with Gravel tracing on. To diagnose, run{' '}
         <CopyableCode>npx @artanis-ai/gravel doctor</CopyableCode>

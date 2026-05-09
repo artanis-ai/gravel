@@ -217,31 +217,4 @@ describe('dashboard flow: with a real SQLite database', () => {
     })
   })
 
-  it('GET /api/onboarding/status surfaces the real sample count', async () => {
-    const dbPath = join(workdir, 'gravel.db')
-    const db = await openDatabase({ url: `file:${dbPath}` })
-    await bootstrap(db)
-    const drz = db.drizzle as { run: (q: unknown) => unknown }
-    const { sql } = await import('drizzle-orm')
-    for (const id of ['s1', 's2', 's3']) {
-      drz.run(
-        sql`INSERT INTO gravel_samples (id, name, status, environment, model, timestamp, started_at)
-            VALUES (${id}, 'fn', 'completed', 'prod', 'm', ${Date.now()}, ${Date.now()})`,
-      )
-    }
-    await db.close()
-
-    const handler = buildHandlerWithDb(dbPath)
-    const r = await handler(
-      new Request('http://localhost:3000/admin/ai/api/onboarding/status', {
-        headers: { host: 'localhost:3000' },
-      }),
-    )
-    expect(r.status).toBe(200)
-    const body = (await r.json()) as {
-      traces: { tablesExist: boolean; sampleCount: number }
-    }
-    expect(body.traces.tablesExist).toBe(true)
-    expect(body.traces.sampleCount).toBe(3)
-  })
 })

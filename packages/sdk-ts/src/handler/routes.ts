@@ -29,8 +29,7 @@ interface RouteCtx {
   /**
    * Null when the customer hasn't wired DATABASE_URL (prompts-only
    * install). Routes that need it must handle null and degrade
-   * gracefully — see /api/samples + /api/onboarding/status for the
-   * pattern.
+   * gracefully (see `/api/samples` for the pattern).
    */
   db: Database | null
   request: Request
@@ -395,23 +394,11 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
     // prompts-only — and from crashing entirely when no DATABASE_URL
     // is configured (db === null).
     if (!db) {
-      return json({
-        samples: [],
-        total: 0,
-        page: 1,
-        page_size: 20,
-        _onboarding: { tablesExist: false, dbConfigured: false },
-      })
+      return json({ samples: [], total: 0, page: 1, page_size: 20 })
     }
     const { gravelTablesExist } = await import('../db/index.js')
     if (!(await gravelTablesExist(db))) {
-      return json({
-        samples: [],
-        total: 0,
-        page: 1,
-        page_size: 20,
-        _onboarding: { tablesExist: false, dbConfigured: true },
-      })
+      return json({ samples: [], total: 0, page: 1, page_size: 20 })
     }
     const { listSamples } = await import('../samples/query.js')
     const result = await listSamples(db, {
@@ -442,83 +429,6 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
     if (!detail) return json({ error: 'not-found' }, 404)
     return json(detail)
   },
-  // Onboarding status — drives the dashboard's OnboardingCard so it
-  // can show the right next-action prompt per pillar (prompts vs
-  // traces vs github-app). Doesn't 401 unauthed callers; the
-  // dashboard renders read-only state for view-as users too.
-  'GET /api/onboarding/status': async ({ db }) => {
-    const status = {
-      prompts: { manifestExists: false, promptCount: 0, hookInstalled: false },
-      traces: { tablesExist: false, sampleCount: 0, hasFeedback: false },
-      githubApp: { connected: false, repoOwner: null as string | null, repoName: null as string | null },
-    }
-
-    // Manifest (always cwd-local, no DB).
-    try {
-      const { readManifest } = await import('../manifest/io.js')
-      const m = await readManifest(process.cwd())
-      status.prompts.manifestExists = true
-      status.prompts.promptCount = m.prompts.length
-    } catch {
-      /* no manifest yet */
-    }
-    try {
-      const { promises: fs } = await import('node:fs')
-      const { join } = await import('node:path')
-      await fs.stat(join(process.cwd(), '.git', 'hooks', 'pre-commit'))
-      status.prompts.hookInstalled = true
-    } catch {
-      /* no hook */
-    }
-
-    // Tables. `db` is null when no DATABASE_URL is configured (the
-    // prompts-only install path); gravelTablesExist handles that, but
-    // the count queries below need a non-null db.
-    const { gravelTablesExist } = await import('../db/index.js')
-    status.traces.tablesExist = await gravelTablesExist(db)
-    if (status.traces.tablesExist && db) {
-      try {
-        const { sql } = await import('drizzle-orm')
-        if (db.dialect === 'postgres') {
-          const drz = db.drizzle as { execute: (q: unknown) => Promise<unknown> }
-          const r = (await drz.execute(
-            sql`SELECT count(*)::int AS c FROM gravel_samples`,
-          )) as { rows?: Array<{ c: number }> } | Array<{ c: number }>
-          const rows = Array.isArray(r) ? r : (r.rows ?? [])
-          status.traces.sampleCount = rows[0]?.c ?? 0
-          const fb = (await drz.execute(
-            sql`SELECT 1 FROM gravel_feedback LIMIT 1`,
-          )) as { rows?: unknown[] } | unknown[]
-          const fbRows = Array.isArray(fb) ? fb : (fb.rows ?? [])
-          status.traces.hasFeedback = fbRows.length > 0
-        } else {
-          const drz = db.drizzle as { all: (q: unknown) => unknown[] }
-          const rows = drz.all(sql`SELECT count(*) AS c FROM gravel_samples`) as Array<{ c: number }>
-          status.traces.sampleCount = rows[0]?.c ?? 0
-          const fb = drz.all(sql`SELECT 1 FROM gravel_feedback LIMIT 1`) as unknown[]
-          status.traces.hasFeedback = fb.length > 0
-        }
-      } catch {
-        /* counts are nice-to-have; ignore */
-      }
-    }
-
-    // GH App install state — read-through to the CP-cached value.
-    try {
-      const { getGhInstallState } = await import('../github/project-state.js')
-      const gh = await getGhInstallState()
-      if (gh) {
-        status.githubApp.connected = true
-        status.githubApp.repoOwner = gh.repoOwner
-        status.githubApp.repoName = gh.repoName
-      }
-    } catch {
-      /* CP outage — treat as disconnected */
-    }
-
-    return json(status)
-  },
-
   'POST /api/samples/:id/feedback': async ({ request, db, authed }) => {
     if (!authed) return json({ error: 'unauthorized' }, 401)
     if (!db) return json({ error: 'tables-missing' }, 503)
