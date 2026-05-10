@@ -356,6 +356,22 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
   // Install state moved CP-side 2026-05-08 — the SDK queries the CP at
   // status-check + submit time; nothing is mirrored to the local DB.
   'GET /api/github/status': async () => {
+    // `projectConfigured` lets the dashboard distinguish "the user
+    // hasn't created a cloud project yet" from "they have one but
+    // haven't installed the GitHub App on a repo." Without it, the
+    // install banner shows for both cases and the install button
+    // dies with `GRAVEL_PROJECT_ID not set` for users who never set
+    // up the cloud side.
+    const projectConfigured = !!process.env.GRAVEL_PROJECT_ID
+    if (!projectConfigured) {
+      return json({
+        connected: false,
+        projectConfigured: false,
+        repoOwner: null,
+        repoName: null,
+        connectedAt: null,
+      })
+    }
     const { getGhInstallState } = await import('../github/project-state.js')
     let state: Awaited<ReturnType<typeof getGhInstallState>>
     try {
@@ -363,10 +379,18 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
     } catch (e) {
       // Don't 500 on a CP outage — the dashboard treats "no state" the
       // same as "uninstalled" and re-renders the install banner.
-      return json({ connected: false, repoOwner: null, repoName: null, connectedAt: null, error: (e as Error).message })
+      return json({
+        connected: false,
+        projectConfigured: true,
+        repoOwner: null,
+        repoName: null,
+        connectedAt: null,
+        error: (e as Error).message,
+      })
     }
     return json({
       connected: Boolean(state),
+      projectConfigured: true,
       repoOwner: state?.repoOwner ?? null,
       repoName: state?.repoName ?? null,
       connectedAt: state?.installedAt ?? null,

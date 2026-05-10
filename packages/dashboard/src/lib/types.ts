@@ -104,6 +104,10 @@ export interface SubmitPrResult {
 
 export interface GithubStatusResponse {
   connected: boolean
+  /** False when the host hasn't set GRAVEL_PROJECT_ID — there's no cloud
+   *  project to install the GitHub App against, so the dashboard hides
+   *  the install banner and prompts the dev to create an API key first. */
+  projectConfigured: boolean
   repoOwner: string | null
   repoName: string | null
   connectedAt: string | null

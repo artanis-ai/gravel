@@ -264,12 +264,25 @@ describe('prompt routes', () => {
   })
 
   describe('GET /api/github/status', () => {
+    // Both "uninstalled" and "installed" cases require a configured
+    // project; without GRAVEL_PROJECT_ID the endpoint short-circuits
+    // to projectConfigured: false (separate test below).
+    let prevProj: string | undefined
+    beforeEach(() => {
+      prevProj = process.env.GRAVEL_PROJECT_ID
+      process.env.GRAVEL_PROJECT_ID = 'proj_test'
+    })
+    afterEach(() => {
+      if (prevProj === undefined) delete process.env.GRAVEL_PROJECT_ID
+      else process.env.GRAVEL_PROJECT_ID = prevProj
+    })
+
     it('reports connected: false when App not installed', async () => {
       getGhStateSpy.mockResolvedValue(null)
       const r = await runRoute('GET', '/api/github/status')
       expect(r.status).toBe(200)
       const body = await r.json()
-      expect(body).toMatchObject({ connected: false, repoOwner: null })
+      expect(body).toMatchObject({ connected: false, projectConfigured: true, repoOwner: null })
     })
     it('reports connected with repo state', async () => {
       getGhStateSpy.mockResolvedValue({
@@ -282,10 +295,21 @@ describe('prompt routes', () => {
       const body = await r.json()
       expect(body).toMatchObject({
         connected: true,
+        projectConfigured: true,
         repoOwner: 'acme',
         repoName: 'app',
         connectedAt: '2026-05-07T00:00:00.000Z',
       })
+    })
+    it('reports projectConfigured: false when GRAVEL_PROJECT_ID is missing', async () => {
+      delete process.env.GRAVEL_PROJECT_ID
+      const r = await runRoute('GET', '/api/github/status')
+      expect(r.status).toBe(200)
+      const body = await r.json()
+      expect(body).toMatchObject({ connected: false, projectConfigured: false })
+      // The CP probe must not have been called — that's the whole
+      // point of the short-circuit.
+      expect(getGhStateSpy).not.toHaveBeenCalled()
     })
   })
 })

@@ -54,6 +54,7 @@ function routeFor(path: string): unknown {
   if (path === '/api/github/status') {
     return {
       connected: true,
+      projectConfigured: true,
       repoOwner: 'acme',
       repoName: 'app',
       connectedAt: new Date().toISOString(),
@@ -78,6 +79,7 @@ function setupGet(
     if (path === '/api/github/status') {
       return {
         connected: true,
+        projectConfigured: true,
         repoOwner: 'acme',
         repoName: 'app',
         connectedAt: new Date().toISOString(),
@@ -218,7 +220,7 @@ describe('Prompts list', () => {
         return { prompts: [makePrompt()], last_scan_at: null }
       }
       if (path === '/api/github/status') {
-        return { connected: false, repoOwner: null, repoName: null, connectedAt: null }
+        return { connected: false, projectConfigured: true, repoOwner: null, repoName: null, connectedAt: null }
       }
       throw new Error(`unmocked GET ${path}`)
     })
