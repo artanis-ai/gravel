@@ -29,15 +29,8 @@ vi.mock('../src/prompts/submit.js', async () => {
 vi.mock('../src/github/project-state.js', () => ({
   getGhInstallState: (...a: unknown[]) => getGhStateSpy(...a),
   bustGhInstallStateCache: () => patchGhStateSpy(),
+  mintInstallationTokenViaCp: (...a: unknown[]) => mintTokenSpy(...a),
 }))
-
-vi.mock('../src/github/app.js', async () => {
-  const actual = await vi.importActual<typeof import('../src/github/app.js')>('../src/github/app.js')
-  return {
-    ...actual,
-    mintInstallationToken: (...a: unknown[]) => mintTokenSpy(...a),
-  }
-})
 
 let originalCwd: string
 let workdir: string
@@ -162,83 +155,68 @@ describe('prompt routes', () => {
     })
 
     it('200 when App installed: mints token, returns PR URL, forwards drafts to submitDrafts', async () => {
-      const prevProj = process.env.GRAVEL_PROJECT_ID
-      const prevKey = process.env.GRAVEL_API_KEY
-      process.env.GRAVEL_PROJECT_ID = 'proj_test'
-      process.env.GRAVEL_API_KEY = 'gak_test'
+      // Anonymous flow — no project ID / API key in env. The
+      // install_secret on the install state is the only auth.
       getGhStateSpy.mockResolvedValue({
         installationId: 12345,
         repoOwner: 'acme',
         repoName: 'app',
-        installedAt: '2026-05-07T00:00:00.000Z',
+        installSecret: 'sec_test',
       })
       mintTokenSpy.mockResolvedValue({
         token: 'ghs_minted',
         repoFullName: 'acme/app',
-        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
       })
       submitSpy.mockResolvedValue({
         prUrl: 'https://github.com/acme/app/pull/9',
         prNumber: 9,
         branchName: 'gravel/draft-2026-05-08-u1',
       })
-      try {
-        const r = await runRoute('POST', '/api/prompts/submit', { body: draftBody })
-        expect(r.status).toBe(200)
-        const body = await r.json()
-        expect(body.pr.prUrl).toBe('https://github.com/acme/app/pull/9')
-        expect(mintTokenSpy).toHaveBeenCalledOnce()
-        const mintArgs = mintTokenSpy.mock.calls[0]![0] as { projectId: string; apiKey: string }
-        expect(mintArgs.projectId).toBe('proj_test')
-        expect(mintArgs.apiKey).toBe('gak_test')
-        expect(submitSpy).toHaveBeenCalledOnce()
-        const args = submitSpy.mock.calls[0]![0] as {
-          title?: string
-          deFirstName?: string
-          repoOwner: string
-          accessToken: string
-          drafts: { promptId: string; newText: string }[]
-          draftBranch: string
-        }
-        expect(args).toMatchObject({
-          title: 'My PR',
-          deFirstName: 'Alice',
-          repoOwner: 'acme',
-          accessToken: 'ghs_minted',
-        })
-        expect(args.drafts).toEqual([{ promptId: 'p_aaa1bbb2', newText: 'NEW' }])
-        expect(args.draftBranch).toMatch(/^gravel\/draft-\d{4}-\d{2}-\d{2}-u1$/)
-      } finally {
-        if (prevProj === undefined) delete process.env.GRAVEL_PROJECT_ID
-        else process.env.GRAVEL_PROJECT_ID = prevProj
-        if (prevKey === undefined) delete process.env.GRAVEL_API_KEY
-        else process.env.GRAVEL_API_KEY = prevKey
+      const r = await runRoute('POST', '/api/prompts/submit', { body: draftBody })
+      expect(r.status).toBe(200)
+      const body = await r.json()
+      expect(body.pr.prUrl).toBe('https://github.com/acme/app/pull/9')
+      expect(mintTokenSpy).toHaveBeenCalledOnce()
+      // The mint call now takes the install state directly, not
+      // (apiKey, projectId).
+      const mintArgs = mintTokenSpy.mock.calls[0]![0] as {
+        installationId: number
+        installSecret: string
       }
+      expect(mintArgs.installationId).toBe(12345)
+      expect(mintArgs.installSecret).toBe('sec_test')
+      expect(submitSpy).toHaveBeenCalledOnce()
+      const args = submitSpy.mock.calls[0]![0] as {
+        title?: string
+        deFirstName?: string
+        repoOwner: string
+        accessToken: string
+        drafts: { promptId: string; newText: string }[]
+        draftBranch: string
+      }
+      expect(args).toMatchObject({
+        title: 'My PR',
+        deFirstName: 'Alice',
+        repoOwner: 'acme',
+        accessToken: 'ghs_minted',
+      })
+      expect(args.drafts).toEqual([{ promptId: 'p_aaa1bbb2', newText: 'NEW' }])
+      expect(args.draftBranch).toMatch(/^gravel\/draft-\d{4}-\d{2}-\d{2}-u1$/)
     })
 
     it('502 if token mint fails (e.g. customer uninstalled the App)', async () => {
-      const prevProj = process.env.GRAVEL_PROJECT_ID
-      const prevKey = process.env.GRAVEL_API_KEY
-      process.env.GRAVEL_PROJECT_ID = 'proj_test'
-      process.env.GRAVEL_API_KEY = 'gak_test'
       getGhStateSpy.mockResolvedValue({
         installationId: 12345,
         repoOwner: 'acme',
         repoName: 'app',
-        installedAt: '2026-05-07T00:00:00.000Z',
+        installSecret: 'sec_test',
       })
       mintTokenSpy.mockRejectedValue(new Error('installation/12345 404: not found'))
-      try {
-        const r = await runRoute('POST', '/api/prompts/submit', { body: draftBody })
-        expect(r.status).toBe(502)
-        const body = await r.json()
-        expect(body.error).toBe('github_token_mint_failed')
-      } finally {
-        if (prevProj === undefined) delete process.env.GRAVEL_PROJECT_ID
-        else process.env.GRAVEL_PROJECT_ID = prevProj
-        if (prevKey === undefined) delete process.env.GRAVEL_API_KEY
-        else process.env.GRAVEL_API_KEY = prevKey
-      }
+      const r = await runRoute('POST', '/api/prompts/submit', { body: draftBody })
+      expect(r.status).toBe(502)
+      const body = await r.json()
+      expect(body.error).toBe('github_token_mint_failed')
     })
   })
 
@@ -253,63 +231,62 @@ describe('prompt routes', () => {
   })
 
   describe('GET /api/github/install/callback', () => {
-    it('busts the install-state cache + 302s back to dashboard', async () => {
+    it('writes install env vars + 302s back to dashboard when CP returned them', async () => {
+      const r = await runRoute(
+        'GET',
+        '/api/github/install/callback?gh=installed&installation_id=99&install_secret=sec_test&repo_owner=acme&repo_name=app',
+      )
+      expect(r.status).toBe(302)
+      expect(r.headers.get('location')).toContain('/admin/ai/?gh=installed')
+      // Env should be live for the rest of the process so the
+      // immediately-following status check sees the install.
+      expect(process.env.GRAVEL_GH_INSTALL_ID).toBe('99')
+      expect(process.env.GRAVEL_GH_INSTALL_SECRET).toBe('sec_test')
+      expect(process.env.GRAVEL_GH_REPO_OWNER).toBe('acme')
+      expect(process.env.GRAVEL_GH_REPO_NAME).toBe('app')
+      // .env.local picked up the writes (or .env if that's what
+      // existed; this sandbox has neither yet).
+      const written = await fs.readFile(join(workdir, '.env.local'), 'utf8')
+      expect(written).toContain('GRAVEL_GH_INSTALL_ID=99')
+      expect(written).toContain('GRAVEL_GH_INSTALL_SECRET=sec_test')
+    })
+
+    it('still 302s back even if the CP omitted the install params (degrades gracefully)', async () => {
+      // Reset so leakage from the previous test doesn't make this pass
+      // for the wrong reason.
+      delete process.env.GRAVEL_GH_INSTALL_ID
       const r = await runRoute('GET', '/api/github/install/callback?gh=installed')
       expect(r.status).toBe(302)
       expect(r.headers.get('location')).toContain('/admin/ai/?gh=installed')
-      // The callback now bypasses local persistence — it just busts the
-      // CP-state cache so the next /api/github/status hits a fresh CP.
-      expect(patchGhStateSpy).toHaveBeenCalledOnce()
+      expect(process.env.GRAVEL_GH_INSTALL_ID).toBeUndefined()
     })
   })
 
   describe('GET /api/github/status', () => {
-    // Both "uninstalled" and "installed" cases require a configured
-    // project; without GRAVEL_PROJECT_ID the endpoint short-circuits
-    // to projectConfigured: false (separate test below).
-    let prevProj: string | undefined
-    beforeEach(() => {
-      prevProj = process.env.GRAVEL_PROJECT_ID
-      process.env.GRAVEL_PROJECT_ID = 'proj_test'
-    })
-    afterEach(() => {
-      if (prevProj === undefined) delete process.env.GRAVEL_PROJECT_ID
-      else process.env.GRAVEL_PROJECT_ID = prevProj
-    })
-
-    it('reports connected: false when App not installed', async () => {
+    // No project ID / API key in the anonymous flow — install state
+    // comes from GRAVEL_GH_INSTALL_* env vars (mocked through
+    // getGhInstallState here).
+    it('reports connected: false when no install state', async () => {
       getGhStateSpy.mockResolvedValue(null)
       const r = await runRoute('GET', '/api/github/status')
       expect(r.status).toBe(200)
       const body = await r.json()
-      expect(body).toMatchObject({ connected: false, projectConfigured: true, repoOwner: null })
+      expect(body).toMatchObject({ connected: false, repoOwner: null, repoName: null })
     })
     it('reports connected with repo state', async () => {
       getGhStateSpy.mockResolvedValue({
         installationId: 12345,
         repoOwner: 'acme',
         repoName: 'app',
-        installedAt: '2026-05-07T00:00:00.000Z',
+        installSecret: 'sec_test',
       })
       const r = await runRoute('GET', '/api/github/status')
       const body = await r.json()
       expect(body).toMatchObject({
         connected: true,
-        projectConfigured: true,
         repoOwner: 'acme',
         repoName: 'app',
-        connectedAt: '2026-05-07T00:00:00.000Z',
       })
-    })
-    it('reports projectConfigured: false when GRAVEL_PROJECT_ID is missing', async () => {
-      delete process.env.GRAVEL_PROJECT_ID
-      const r = await runRoute('GET', '/api/github/status')
-      expect(r.status).toBe(200)
-      const body = await r.json()
-      expect(body).toMatchObject({ connected: false, projectConfigured: false })
-      // The CP probe must not have been called — that's the whole
-      // point of the short-circuit.
-      expect(getGhStateSpy).not.toHaveBeenCalled()
     })
   })
 })

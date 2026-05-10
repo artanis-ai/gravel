@@ -94,18 +94,6 @@ function PromptsList() {
 
   const hasDrafts = (draftsQ.data?.length ?? 0) > 0
   const ghConnected = ghQ.data?.connected === true
-  const projectConfigured = ghQ.data?.projectConfigured === true
-  // Three states for the GH App nudge inside the DeveloperNote:
-  //   - cloud project not set up   → show "create an API key" hint
-  //   - project set, app not linked → show install banner
-  //   - app already installed       → no nudge
-  const ghNudge: 'install' | 'create-project' | null = !ghQ.data
-    ? null
-    : !projectConfigured
-      ? 'create-project'
-      : !ghConnected
-        ? 'install'
-        : null
 
   return (
     <div className="space-y-6">
@@ -115,9 +103,9 @@ function PromptsList() {
           <CopyableCode>npx @artanis-ai/gravel manifest --update</CopyableCode>
           .
         </p>
-        {ghNudge && (
+        {ghQ.data && !ghConnected && (
           <div className="mt-3 border-t border-accent/40 pt-3">
-            {ghNudge === 'install' ? <GithubBanner /> : <NeedProjectNote />}
+            <GithubBanner />
           </div>
         )}
       </DeveloperNote>
@@ -304,27 +292,6 @@ function SearchField({
           </svg>
         </button>
       )}
-    </div>
-  )
-}
-
-function NeedProjectNote() {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <span>
-        To open PRs from the dashboard, create a Gravel cloud project and set{' '}
-        <code className="font-mono">GRAVEL_PROJECT_ID</code> +{' '}
-        <code className="font-mono">GRAVEL_API_KEY</code> in your{' '}
-        <code className="font-mono">.env.local</code>.
-      </span>
-      <a
-        href="https://gravel.artanis.ai/sign-in?redirect_url=%2Fprojects"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="cursor-pointer rounded-lg bg-primary px-3 py-1 text-xs font-medium text-white hover:bg-primary-dark"
-      >
-        Create project
-      </a>
     </div>
   )
 }

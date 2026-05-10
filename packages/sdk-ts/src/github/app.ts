@@ -73,61 +73,8 @@ export function buildInstallUrl(args: { state: string; slug?: string }): string 
  * control plane signs an App JWT with the private key and exchanges it
  * for the token, then forwards it back to us.
  *
- * The PR-creation feature is free — there's no tier or paid-customer
- * check. The bearer token below is a *binding* check: the install
- * callback hands the SDK a one-time-issued signed token, the SDK
- * persists it, and the control plane verifies it on every mint. That
- * stops a stranger who knows an `installation_id` (a smallish integer)
- * from minting tokens to push to someone else's repo. Without this
- * check the mint endpoint would be a free write-anywhere oracle for
- * every repo `gravel[bot]` is installed on.
- *
- * Caching is the caller's job — see `tokenCache` in `submit.ts` (added
- * in the cutover commit).
+ * The PR-creation feature is free — no tier or paid-customer check.
+ * Auth boundary is the install_secret in the SDK's env (HMAC-derived
+ * server-side from installation_id; see project-state.ts and
+ * `mintInstallationTokenViaCp` for the actual mint call).
  */
-export async function mintInstallationToken(args: {
-  controlPlaneUrl: string
-  /** Project API key (Clerk-managed). CP looks up the install. */
-  apiKey: string
-  projectId: string
-}): Promise<InstallationToken> {
-  // Dev stub: bypass the CP entirely. Pairs with GRAVEL_GH_DEV_STUB=1
-  // in handler/routes.ts + project-state.ts.
-  if (process.env.GRAVEL_GH_DEV_STUB === '1') {
-    const stubToken = process.env.GRAVEL_GH_DEV_STUB_TOKEN
-    if (!stubToken) {
-      throw new Error(
-        'GRAVEL_GH_DEV_STUB_TOKEN not set — required when GRAVEL_GH_DEV_STUB=1. Use a PAT scoped to your test repo.',
-      )
-    }
-    const repoFullName = `${process.env.GRAVEL_GH_DEV_REPO_OWNER}/${process.env.GRAVEL_GH_DEV_REPO_NAME}`
-    return {
-      token: stubToken,
-      repoFullName,
-      // PATs don't expire, but pretending an hour from now keeps the
-      // shape consistent + caches/refresh logic happy if we add it.
-      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
-    }
-  }
-  const res = await fetch(`${args.controlPlaneUrl}/api/cli/github/installation-token`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${args.apiKey}`,
-    },
-    body: JSON.stringify({ project_id: args.projectId }),
-  })
-  if (!res.ok) {
-    throw new Error(`installation-token mint failed: ${res.status} ${await res.text()}`)
-  }
-  const body = (await res.json()) as {
-    token: string
-    repo_full_name: string
-    expires_at: string
-  }
-  return {
-    token: body.token,
-    repoFullName: body.repo_full_name,
-    expiresAt: new Date(body.expires_at),
-  }
-}

@@ -302,20 +302,13 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
         409,
       )
     }
-    // Mint a fresh installation token for this submit via the CP.
-    const { mintInstallationToken } = await import('../github/app.js')
-    const cpUrl = process.env.GRAVEL_CONTROL_PLANE_URL ?? 'https://gravel.artanis.ai'
-    const projectId = process.env.GRAVEL_PROJECT_ID
-    const apiKey = process.env.GRAVEL_API_KEY
-    if (!projectId || !apiKey) {
-      return json(
-        { error: 'gravel_config_incomplete', message: 'GRAVEL_PROJECT_ID + GRAVEL_API_KEY required.' },
-        500,
-      )
-    }
-    let token: Awaited<ReturnType<typeof mintInstallationToken>>
+    // Mint a fresh installation token for this submit. CP HMAC-verifies
+    // the install_secret in our env (set by the install callback) and
+    // forwards a 1-hour repo-scoped token from GitHub.
+    const { mintInstallationTokenViaCp } = await import('../github/project-state.js')
+    let token: Awaited<ReturnType<typeof mintInstallationTokenViaCp>>
     try {
-      token = await mintInstallationToken({ controlPlaneUrl: cpUrl, apiKey, projectId })
+      token = await mintInstallationTokenViaCp(ghState)
     } catch (err) {
       return json(
         { error: 'github_token_mint_failed', message: (err as Error).message },
@@ -352,57 +345,27 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
   },
 
   // GitHub App install. Spec: gravel-cloud/docs/spec/prompts.md §6.
-  // Per-user OAuth was removed 2026-05-07 (D-Q53 re-reversal).
-  // Install state moved CP-side 2026-05-08 — the SDK queries the CP at
-  // status-check + submit time; nothing is mirrored to the local DB.
+  // Anonymous install flow (no Gravel cloud account required). The
+  // SDK reads install state from .env.local (set by the callback
+  // below) and posts (installation_id, install_secret) to the CP for
+  // token mints. install_secret is HMAC(server_key, installation_id)
+  // — the install IS the credential.
   'GET /api/github/status': async () => {
-    // `projectConfigured` lets the dashboard distinguish "the user
-    // hasn't created a cloud project yet" from "they have one but
-    // haven't installed the GitHub App on a repo." Without it, the
-    // install banner shows for both cases and the install button
-    // dies with `GRAVEL_PROJECT_ID not set` for users who never set
-    // up the cloud side.
-    const projectConfigured = !!process.env.GRAVEL_PROJECT_ID
-    if (!projectConfigured) {
-      return json({
-        connected: false,
-        projectConfigured: false,
-        repoOwner: null,
-        repoName: null,
-        connectedAt: null,
-      })
-    }
     const { getGhInstallState } = await import('../github/project-state.js')
-    let state: Awaited<ReturnType<typeof getGhInstallState>>
-    try {
-      state = await getGhInstallState()
-    } catch (e) {
-      // Don't 500 on a CP outage — the dashboard treats "no state" the
-      // same as "uninstalled" and re-renders the install banner.
-      return json({
-        connected: false,
-        projectConfigured: true,
-        repoOwner: null,
-        repoName: null,
-        connectedAt: null,
-        error: (e as Error).message,
-      })
-    }
+    const state = await getGhInstallState()
     return json({
-      connected: Boolean(state),
-      projectConfigured: true,
+      connected: !!state,
       repoOwner: state?.repoOwner ?? null,
       repoName: state?.repoName ?? null,
-      connectedAt: state?.installedAt ?? null,
     })
   },
   'GET /api/github/install': async ({ request, config }) => {
-    const projectId = process.env.GRAVEL_PROJECT_ID
-    if (!projectId) return json({ error: 'GRAVEL_PROJECT_ID not set' }, 500)
-    const callback = new URL(`${config.mountPath}/api/github/install/callback`, request.url).toString()
-    // Dev stub: bypass GitHub + control plane entirely. Used for the
-    // fixture suite + UI iteration when the dev hasn't deployed the
-    // CP yet. Submit later uses GRAVEL_GH_DEV_STUB_TOKEN (a PAT).
+    const callback = new URL(
+      `${config.mountPath}/api/github/install/callback`,
+      request.url,
+    ).toString()
+    // Dev stub: bypass GitHub + CP entirely. Pairs with the same flag
+    // in project-state.ts (returns a fixed install state from env).
     if (process.env.GRAVEL_GH_DEV_STUB === '1') {
       const owner = process.env.GRAVEL_GH_DEV_REPO_OWNER
       const name = process.env.GRAVEL_GH_DEV_REPO_NAME
@@ -412,26 +375,55 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
           500,
         )
       }
-      // Round-trip straight back to ourselves so the SPA refetches
-      // status — getGhInstallState() reads the same env vars.
       return json({ redirectUrl: `${callback}?gh=installed` })
     }
-    // Bounce through the control plane so it can issue the signed
-    // `state` parameter GitHub's install URL needs.
+    // Bounce to the CP's install/start so it can sign the state JWT
+    // GitHub's install URL needs. No project_id — the CP is anonymous
+    // for this flow.
     const cpUrl = process.env.GRAVEL_CONTROL_PLANE_URL ?? 'https://gravel.artanis.ai'
     const start = new URL('/api/cli/github/install/start', cpUrl)
-    start.searchParams.set('project_id', projectId)
     start.searchParams.set('return_to', callback)
     return json({ redirectUrl: start.toString() })
   },
   'GET /api/github/install/callback': async ({ request, config }) => {
     // The CP redirects here after the dev finishes the GitHub install
-    // flow. CP has already persisted install state on its side — we
-    // just bounce the browser to the dashboard with a success flag so
-    // the SPA refetches /api/github/status.
-    const { bustGhInstallStateCache } = await import('../github/project-state.js')
-    bustGhInstallStateCache()
-    void request
+    // flow with: ?gh=installed&installation_id=...&install_secret=...
+    // &repo_owner=...&repo_name=... — write those into .env.local so
+    // future requests pick them up, then bounce the browser to the
+    // dashboard with just `?gh=installed`.
+    const url = new URL(request.url)
+    const installationIdRaw = url.searchParams.get('installation_id')
+    const installSecret = url.searchParams.get('install_secret')
+    const repoOwner = url.searchParams.get('repo_owner')
+    const repoName = url.searchParams.get('repo_name')
+    if (installationIdRaw && installSecret && repoOwner && repoName) {
+      try {
+        const { writeEnvAdditions } = await import('../wizard/env.js')
+        await writeEnvAdditions(
+          process.cwd(),
+          {
+            GRAVEL_GH_INSTALL_ID: installationIdRaw,
+            GRAVEL_GH_INSTALL_SECRET: installSecret,
+            GRAVEL_GH_REPO_OWNER: repoOwner,
+            GRAVEL_GH_REPO_NAME: repoName,
+          },
+          { overwrite: true },
+        )
+        // Make the env vars visible to subsequent requests in this
+        // process without restart (Next dev rereads .env on file
+        // change anyway, but a fresh tab in the same boot needs this).
+        process.env.GRAVEL_GH_INSTALL_ID = installationIdRaw
+        process.env.GRAVEL_GH_INSTALL_SECRET = installSecret
+        process.env.GRAVEL_GH_REPO_OWNER = repoOwner
+        process.env.GRAVEL_GH_REPO_NAME = repoName
+      } catch (e) {
+        // Fall through to a clean redirect — the dashboard surfaces
+        // the missing-env case as "App not installed" and the user
+        // can retry. Logging is per-host.
+        // eslint-disable-next-line no-console
+        console.error('[gravel] failed to write GH install env vars:', e)
+      }
+    }
     return new Response(null, {
       status: 302,
       headers: { location: `${config.mountPath}/?gh=installed` },

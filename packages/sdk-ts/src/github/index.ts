@@ -8,8 +8,12 @@ export type { GitHubError } from './api.js'
 export { createPullRequest } from './create-pr.js'
 export type { PromptChange, CreatePullRequestArgs, CreatePullRequestResult } from './create-pr.js'
 
-export { buildInstallUrl, mintInstallationToken, DEFAULT_APP_SLUG, DEFAULT_APP_ID } from './app.js'
+export { buildInstallUrl, DEFAULT_APP_SLUG, DEFAULT_APP_ID } from './app.js'
 export type { GravelAppId, InstallationBinding, InstallationToken } from './app.js'
 
-export { getGhInstallState, bustGhInstallStateCache } from './project-state.js'
-export type { GhInstallState } from './project-state.js'
+export {
+  getGhInstallState,
+  bustGhInstallStateCache,
+  mintInstallationTokenViaCp,
+} from './project-state.js'
+export type { GhInstallState, MintedInstallationToken } from './project-state.js'

@@ -25,6 +25,15 @@ export function generatePassword(): string {
 export async function writeEnvAdditions(
   cwd: string,
   vars: Record<string, string>,
+  opts: {
+    /**
+     * When true, replace existing values for keys we're writing
+     * (instead of skipping). Used by the GH install callback so a
+     * reinstall (which produces a new installation_id + secret)
+     * actually updates `.env.local` instead of being silently dropped.
+     */
+    overwrite?: boolean
+  } = {},
 ): Promise<{ file: '.env.local' | '.env' }> {
   // Prefer .env.local (Next convention) if present, else .env. Default
   // for fresh projects is .env.local since that's what the typical
@@ -47,8 +56,38 @@ export async function writeEnvAdditions(
     }
   }
 
+  if (opts.overwrite) {
+    // Line-based rewrite: replace any existing `KEY=...` lines with
+    // the new value, append new keys to the end.
+    const seen = new Set<string>()
+    const updated = existing
+      .split('\n')
+      .map((line) => {
+        const m = line.match(/^([A-Z_][A-Z0-9_]*)=/)
+        if (!m) return line
+        const key = m[1]!
+        if (key in vars) {
+          seen.add(key)
+          return `${key}=${vars[key]}`
+        }
+        return line
+      })
+      .join('\n')
+    const additions: string[] = []
+    for (const [k, v] of Object.entries(vars)) {
+      if (!seen.has(k)) additions.push(`${k}=${v}`)
+    }
+    let next = updated
+    if (additions.length > 0) {
+      const sep = updated.endsWith('\n') ? '' : updated.length > 0 ? '\n' : ''
+      next = updated + sep + additions.join('\n') + '\n'
+    }
+    if (next !== existing) await fs.writeFile(target, next)
+    return { file: basename }
+  }
+
   const lines: string[] = []
-  if (!existing.includes('GRAVEL_PROJECT_ID')) lines.push('# Added by Gravel wizard')
+  if (!existing.includes('GRAVEL_ADMIN_PASSWORD')) lines.push('# Added by Gravel wizard')
   for (const [k, v] of Object.entries(vars)) {
     if (existing.includes(`${k}=`)) continue // never overwrite
     lines.push(`${k}=${v}`)

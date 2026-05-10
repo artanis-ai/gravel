@@ -1,115 +1,113 @@
 /**
- * GitHub install state — queried from the control plane, not stored
- * locally. (The previous design mirrored install state into the
- * customer's DB; that table was dropped 2026-05-08.)
+ * GitHub install state — read straight from process.env.
  *
- * Auth: project API key from `.env`. The CP enforces "you must own
- * this project" via the Clerk-managed key.
+ * The install flow (anonymous, no Gravel cloud account required)
+ * writes four env vars to `.env.local` after the GH App is installed:
+ *
+ *   GRAVEL_GH_INSTALL_ID        — the numeric installation_id GitHub minted
+ *   GRAVEL_GH_INSTALL_SECRET    — HMAC-derived bearer for token mints
+ *   GRAVEL_GH_REPO_OWNER        — repo the install is scoped to (e.g. "acme")
+ *   GRAVEL_GH_REPO_NAME         — repo name (e.g. "app")
+ *
+ * That's the entire SDK-side state. Token minting goes through the CP
+ * via `mintInstallationTokenViaCp()` (passes install_id + install_secret;
+ * CP HMAC-verifies and forwards a 1-hour repo-scoped token from GitHub).
+ *
+ * The legacy project-API-key path (GRAVEL_PROJECT_ID + GRAVEL_API_KEY)
+ * is gone — the install_secret is now the only auth the GH endpoints
+ * need. The project API key still gates Trace Evals (a separate,
+ * metered, billed surface).
  */
 
 export interface GhInstallState {
   installationId: number
   repoOwner: string
   repoName: string
-  installedAt: string
+  /** Bearer secret for CP token-mint calls. Treat as a password. */
+  installSecret: string
 }
 
-interface CachedState {
-  state: GhInstallState | null
-  fetchedAt: number
+export function readGhInstallStateFromEnv(): GhInstallState | null {
+  // Dev stub: bypass everything (used by the fixture suite + UI
+  // iteration without a deployed CP). Pairs with the same flag in
+  // handler/routes.ts.
+  if (process.env.GRAVEL_GH_DEV_STUB === '1') {
+    const owner = process.env.GRAVEL_GH_DEV_REPO_OWNER
+    const name = process.env.GRAVEL_GH_DEV_REPO_NAME
+    if (!owner || !name) return null
+    return {
+      installationId: 0,
+      repoOwner: owner,
+      repoName: name,
+      installSecret: 'dev-stub',
+    }
+  }
+
+  const idRaw = process.env.GRAVEL_GH_INSTALL_ID
+  const secret = process.env.GRAVEL_GH_INSTALL_SECRET
+  const owner = process.env.GRAVEL_GH_REPO_OWNER
+  const name = process.env.GRAVEL_GH_REPO_NAME
+  if (!idRaw || !secret || !owner || !name) return null
+  const installationId = Number(idRaw)
+  if (!Number.isInteger(installationId) || installationId <= 0) return null
+  return { installationId, repoOwner: owner, repoName: name, installSecret: secret }
 }
 
-// Tiny in-process cache so a status-check + a submit don't both hit
-// the CP. TTL is short — install state changes rarely, and freshness
-// is cheap.
-const CACHE_TTL_MS = 30_000
-let cache: CachedState | null = null
+/**
+ * Async to keep call sites (which awaited the old CP-fetching version)
+ * working unchanged. Pure env read now.
+ */
+export async function getGhInstallState(): Promise<GhInstallState | null> {
+  return readGhInstallStateFromEnv()
+}
 
+/** No-op: state lives in env now, nothing to bust. */
+export function bustGhInstallStateCache(): void {
+  /* no-op */
+}
+
+/** Test seam — was a cache reset; kept as a no-op for source-compat. */
 export function _resetGhInstallStateCacheForTests(): void {
-  cache = null
+  /* no-op */
 }
 
 function controlPlaneUrl(): string {
   return process.env.GRAVEL_CONTROL_PLANE_URL ?? 'https://gravel.artanis.ai'
 }
 
-function projectId(): string {
-  const id = process.env.GRAVEL_PROJECT_ID
-  if (!id) throw new Error('GRAVEL_PROJECT_ID not set')
-  return id
-}
-
-function apiKey(): string {
-  const key = process.env.GRAVEL_API_KEY
-  if (!key) throw new Error('GRAVEL_API_KEY not set')
-  return key
+export interface MintedInstallationToken {
+  token: string
+  expiresAt: string
+  repoFullName: string | null
 }
 
 /**
- * Read the install state from the CP, or `null` if the App isn't
- * installed on this project's repo yet.
+ * Ask the CP to mint a 1-hour repo-scoped GitHub installation token.
+ * Auth = the install_secret in our env (HMAC-verified server-side).
  */
-export async function getGhInstallState(): Promise<GhInstallState | null> {
-  if (cache && Date.now() - cache.fetchedAt < CACHE_TTL_MS) {
-    return cache.state
-  }
-  // Dev stub: bypass CP entirely (used by the fixture suite + UI
-  // iteration without a deployed CP). Pairs with the same flag in
-  // handler/routes.ts and github/app.ts.
-  if (process.env.GRAVEL_GH_DEV_STUB === '1') {
-    const owner = process.env.GRAVEL_GH_DEV_REPO_OWNER
-    const name = process.env.GRAVEL_GH_DEV_REPO_NAME
-    if (!owner || !name) return null
-    const state: GhInstallState = {
-      installationId: 0,
-      repoOwner: owner,
-      repoName: name,
-      installedAt: new Date().toISOString(),
-    }
-    cache = { state, fetchedAt: Date.now() }
-    return state
-  }
-
-  const url = new URL(`/api/cli/projects/${encodeURIComponent(projectId())}/github`, controlPlaneUrl())
+export async function mintInstallationTokenViaCp(
+  state: GhInstallState,
+): Promise<MintedInstallationToken> {
+  const url = new URL('/api/cli/github/installation-token', controlPlaneUrl())
   const res = await fetch(url, {
-    headers: { authorization: `Bearer ${apiKey()}` },
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      installation_id: state.installationId,
+      install_secret: state.installSecret,
+    }),
   })
-  if (res.status === 404) {
-    cache = { state: null, fetchedAt: Date.now() }
-    return null
-  }
   if (!res.ok) {
-    throw new Error(`gh-install-state fetch failed: ${res.status} ${await res.text()}`)
+    throw new Error(`installation-token mint failed: ${res.status} ${await res.text()}`)
   }
-  const body = (await res.json()) as
-    | { installed: false }
-    | {
-        installed: true
-        installation_id: number
-        repo_owner: string
-        repo_name: string
-        installed_at: string | null
-      }
-  if (!body.installed) {
-    cache = { state: null, fetchedAt: Date.now() }
-    return null
+  const body = (await res.json()) as {
+    token: string
+    expires_at: string
+    repo_full_name: string | null
   }
-  const state: GhInstallState = {
-    installationId: body.installation_id,
-    repoOwner: body.repo_owner,
-    repoName: body.repo_name,
-    installedAt: body.installed_at ?? new Date().toISOString(),
+  return {
+    token: body.token,
+    expiresAt: body.expires_at,
+    repoFullName: body.repo_full_name,
   }
-  cache = { state, fetchedAt: Date.now() }
-  return state
-}
-
-/**
- * No-op kept for source compatibility with the SDK's install callback
- * route. The CP writes the install state; the SDK has nothing to
- * persist locally. (Bumps the cache so a status-refetch right after
- * install reflects the new state without waiting for the TTL.)
- */
-export function bustGhInstallStateCache(): void {
-  cache = null
 }
