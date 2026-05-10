@@ -215,7 +215,7 @@ function WireTracingNote() {
     <DeveloperNote>
       No traces yet. Run{' '}
       <CopyableCode>npx @artanis-ai/gravel init --traces</CopyableCode>
-      to wire them up then trigger any LLM call from your app.
+      {' '}to wire them up then trigger any LLM call from your app.
     </DeveloperNote>
   )
 }
