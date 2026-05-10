@@ -66,15 +66,17 @@ function withDefaults(samples: unknown): (path: string) => unknown {
 }
 
 describe('Samples list', () => {
-  it('renders the empty state when no samples are returned', async () => {
+  it('renders the empty state + wire-tracing hint when no samples exist', async () => {
     mockedGet.mockImplementation(async (path: string) => {
       const empty: SamplesResponse = { samples: [], total: 0, page: 1, page_size: 20 }
       return withDefaults(empty)(path)
     })
     renderRoute(<SamplesPage />)
     expect(await screen.findByText(/nothing to review yet/i)).toBeInTheDocument()
-    // Developer-only hint visible because auth/me reports localhost.
-    expect(await screen.findByText(/Trace Evals/i)).toBeInTheDocument()
+    // The Trace Evals upsell is hidden — the localhost dev hasn't even
+    // wired tracing yet, so we surface the setup hint instead.
+    expect(await screen.findByText(/instrumentation\.ts/i)).toBeInTheDocument()
+    expect(screen.queryByText(/Trace Evals/i)).not.toBeInTheDocument()
     expect(screen.getByText(/visible only on localhost/i)).toBeInTheDocument()
   })
 

@@ -19,6 +19,7 @@ import {
 } from '../lib/types'
 import { EmptyState } from '../components/EmptyState'
 import { DeveloperNote } from '../components/DeveloperNote'
+import { CopyableCode } from '../components/CopyableCode'
 import { PayloadShape } from '../components/PayloadShape'
 import { SkeletonTable, SkeletonText } from '../components/Skeleton'
 import { Badge } from '../components/Badge'
@@ -116,23 +117,18 @@ function SamplesList() {
   const startIndex = total === 0 ? 0 : (filters.page - 1) * PAGE_SIZE + 1
   const endIndex = Math.min(filters.page * PAGE_SIZE, total)
 
+  // The Trace Evals upsell only makes sense once the user has traces
+  // landing. If the table is empty AND no filters are active, the user
+  // is more likely missing the tracing wiring than the eval product —
+  // surface a setup hint instead.
+  const hasActiveFilters = !!(filters.q || filters.from || filters.to)
+  const isGenuinelyEmpty = !isLoading && !isError && total === 0 && !hasActiveFilters
+
   return (
     // Fill the viewport below the dashboard chrome so the table gets its
     // own scroll region instead of pushing pagination off-screen.
     <div className="flex h-[calc(100vh-9rem)] flex-col gap-3">
-      <DeveloperNote>
-        Enable <strong>Trace Evals</strong> to catch contradictions in
-        feedback and turn feedback into suggested prompt changes.{' '}
-        <a
-          href="https://gravel.artanis.ai/sign-in?redirect_url=%2Fprojects"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="cursor-pointer underline hover:text-text-dark"
-        >
-          Create an API key here
-        </a>
-        .
-      </DeveloperNote>
+      {isGenuinelyEmpty ? <WireTracingNote /> : <TraceEvalsUpsellNote />}
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex-1 min-w-0">
@@ -193,6 +189,38 @@ function SamplesList() {
         onClose={() => setReviewIndex(-1)}
       />
     </div>
+  )
+}
+
+function TraceEvalsUpsellNote() {
+  return (
+    <DeveloperNote>
+      Enable <strong>Trace Evals</strong> to catch contradictions in
+      feedback and turn feedback into suggested prompt changes.{' '}
+      <a
+        href="https://gravel.artanis.ai/sign-in?redirect_url=%2Fprojects"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="cursor-pointer underline hover:text-text-dark"
+      >
+        Create an API key here
+      </a>
+      .
+    </DeveloperNote>
+  )
+}
+
+function WireTracingNote() {
+  return (
+    <DeveloperNote>
+      No traces yet. Make sure <code className="font-mono">instrumentation.ts</code>{' '}
+      imports <code className="font-mono">@artanis-ai/gravel/auto</code> and wires{' '}
+      <code className="font-mono">setGravelTracingConfig(resolveConfig(config))</code>,
+      then trigger any LLM call from your app — a Vercel AI / OpenAI / Anthropic /
+      LangChain / raw-fetch request will land here automatically. Re-run{' '}
+      <CopyableCode>npx @artanis-ai/gravel init --traces</CopyableCode>
+      if the file isn't there.
+    </DeveloperNote>
   )
 }
 
