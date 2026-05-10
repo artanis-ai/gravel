@@ -43,10 +43,6 @@ Init flags:
                              into .env. Requires --project as well.
   --project <id>             CI / scripted installs: pre-bake this project ID.
   --mount-path <path>        Override default '/admin/ai'.
-  --no-migrate               (legacy alias for --no-traces; still honoured)
-  --no-hook                  Skip the pre-commit hook even when --prompts is on.
-  --no-instrumentation       Skip writing instrumentation.ts even when --traces is on.
-  --no-scan                  (legacy; the Prompts pillar runs the scan as a unit)
   --no-deep-scan             Skip the LLM-assisted deep scan (placeholder).
   --no-test-trace            Skip test trace (placeholder).
 
@@ -102,10 +98,6 @@ async function main(): Promise<void> {
         traces: pillarFlag('traces', 'no-traces'),
         yes: !!flags.yes || !!flags.y,
         nonInteractive: !!flags['non-interactive'],
-        noMigrate: !!flags['no-migrate'],
-        noHook: !!flags['no-hook'],
-        noInstrumentation: !!flags['no-instrumentation'],
-        noScan: !!flags['no-scan'],
         noDeepScan: !!flags['no-deep-scan'],
         noTestTrace: !!flags['no-test-trace'],
       })

@@ -30,10 +30,7 @@ def test_default_install_is_local(tmp_path: Path) -> None:
     _bare_python_project(tmp_path)
 
     summary = run_wizard(
-        cwd=tmp_path,
-        no_migrate=True,
-        no_hook=True,
-        no_deep_scan=True,
+        cwd=tmp_path,        no_deep_scan=True,
         no_test_trace=True,
     )
 
@@ -66,10 +63,7 @@ def test_flags_path_bakes_creds_into_env(tmp_path: Path) -> None:
     summary = run_wizard(
         api_key="ak_test",
         project_id="proj_xxx",
-        cwd=tmp_path,
-        no_migrate=True,
-        no_hook=True,
-        no_deep_scan=True,
+        cwd=tmp_path,        no_deep_scan=True,
         no_test_trace=True,
     )
 
@@ -88,10 +82,7 @@ def test_skipping_deep_scan_and_trace_emits_blockers(tmp_path: Path) -> None:
     summary = run_wizard(
         api_key="ak_test",
         project_id="proj_xxx",
-        cwd=tmp_path,
-        no_migrate=True,
-        no_hook=True,
-    )
+        cwd=tmp_path,    )
     assert any("Deep prompt scan" in b for b in summary["blockers"])
     assert any("Test trace" in b for b in summary["blockers"])
 
@@ -101,10 +92,7 @@ def test_init_alias_matches_run_wizard(tmp_path: Path) -> None:
     summary = init(
         api_key="ak_alias",
         project_id="proj_alias",
-        cwd=tmp_path,
-        no_migrate=True,
-        no_hook=True,
-        no_deep_scan=True,
+        cwd=tmp_path,        no_deep_scan=True,
         no_test_trace=True,
     )
     assert summary["api_key"] == "ak_alias"
@@ -116,10 +104,7 @@ def test_libcst_inject_router_into_main(tmp_path: Path) -> None:
     run_wizard(
         api_key="ak_test",
         project_id="proj_xxx",
-        cwd=tmp_path,
-        no_migrate=True,
-        no_hook=True,
-        no_deep_scan=True,
+        cwd=tmp_path,        no_deep_scan=True,
         no_test_trace=True,
     )
     main_text = (tmp_path / "main.py").read_text(encoding="utf-8")
@@ -135,10 +120,7 @@ def test_existing_env_preserved(tmp_path: Path) -> None:
     run_wizard(
         api_key="ak_test",
         project_id="proj_xxx",
-        cwd=tmp_path,
-        no_migrate=True,
-        no_hook=True,
-        no_deep_scan=True,
+        cwd=tmp_path,        no_deep_scan=True,
         no_test_trace=True,
     )
     env_text = (tmp_path / ".env").read_text(encoding="utf-8")
@@ -155,10 +137,7 @@ def test_env_fallback_works_when_flags_missing(
     monkeypatch.setenv("GRAVEL_API_KEY", "env_ak")
     monkeypatch.setenv("GRAVEL_PROJECT_ID", "env_proj")
     summary = run_wizard(
-        cwd=tmp_path,
-        no_migrate=True,
-        no_hook=True,
-        no_deep_scan=True,
+        cwd=tmp_path,        no_deep_scan=True,
         no_test_trace=True,
     )
     assert summary["auth_mode"] == "flags"
@@ -171,10 +150,7 @@ def test_only_api_key_without_project_falls_back_to_local(tmp_path: Path) -> Non
     _bare_python_project(tmp_path)
     summary = run_wizard(
         api_key="ak_orphan",
-        cwd=tmp_path,
-        no_migrate=True,
-        no_hook=True,
-        no_deep_scan=True,
+        cwd=tmp_path,        no_deep_scan=True,
         no_test_trace=True,
     )
     assert summary["auth_mode"] == "local"

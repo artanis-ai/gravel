@@ -41,16 +41,16 @@ npx @artanis-ai/gravel init --ci --api-key $GRAVEL_API_KEY --project $GRAVEL_PRO
 
 All prompts have flags:
 
-| Flag                  | Effect                                        |
-| --------------------- | --------------------------------------------- |
-| `--ci`                | Master switch, fail on missing required flags |
-| `--api-key <key>`     | Skip OAuth                                    |
-| `--project <id>`      | Specify project                               |
-| `--mount-path <path>` | Override default `/admin/ai`                  |
-| `--no-migrate`        | Skip migrations                               |
-| `--no-hook`           | Skip pre-commit hook                          |
-| `--no-deep-scan`      | Skip the optional deep prompt scan            |
-| `--no-test-trace`     | Skip end-to-end test trace                    |
+| Flag                          | Effect                                          |
+| ----------------------------- | ----------------------------------------------- |
+| `--yes`, `--non-interactive`  | Assume yes to every prompt (CI-friendly)        |
+| `--api-key <key>`             | Pre-bake project key into `.env`                |
+| `--project <id>`              | Pre-bake project ID into `.env`                 |
+| `--mount-path <path>`         | Override default `/admin/ai`                    |
+| `--prompts`, `--no-prompts`   | Toggle the prompts pillar (manifest scan + hook) |
+| `--traces`, `--no-traces`     | Toggle the traces pillar (DB tables + tracing)   |
+| `--no-deep-scan`              | Skip the optional deep prompt scan              |
+| `--no-test-trace`             | Skip end-to-end test trace                      |
 
 ## What you'll see after install
 

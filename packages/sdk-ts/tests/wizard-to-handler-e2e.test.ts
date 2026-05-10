@@ -104,7 +104,6 @@ describe('wizard → handler end-to-end (prompts-only)', () => {
       cwd: workdir,
       prompts: true,
       traces: false,
-      noHook: true,
       noDeepScan: true,
       noTestTrace: true,
     })

@@ -67,14 +67,6 @@ export interface WizardOptions {
   prompts?: boolean
   /** Toggle the traces pillar (DB tables + instrumentation). Default: ask, then yes. */
   traces?: boolean
-  /** @deprecated use `traces: false`. Kept for backwards-compat with --no-migrate. */
-  noMigrate?: boolean
-  /** @deprecated use `prompts: false`. Kept for backwards-compat with --no-hook. */
-  noHook?: boolean
-  /** @deprecated use `traces: false`. Kept for backwards-compat with --no-instrumentation. */
-  noInstrumentation?: boolean
-  /** @deprecated use `prompts: false`. */
-  noScan?: boolean
   noDeepScan?: boolean
   noTestTrace?: boolean
   /** Skip interactive prompts even on a TTY — assume yes for everything. */
@@ -139,24 +131,6 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
   // instead of clobbering files.
   const state = await inspectState(cwd, detection)
 
-  // Early exit: both pillars explicitly off via flags. Skip everything,
-  // including the dashboard mount — there's nothing for it to host.
-  if (opts.prompts === false && opts.traces === false) {
-    return summary({
-      detection,
-      password: null,
-      mountedRoute: null,
-      ranBootstrap: false,
-      installedHook: null,
-      controlPlane,
-      blockers,
-      projectId,
-      apiKey,
-      authMode,
-      pillars: { dashboard: false, prompts: false, traces: false },
-    })
-  }
-
   welcome(
     'Gravel install',
     'Embedded prompt management and evals for domain experts',
@@ -172,21 +146,11 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
     say('')
   }
 
-  // Resolve which pillars to attempt. Flags take priority; otherwise
+  // Resolve which pillars to attempt. Explicit flags win; otherwise
   // we ask at each section so the user can see the previous result
-  // before deciding on the next one.
-  const wantPromptsResolved =
-    typeof opts.prompts === 'boolean'
-      ? opts.prompts
-      : opts.noHook === true && opts.noScan === true
-        ? false
-        : null // null = ask at the section
-  const wantTracesResolved =
-    typeof opts.traces === 'boolean'
-      ? opts.traces
-      : opts.noMigrate === true && opts.noInstrumentation === true
-        ? false
-        : null
+  // before deciding on the next one (null = ask).
+  const wantPromptsResolved = typeof opts.prompts === 'boolean' ? opts.prompts : null
+  const wantTracesResolved = typeof opts.traces === 'boolean' ? opts.traces : null
 
   // ── Step 1 of 3 — Dashboard ──
   // Unconditional: nothing else works without it. The only choice the
@@ -297,7 +261,7 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
       )
       if (manifest) {
         promptsRan = true
-        if (detection.hasGit && opts.noHook !== true && !state.hookInstalled) {
+        if (detection.hasGit && !state.hookInstalled) {
           say('')
           say(
             `Optional: install a pre-commit hook so the manifest stays in sync ` +
@@ -364,16 +328,10 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
       bullet('Skipped. Run `gravel init --traces` later.', 'skip')
     } else {
       tracesAttempted = true
-      if (opts.noMigrate === true) {
-        bullet('Schema bootstrap skipped (--no-migrate)', 'skip')
-        // Still install the tracing hooks if Next.
-        await maybeInstallTracingHooks(detection, cwd, opts, state)
-      } else {
-        const proceed = await runTracesPillar(cwd, ask, detection, opts, state)
-        if (proceed.ranBootstrap) ranBootstrap = true
-        if (proceed.skipped) {
-          bullet(proceed.skipped, 'skip')
-        }
+      const proceed = await runTracesPillar(cwd, ask, detection, opts, state)
+      if (proceed.ranBootstrap) ranBootstrap = true
+      if (proceed.skipped) {
+        bullet(proceed.skipped, 'skip')
       }
     }
   }
@@ -911,11 +869,10 @@ async function runTracesPillar(
 async function maybeInstallTracingHooks(
   detection: Awaited<ReturnType<typeof detect>>,
   cwd: string,
-  opts: WizardOptions,
+  _opts: WizardOptions,
   state: InspectedState,
 ): Promise<void> {
   if (!detection.framework.startsWith('next-')) return
-  if (opts.noInstrumentation === true) return
   if (state.instrumentationExists) {
     bullet('instrumentation.ts already present', 'skip')
     return

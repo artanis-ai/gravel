@@ -75,7 +75,7 @@ describe('Samples list', () => {
     expect(await screen.findByText(/nothing to review yet/i)).toBeInTheDocument()
     // The Trace Evals upsell is hidden — the localhost dev hasn't even
     // wired tracing yet, so we surface the setup hint instead.
-    expect(await screen.findByText(/instrumentation\.ts/i)).toBeInTheDocument()
+    expect(await screen.findByText(/no traces yet/i)).toBeInTheDocument()
     expect(screen.queryByText(/Trace Evals/i)).not.toBeInTheDocument()
     expect(screen.getByText(/visible only on localhost/i)).toBeInTheDocument()
   })

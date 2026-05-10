@@ -213,13 +213,9 @@ function TraceEvalsUpsellNote() {
 function WireTracingNote() {
   return (
     <DeveloperNote>
-      No traces yet. Make sure <code className="font-mono">instrumentation.ts</code>{' '}
-      imports <code className="font-mono">@artanis-ai/gravel/auto</code> and wires{' '}
-      <code className="font-mono">setGravelTracingConfig(resolveConfig(config))</code>,
-      then trigger any LLM call from your app — a Vercel AI / OpenAI / Anthropic /
-      LangChain / raw-fetch request will land here automatically. Re-run{' '}
+      No traces yet. Run{' '}
       <CopyableCode>npx @artanis-ai/gravel init --traces</CopyableCode>
-      if the file isn't there.
+      to wire them up then trigger any LLM call from your app.
     </DeveloperNote>
   )
 }

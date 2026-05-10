@@ -16,16 +16,16 @@ gravel help                Show help
 
 ## Init flags
 
-| Flag                  | Effect                                        |
-| --------------------- | --------------------------------------------- |
-| `--ci`                | Non-interactive mode                          |
-| `--api-key <key>`     | Skip OAuth; use this project key              |
-| `--project <id>`      | Specify project ID                            |
-| `--mount-path <path>` | Override default `/admin/ai`                  |
-| `--no-migrate`        | Skip running migrations                       |
-| `--no-hook`           | Skip pre-commit hook installation             |
-| `--no-deep-scan`      | Skip deep scan (also skipped if not implemented yet) |
-| `--no-test-trace`     | Skip end-to-end test trace                    |
+| Flag                          | Effect                                        |
+| ----------------------------- | --------------------------------------------- |
+| `--yes`, `--non-interactive`  | Assume yes to every prompt                    |
+| `--api-key <key>`             | Pre-bake project key into `.env`              |
+| `--project <id>`              | Pre-bake project ID into `.env`               |
+| `--mount-path <path>`         | Override default `/admin/ai`                  |
+| `--prompts`, `--no-prompts`   | Toggle the prompts pillar                     |
+| `--traces`, `--no-traces`     | Toggle the traces pillar                      |
+| `--no-deep-scan`              | Skip deep scan (also skipped if not implemented yet) |
+| `--no-test-trace`             | Skip end-to-end test trace                    |
 
 ## Python equivalent
 

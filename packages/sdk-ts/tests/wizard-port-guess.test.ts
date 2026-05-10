@@ -49,7 +49,6 @@ async function runAndGetUrl(): Promise<string> {
     cwd: workdir,
     prompts: true,
     traces: false,
-    noHook: true,
     noDeepScan: true,
     noTestTrace: true,
   })

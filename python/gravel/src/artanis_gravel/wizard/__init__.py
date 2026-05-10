@@ -27,8 +27,8 @@ def run_wizard(
     project: str | None = None,
     project_id: str | None = None,
     mount_path: str = "/admin/ai",
-    no_migrate: bool = False,
-    no_hook: bool = False,
+    prompts: bool | None = None,
+    traces: bool | None = None,
     no_deep_scan: bool = False,
     no_test_trace: bool = False,
     cwd: str | Path | None = None,
@@ -76,18 +76,20 @@ def run_wizard(
     mounted = mount_dashboard_route(detection, cwd, mount_path)
     generate_config_file(detection, cwd, mount_path=mount_path)
 
-    # Step 6 — run schema bootstrap (idempotent).
+    # Step 6 — run schema bootstrap (idempotent). Skipped when the
+    # caller opted out of the traces pillar.
     ran_bootstrap = False
-    if not no_migrate:
+    if traces is not False:
         try:
             run_bootstrap(cwd)
             ran_bootstrap = True
         except Exception as e:  # noqa: BLE001 — surfacing as a blocker.
             blockers.append(f"Schema bootstrap failed: {e}")
 
-    # Step 7 — pre-commit hook for the manifest.
+    # Step 7 — pre-commit hook for the manifest. Skipped when prompts
+    # pillar is off (the manifest scan that the hook validates won't run).
     installed_hook: dict[str, Any] | None = None
-    if not no_hook and detection.has_git:
+    if detection.has_git and prompts is not False:
         from ..manifest import install_hook
 
         result = install_hook(cwd)

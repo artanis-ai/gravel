@@ -52,8 +52,8 @@ describe('runWizard', () => {
 
     const summary = await runWizard({
       cwd,
-      noMigrate: true,
-      noHook: true,
+      prompts: false,
+      traces: false,
       noDeepScan: true,
       noTestTrace: true,
     })
@@ -80,8 +80,8 @@ describe('runWizard', () => {
       cwd,
       apiKey: 'ak_supplied_123',
       project: 'proj_supplied_456',
-      noMigrate: true,
-      noHook: true,
+      prompts: false,
+      traces: false,
       noDeepScan: true,
       noTestTrace: true,
     })
@@ -108,8 +108,8 @@ describe('runWizard', () => {
 
     const summary = await runWizard({
       cwd,
-      noMigrate: true,
-      noHook: true,
+      prompts: false,
+      traces: false,
       noDeepScan: true,
       noTestTrace: true,
     })
@@ -126,8 +126,8 @@ describe('runWizard', () => {
     const summary = await runWizard({
       cwd,
       apiKey: 'ak_orphan',
-      noMigrate: true,
-      noHook: true,
+      prompts: false,
+      traces: false,
       noDeepScan: true,
       noTestTrace: true,
     })
@@ -148,7 +148,6 @@ describe('runWizard', () => {
       cwd,
       prompts: true,
       traces: false,
-      noHook: true,
       noDeepScan: true,
       noTestTrace: true,
     })
@@ -165,12 +164,13 @@ describe('runWizard', () => {
     const cwd = await mkSandbox()
     await fs.writeFile(join(cwd, 'system.md'), 'You are a careful assistant.')
 
+    // No DATABASE_URL in this sandbox, so the traces pillar's pre-flight
+    // probe bails with "no-url" and the pillar skips bootstrap +
+    // instrumentation cleanly — no need for granular skip flags.
     const summary = await runWizard({
       cwd,
       prompts: false,
       traces: true,
-      noMigrate: true, // Avoid actually trying to bootstrap (no DATABASE_URL).
-      noInstrumentation: true,
       noDeepScan: true,
       noTestTrace: true,
     })
@@ -187,7 +187,12 @@ describe('runWizard', () => {
     expect(manifestExists).toBe(false)
   })
 
-  it('neither pillar: exits cleanly with empty summary, no .env writes', async () => {
+  it('neither pillar: dashboard still mounts, no manifest or DB side-effects', async () => {
+    // The dashboard pillar is unconditional — even with both feature
+    // pillars off, the embedded admin UI lands so the user can wire
+    // them up later. (The fixture verify harness relies on this:
+    // install journey runs `--no-prompts --no-traces` to test the
+    // mount + .env write in isolation.)
     const cwd = await mkSandbox()
 
     const summary = await runWizard({
@@ -198,15 +203,19 @@ describe('runWizard', () => {
       noTestTrace: true,
     })
 
-    expect(summary.pillars).toEqual({ dashboard: false, prompts: false, traces: false })
-    expect(summary.passwordGenerated).toBeNull()
-    expect(summary.mountedRoute).toBeNull()
-    let envExists = true
+    expect(summary.pillars.dashboard).toBe(true)
+    expect(summary.pillars.prompts).toBe(false)
+    expect(summary.pillars.traces).toBe(false)
+    expect(summary.passwordGenerated).toMatch(/^[A-Za-z0-9]{32}$/)
+    expect(summary.mountedRoute).not.toBeNull()
+    const envContents = await fs.readFile(join(cwd, '.env.local'), 'utf8')
+    expect(envContents).toMatch(/GRAVEL_ADMIN_PASSWORD=/)
+    let manifestExists = true
     try {
-      await fs.stat(join(cwd, '.env.local'))
+      await fs.stat(join(cwd, '.gravel/manifest.json'))
     } catch {
-      envExists = false
+      manifestExists = false
     }
-    expect(envExists).toBe(false)
+    expect(manifestExists).toBe(false)
   })
 })

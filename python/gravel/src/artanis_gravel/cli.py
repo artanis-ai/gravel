@@ -21,8 +21,10 @@ def cli() -> None:
 @click.option("--api-key", help="CI installs: pre-bake this project key into .env.")
 @click.option("--project", help="CI installs: pre-bake this project ID into .env.")
 @click.option("--mount-path", default="/admin/ai")
-@click.option("--no-migrate", is_flag=True)
-@click.option("--no-hook", is_flag=True)
+@click.option("--prompts/--no-prompts", default=None,
+              help="Toggle the prompts pillar (manifest scan + hook).")
+@click.option("--traces/--no-traces", default=None,
+              help="Toggle the traces pillar (DB tables + instrumentation).")
 @click.option("--no-deep-scan", is_flag=True)
 @click.option("--no-test-trace", is_flag=True)
 def init(**kwargs) -> None:
