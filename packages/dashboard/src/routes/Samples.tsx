@@ -124,7 +124,7 @@ function SamplesList() {
         Enable <strong>Trace Evals</strong> to catch contradictions in
         feedback and turn feedback into suggested prompt changes.{' '}
         <a
-          href="https://gravel.artanis.ai/sign-in?redirect_url=%2Fprojects&utm_source=gravel-dashboard&utm_medium=trace-evals-upsell"
+          href="https://gravel.artanis.ai/sign-in?redirect_url=%2Fprojects"
           target="_blank"
           rel="noopener noreferrer"
           className="cursor-pointer underline hover:text-text-dark"
