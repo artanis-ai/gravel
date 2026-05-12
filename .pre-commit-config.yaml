@@ -1,0 +1,77 @@
+# Pre-commit hook config — gravel monorepo.
+#
+# Two stages:
+#   * pre-commit (every `git commit`)  — fast checks, must stay under a
+#     few seconds. Versioning + lint only.
+#   * pre-push    (every `git push`)   — slower checks; runs the SDK
+#     test suites + the wizard's Go tests. Catches anything the fast
+#     hooks let through before it lands on origin/main.
+#
+# Setup (one-time, per clone):
+#   pip install pre-commit          # or `uv tool install pre-commit`
+#   pre-commit install               # installs the pre-commit hook
+#   pre-commit install -t pre-push   # installs the pre-push hook
+#
+# Bypass (rare, deliberate): `git commit --no-verify` / `git push --no-verify`.
+# CI (.github/workflows/version-sync.yml) re-runs the version check
+# regardless, so a bypassed local hook still gets caught at PR time.
+
+repos:
+  - repo: local
+    hooks:
+      # --- pre-commit (fast) -----------------------------------------
+      - id: sdk-versions-in-sync
+        name: SDK versions in sync (python ↔ ts)
+        description: |
+          Catches the v0.5.3 / v0.5.4 failure mode: bumping one SDK's
+          version without the other, then tagging — npm publish 409s
+          on "cannot publish over previously published version".
+        entry: tools/check-sdk-versions-in-sync.sh
+        language: system
+        pass_filenames: false
+        # Only runs when one of the version-bearing manifests changes.
+        files: ^(packages/sdk-ts/package\.json|python/gravel/pyproject\.toml)$
+
+      - id: go-vet
+        name: go vet (cli)
+        description: Static analysis of the Go wizard. Surfaces unreachable code, suspicious printf args, etc.
+        entry: bash -c 'cd cli && go vet ./...'
+        language: system
+        pass_filenames: false
+        files: ^cli/.*\.go$
+
+      - id: ruff
+        name: ruff (python sdk)
+        description: Lint the Python SDK + tests. Same config as CI.
+        entry: bash -c 'cd python/gravel && uv run --quiet ruff check src'
+        language: system
+        pass_filenames: false
+        files: ^python/gravel/.*\.py$
+
+      # --- pre-push (slower) -----------------------------------------
+      - id: go-test
+        name: go test (cli + manifest + migrate + detect)
+        description: Run the full Go test suite before any push. ~3s.
+        stages: [pre-push]
+        entry: bash -c 'cd cli && go test ./...'
+        language: system
+        pass_filenames: false
+
+      - id: python-test
+        name: pytest (python/gravel)
+        description: Run the Python SDK test suite before any push. ~3s.
+        stages: [pre-push]
+        entry: bash -c 'cd python/gravel && uv run --with fastapi --with httpx --with pytest pytest tests/ -q'
+        language: system
+        pass_filenames: false
+
+      - id: sdk-versions-in-sync-prepush
+        name: SDK versions in sync (gate before push)
+        description: |
+          Re-run the version check immediately before push so a
+          bypassed pre-commit hook (--no-verify) can't sneak a tag
+          out that'd break the publish workflows.
+        stages: [pre-push]
+        entry: tools/check-sdk-versions-in-sync.sh
+        language: system
+        pass_filenames: false

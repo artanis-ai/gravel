@@ -1,0 +1,46 @@
+name: SDK version sync
+
+# Defense in depth for the pre-commit / pre-push hook in
+# .pre-commit-config.yaml. The hook can be bypassed with --no-verify
+# or skipped entirely by contributors who haven't run `pre-commit
+# install`. This workflow re-runs the same check unconditionally on
+# every push to main and every PR so the mismatch can never sneak
+# all the way to a `v*` tag where it'd take out the npm publish.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+jobs:
+  check:
+    name: Both SDKs at the same version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify python/gravel/pyproject.toml == packages/sdk-ts/package.json
+        run: tools/check-sdk-versions-in-sync.sh
+
+      - name: On tag push — also verify the tag name matches the SDK versions
+        # Tags trigger publish-python.yml AND publish-npm.yml. The
+        # version-sync check above guarantees the two SDKs agree, but
+        # if they agree on (say) 0.5.3 and someone pushes a v0.5.4
+        # tag, the npm workflow still fails because package.json
+        # still says 0.5.3. Catch that here.
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -e
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PY_VERSION=$(grep -m1 -E '^version[[:space:]]*=' python/gravel/pyproject.toml | sed -E 's/^version[[:space:]]*=[[:space:]]*"([^"]+)"/\1/')
+          TS_VERSION=$(grep -m1 -E '"version"[[:space:]]*:' packages/sdk-ts/package.json | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')
+          if [ "$TAG_VERSION" != "$PY_VERSION" ] || [ "$TAG_VERSION" != "$TS_VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match SDK versions:"
+            echo "  tag                          = $TAG_VERSION"
+            echo "  python/gravel/pyproject.toml = $PY_VERSION"
+            echo "  packages/sdk-ts/package.json = $TS_VERSION"
+            echo "Bump both manifests to $TAG_VERSION (or retag at a matching commit) before retrying."
+            exit 1
+          fi
+          echo "Tag $GITHUB_REF_NAME matches both SDK versions ($TAG_VERSION)."
