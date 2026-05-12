@@ -21,7 +21,7 @@ func newInitCmd() *cobra.Command {
 		noTestTrace bool
 		apiKey      string
 		projectID   string
-		skipOAuth   bool
+		withOAuth   bool // opt-in until the control plane endpoint is live
 		baseURL     string
 	)
 	cmd := &cobra.Command{
@@ -30,8 +30,9 @@ func newInitCmd() *cobra.Command {
 		Long: `init runs the install wizard against the current directory:
 
   1. Detect framework, package manager, auth provider, DB driver.
-  2. Authenticate against gravel.artanis.ai (browser handshake, skipped when
-     --api-key + --project are passed, or --skip-oauth is set).
+  2. (--oauth only) Authenticate against gravel.artanis.ai via a browser
+     handshake. Off by default while the control-plane endpoint is stubbed;
+     pre-bake creds via --api-key + --project for CI flows.
   3. Write gravel.config.{ts,py} tailored to that stack.
   4. Mount the dashboard route for the detected framework (Next.js App Router
      and Pages Router get the route file written directly; other frameworks
@@ -71,10 +72,14 @@ either accepts what was passed via flags or applies the defaults.`,
 				opts.WithTraces = true
 			}
 
-			// OAuth: skip if creds passed explicitly, --skip-oauth set,
-			// or running non-interactively without --api-key/--project.
-			// Matches the TS wizard's "creds-or-browser-or-stub" branch.
-			needsBrowserOAuth := apiKey == "" && projectID == "" && !skipOAuth && !yes
+			// OAuth: opt-in via --oauth while the gravel.artanis.ai
+			// /cli/auth endpoint is stubbed. Without this gate, a fresh
+			// `npx @artanis-ai/gravel init` would open a browser to a
+			// 404 then hang for 10 minutes on the claim-poll timeout —
+			// the v0.5.0 regression I shipped. Re-enable by flipping
+			// this back to default-on once the control plane lands the
+			// real handshake.
+			needsBrowserOAuth := withOAuth && apiKey == "" && projectID == "" && !yes
 			if needsBrowserOAuth {
 				fmt.Fprintln(out, "Opening browser for Gravel sign-in (skip with --skip-oauth or pass --api-key + --project)...")
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
@@ -116,8 +121,13 @@ either accepts what was passed via flags or applies the defaults.`,
 	cmd.Flags().BoolVar(&noTestTrace, "no-test-trace", false, "Skip the end-to-end test trace step.")
 	cmd.Flags().StringVar(&apiKey, "api-key", "", "Pre-bake project key into .env.local.")
 	cmd.Flags().StringVar(&projectID, "project", "", "Pre-bake project ID into .env.local.")
-	cmd.Flags().BoolVar(&skipOAuth, "skip-oauth", false, "Skip the browser sign-in handshake.")
+	cmd.Flags().BoolVar(&withOAuth, "oauth", false, "Run the browser sign-in handshake against gravel.artanis.ai. Off by default while the endpoint is stubbed; pre-bake creds with --api-key + --project instead.")
 	cmd.Flags().StringVar(&baseURL, "control-plane", "", "Override the gravel.artanis.ai control-plane URL (testing only).")
+	// Back-compat: keep --skip-oauth so existing scripts don't break,
+	// but it's now a no-op (OAuth is already off by default).
+	var _skipOAuth bool
+	cmd.Flags().BoolVar(&_skipOAuth, "skip-oauth", false, "Deprecated: OAuth is off by default. Pass --oauth to opt in.")
+	_ = cmd.Flags().MarkHidden("skip-oauth")
 	return cmd
 }
 
