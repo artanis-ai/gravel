@@ -49,6 +49,13 @@ jobs:
         working-directory: packages/dashboard
         run: pnpm build
 
+      - name: Stage dashboard into Python package tree
+        # The wheel target picks up src/artanis_gravel/_dashboard_dist/
+        # via `artifacts = [...]`. Copying the built dashboard there
+        # avoids Hatch's `force-include` (which errors on every uv sync
+        # in CI because the dashboard hasn't been built at that point).
+        run: tools/sync-dashboard-dist.sh
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
