@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/artanis-ai/gravel/cli/internal/wizard"
 	"github.com/spf13/cobra"
@@ -21,8 +20,6 @@ func newInitCmd() *cobra.Command {
 		noTestTrace bool
 		apiKey      string
 		projectID   string
-		withOAuth   bool // opt-in until the control plane endpoint is live
-		baseURL     string
 	)
 	cmd := &cobra.Command{
 		Use:   "init",
@@ -55,6 +52,24 @@ either accepts what was passed via flags or applies the defaults.`,
 				return err
 			}
 			out := cmd.OutOrStdout()
+
+			// Cloud credentials, if any, come from explicit flags or
+			// env vars. `gravel init` does NOT run a browser OAuth
+			// handshake — that's a separate `gravel login` flow once
+			// the control plane endpoint lands. Matches the original
+			// TS wizard's behaviour (see git history of
+			// packages/sdk-ts/src/wizard/index.ts pre-v0.3): read
+			// --api-key / --project (or GRAVEL_API_KEY / GRAVEL_PROJECT_ID
+			// env), write to .env.local if both are present, otherwise
+			// proceed without cloud creds. The dashboard's "connect to
+			// cloud" CTA handles the OAuth handshake on first login.
+			if apiKey == "" {
+				apiKey = os.Getenv("GRAVEL_API_KEY")
+			}
+			if projectID == "" {
+				projectID = os.Getenv("GRAVEL_PROJECT_ID")
+			}
+
 			opts := wizard.RunOptions{
 				CWD:           cwd,
 				MountPath:     mountPath,
@@ -70,37 +85,6 @@ either accepts what was passed via flags or applies the defaults.`,
 			}
 			if withTraces {
 				opts.WithTraces = true
-			}
-
-			// OAuth: opt-in via --oauth while the gravel.artanis.ai
-			// /cli/auth endpoint is stubbed. Without this gate, a fresh
-			// `npx @artanis-ai/gravel init` would open a browser to a
-			// 404 then hang for 10 minutes on the claim-poll timeout —
-			// the v0.5.0 regression I shipped. Re-enable by flipping
-			// this back to default-on once the control plane lands the
-			// real handshake.
-			needsBrowserOAuth := withOAuth && apiKey == "" && projectID == "" && !yes
-			if needsBrowserOAuth {
-				fmt.Fprintln(out, "Opening browser for Gravel sign-in (skip with --skip-oauth or pass --api-key + --project)...")
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-				defer cancel()
-				claim, err := wizard.BrowserOAuthHandshake(ctx, wizard.OAuthOptions{
-					BaseURL: baseURL,
-					OnAuthURL: func(u string) {
-						fmt.Fprintf(out, "  If your browser didn't open, visit: %s\n", u)
-					},
-				})
-				if err != nil {
-					fmt.Fprintf(out, "  OAuth skipped: %v\n", err)
-					fmt.Fprintln(out, "  Continuing without API credentials. Add them later via the dashboard or re-run `gravel init`.")
-				} else {
-					if err := wizard.WriteAPICredsToEnv(cwd, claim); err != nil {
-						return fmt.Errorf("write OAuth credentials: %w", err)
-					}
-					opts.APIKey = claim.APIKey
-					opts.ProjectID = claim.ProjectID
-					fmt.Fprintf(out, "  Signed in to %s\n", coalesce(claim.OrganizationName, claim.ProjectID))
-				}
 			}
 
 			res, err := wizard.Run(context.Background(), opts, out)
@@ -119,23 +103,20 @@ either accepts what was passed via flags or applies the defaults.`,
 	cmd.Flags().BoolVar(&withTraces, "traces", false, "Install the traces pillar (DB tables + tracing).")
 	cmd.Flags().BoolVar(&noTraces, "no-traces", false, "Skip the traces pillar.")
 	cmd.Flags().BoolVar(&noTestTrace, "no-test-trace", false, "Skip the end-to-end test trace step.")
-	cmd.Flags().StringVar(&apiKey, "api-key", "", "Pre-bake project key into .env.local.")
-	cmd.Flags().StringVar(&projectID, "project", "", "Pre-bake project ID into .env.local.")
-	cmd.Flags().BoolVar(&withOAuth, "oauth", false, "Run the browser sign-in handshake against gravel.artanis.ai. Off by default while the endpoint is stubbed; pre-bake creds with --api-key + --project instead.")
-	cmd.Flags().StringVar(&baseURL, "control-plane", "", "Override the gravel.artanis.ai control-plane URL (testing only).")
-	// Back-compat: keep --skip-oauth so existing scripts don't break,
-	// but it's now a no-op (OAuth is already off by default).
-	var _skipOAuth bool
-	cmd.Flags().BoolVar(&_skipOAuth, "skip-oauth", false, "Deprecated: OAuth is off by default. Pass --oauth to opt in.")
-	_ = cmd.Flags().MarkHidden("skip-oauth")
-	return cmd
-}
-
-func coalesce(a, b string) string {
-	if a != "" {
-		return a
+	cmd.Flags().StringVar(&apiKey, "api-key", "", "Pre-bake project key into .env.local. Reads $GRAVEL_API_KEY if unset.")
+	cmd.Flags().StringVar(&projectID, "project", "", "Pre-bake project ID into .env.local. Reads $GRAVEL_PROJECT_ID if unset.")
+	// Back-compat: silently accept old --oauth / --skip-oauth / --control-plane
+	// flags from v0.5.0 so existing scripts don't break. All three are no-ops
+	// now; the wizard never opens a browser handshake (was a v0.5.0 bug).
+	var _oauth, _skipOAuth bool
+	var _controlPlane string
+	cmd.Flags().BoolVar(&_oauth, "oauth", false, "Deprecated no-op. See `gravel login` (lands when control plane endpoint is live).")
+	cmd.Flags().BoolVar(&_skipOAuth, "skip-oauth", false, "Deprecated no-op. OAuth never runs from init.")
+	cmd.Flags().StringVar(&_controlPlane, "control-plane", "", "Deprecated no-op.")
+	for _, f := range []string{"oauth", "skip-oauth", "control-plane"} {
+		_ = cmd.Flags().MarkHidden(f)
 	}
-	return b
+	return cmd
 }
 
 func printSummary(cmd *cobra.Command, r wizard.RunResult) {
