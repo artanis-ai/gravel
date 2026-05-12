@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'wouter'
 import type { ReactElement, ReactNode } from 'react'
 import { UpdateBanner } from './UpdateBanner'
+import { PendingMigrationsBanner } from './PendingMigrationsBanner'
 
 declare global {
   interface Window {
@@ -48,8 +49,9 @@ export function Layout({ children, user }: { children: ReactNode; user?: User })
   const mountPath = window.__GRAVEL_MOUNT_PATH__ ?? ''
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="h-screen flex flex-col">
       <UpdateBanner mountPath={mountPath} isAdmin={isAdmin} />
+      <PendingMigrationsBanner mountPath={mountPath} isAdmin={isAdmin} />
       <header className="bg-cream">
         <div className="flex flex-col items-center gap-2 px-4 py-4 sm:px-6">
           {productName ? (
@@ -60,8 +62,8 @@ export function Layout({ children, user }: { children: ReactNode; user?: User })
           <Tabs location={location} />
         </div>
       </header>
-      <main className="flex-1 overflow-y-auto">
-        <div className="px-4 py-6 sm:px-8 sm:py-8">{children}</div>
+      <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <div className="flex min-h-0 flex-1 flex-col px-4 pb-6 pt-3 sm:px-8 sm:pb-8 sm:pt-3">{children}</div>
       </main>
     </div>
   )

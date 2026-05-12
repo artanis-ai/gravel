@@ -18,6 +18,7 @@ import { CopyableCode } from '../components/CopyableCode'
 import { SkeletonText } from '../components/Skeleton'
 import { PromptBadge } from '../components/prompts/PromptBadge'
 import { SubmitModal, type SubmitDraftEntry } from '../components/prompts/SubmitModal'
+import { GithubNotConnectedDialog } from '../components/prompts/GithubNotConnectedDialog'
 import { listDrafts, type LocalDraft } from '../lib/drafts'
 import { useCurrentUser } from '../lib/useCurrentUser'
 import type {
@@ -36,6 +37,7 @@ export function PromptsPage({ promptId }: { promptId?: string } = {}) {
 function PromptsList() {
   const [search, setSearch] = useState('')
   const [submitOpen, setSubmitOpen] = useState(false)
+  const [needsGithubOpen, setNeedsGithubOpen] = useState(false)
   const [submittedPrUrl, setSubmittedPrUrl] = useState<string | null>(null)
   const queryClient = useQueryClient()
   const userId = useCurrentUser()?.id ?? null
@@ -116,7 +118,14 @@ function PromptsList() {
           <button
             type="button"
             className="shrink-0 cursor-pointer rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary-dark"
-            onClick={() => setSubmitOpen(true)}
+            data-testid="submit-changes"
+            onClick={() => {
+              // Without a connected repo we have nowhere to open the PR;
+              // explain the gap rather than letting the submit POST 4xx
+              // with a server-side error message the DE can't act on.
+              if (!ghConnected) setNeedsGithubOpen(true)
+              else setSubmitOpen(true)
+            }}
           >
             Submit changes ({draftsQ.data?.length ?? 0})
           </button>
@@ -176,6 +185,11 @@ function PromptsList() {
           setSubmittedPrUrl(result.pr.prUrl)
           queryClient.invalidateQueries({ queryKey: ['prompts', 'drafts'] })
         }}
+      />
+
+      <GithubNotConnectedDialog
+        open={needsGithubOpen}
+        onClose={() => setNeedsGithubOpen(false)}
       />
 
     </div>

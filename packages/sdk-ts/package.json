@@ -1,6 +1,6 @@
 {
   "name": "@artanis-ai/gravel",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Embedded prompt management, tracing, and evals for AI engineering teams.",
   "license": "Apache-2.0",
   "homepage": "https://gravel.artanis.ai",
@@ -26,6 +26,11 @@
       "import": "./dist/auto.js",
       "require": "./dist/auto.cjs",
       "types": "./dist/auto.d.ts"
+    },
+    "./define": {
+      "import": "./dist/define.js",
+      "require": "./dist/define.cjs",
+      "types": "./dist/define.d.ts"
     },
     "./next": {
       "import": "./dist/next.js",

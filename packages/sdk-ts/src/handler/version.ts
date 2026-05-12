@@ -22,6 +22,7 @@
 import { promises as fs } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { detectHostStack, type Language, type PackageManager } from './host-stack.js'
 
 const NPM_REGISTRY_URL = 'https://registry.npmjs.org/@artanis-ai/gravel/latest'
 const CHECK_INTERVAL_MS = 60 * 60 * 1000 // 1h
@@ -51,8 +52,9 @@ export async function readSdkVersion(): Promise<string> {
   try {
     dir = dirname(fileURLToPath(import.meta.url))
   } catch {
-    // CJS fallback — process.cwd() walking will likely fail too, so
-    // return a sentinel rather than crash the version route.
+    // CJS fallback — tsup's `shims: true` makes import.meta.url work
+    // in both builds, but if a downstream tool drops the shim or runs
+    // an old bundle, return a sentinel rather than crash.
     cachedCurrent = '0.0.0-unknown'
     return cachedCurrent
   }
@@ -118,6 +120,10 @@ export interface VersionInfo {
   current: string
   latest: string | null
   hasUpdate: boolean
+  /** Detected at request time from the host's lockfile. */
+  packageManager: PackageManager
+  /** 'ts' for the JS/TS SDK serving the dashboard, 'python' for the Python SDK. */
+  language: Language
 }
 
 /**
@@ -145,11 +151,17 @@ function isNewer(a: string, b: string): boolean {
 }
 
 export async function getVersionInfo(): Promise<VersionInfo> {
-  const [current, latest] = await Promise.all([readSdkVersion(), getLatest()])
+  const [current, latest, stack] = await Promise.all([
+    readSdkVersion(),
+    getLatest(),
+    detectHostStack(),
+  ])
   return {
     current,
     latest,
     hasUpdate: latest !== null && isNewer(current, latest),
+    packageManager: stack.packageManager,
+    language: stack.language,
   }
 }
 

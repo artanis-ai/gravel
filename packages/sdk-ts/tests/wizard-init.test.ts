@@ -34,6 +34,11 @@ describe('runWizard', () => {
     delete process.env.GRAVEL_PROJECT_ID
     delete process.env.DATABASE_URL
     delete process.env.GRAVEL_CONTROL_PLANE_URL
+    // Suppress the wizard's one-shot version check at the end of
+    // init. It hits npm registry, not the gravel cloud, but the
+    // tests in this file assert no outbound fetch at all and we
+    // want them to keep doing so.
+    process.env.GRAVEL_VERSION_CHECK_DISABLED = '1'
     // Silence wizard chatter
     vi.spyOn(console, 'log').mockImplementation(() => {})
     vi.spyOn(console, 'error').mockImplementation(() => {})

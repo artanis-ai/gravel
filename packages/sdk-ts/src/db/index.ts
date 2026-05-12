@@ -131,7 +131,7 @@ async function openSqlite(config: GravelDatabaseConfig): Promise<Database> {
     // CREATE TABLE IF NOT EXISTS statements would be no-ops anyway.
   }
 
-  return {
+  const handle: Database = {
     dialect: 'sqlite',
     drizzle: db,
     async exec(sql) {
@@ -141,4 +141,24 @@ async function openSqlite(config: GravelDatabaseConfig): Promise<Database> {
       sqlite.close()
     },
   }
+
+  // Apply any pending drizzle-kit migrations in dev. Bootstrap handles
+  // first-install schema, but doesn't migrate forward when the SDK
+  // ships a new column. Skipped in prod (deploy step should call
+  // `npx @artanis-ai/gravel migrate` explicitly so the DDL doesn't
+  // race across instances). Best-effort: failure here doesn't abort
+  // the open — the dashboard's `/api/migrations/status` will surface
+  // a banner instead.
+  try {
+    const { shouldAutoMigrate, migrate, pendingMigrationCount } = await import('./migrate.js')
+    if (shouldAutoMigrate() && (await pendingMigrationCount(handle)) > 0) {
+      // eslint-disable-next-line no-console
+      console.log('[gravel] Applying pending DB migrations (dev). Disable with GRAVEL_DISABLE_AUTO_MIGRATE=1.')
+      await migrate(handle)
+    }
+  } catch {
+    /* never block boot on a migration attempt */
+  }
+
+  return handle
 }

@@ -1,158 +1,139 @@
 /**
- * SuggestionEditor — a single-pane prompt editor that renders the
- * draft as Google-Docs-style "suggestions" against the original:
+ * SuggestionEditor — WYSIWYG markdown editor for prompts.
  *
- *   - Insertions show with a green underline + tinted background where
- *     the new text sits in the editor doc.
- *   - Deletions appear as inline strikethrough widgets at the position
- *     where the user removed text. The widget text is the slice that
- *     was cut, so the reviewer can see what changed without flipping
- *     between two panes.
+ * Underlying model: Tiptap (ProseMirror). The DOM you see IS the
+ * rendered markdown — headings get heading sizes, bold renders bold,
+ * lists indent, etc. We round-trip to a markdown string for save +
+ * PR via tiptap-markdown's serializer, so the on-disk truth stays a
+ * markdown file.
  *
- * The editor doc holds the *current draft text* (so typing, undo, and
- * cursor behaviour are normal CodeMirror); diffs are computed against
- * the original on every change and re-applied as decorations.
+ * The toolbar above the editor exposes the formatting actions you'd
+ * expect from Google Docs / Notion: headings, bold/italic/code,
+ * bullet/ordered lists, quote, link. Each maps to a single
+ * ProseMirror command via Tiptap's chain API.
  *
  * The "Reset" affordance is the parent's responsibility — we just emit
- * onChange with the raw draft text. Same for save / discard.
+ * onChange with the raw markdown text. Same for save / discard.
+ *
+ * NOTE: the Google-Docs-style inline insertion/deletion overlay that
+ * lived on the previous CodeMirror implementation is gone for now;
+ * representing those reliably as ProseMirror marks while keeping the
+ * markdown round-trip stable is a separate problem. The diff stats
+ * (`+12 −3` at word granularity) are still surfaced via onDiffStats.
  */
-import { useEffect, useRef } from 'react'
-import { EditorView, keymap, Decoration, type DecorationSet, WidgetType } from '@codemirror/view'
-import { EditorState, StateField, StateEffect, type Extension } from '@codemirror/state'
-import { markdown } from '@codemirror/lang-markdown'
-import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
-import { diffChars, type Change } from 'diff'
+import { useEffect, useMemo, useRef } from 'react'
+import { useEditor, EditorContent, type Editor } from '@tiptap/react'
+import StarterKit from '@tiptap/starter-kit'
+import Link from '@tiptap/extension-link'
+import Placeholder from '@tiptap/extension-placeholder'
+import { Markdown } from 'tiptap-markdown'
+import { diffWordsWithSpace } from 'diff'
+import {
+  Bold,
+  Code,
+  FileCode2,
+  Heading1,
+  Heading2,
+  Heading3,
+  Italic,
+  Link as LinkIcon,
+  List,
+  ListOrdered,
+  Quote,
+  type LucideIcon,
+} from 'lucide-react'
+import { cx } from '../../lib/format'
+import {
+  SuggestionDiff,
+  setSuggestionDiffOriginal,
+} from './SuggestionDiff'
 
-interface DiffDecorations {
-  decorations: DecorationSet
-  /** Total inserted-char count, for the "n suggestions" badge in the header. */
-  insertions: number
-  /** Total deleted-char count. */
-  deletions: number
+/**
+ * `tiptap-markdown` augments `editor.storage` at runtime with a
+ * `markdown.getMarkdown()` helper, but its package doesn't declare a
+ * matching `Storage` augmentation. Cast through the runtime shape to
+ * keep tsc happy without lying about the wider Storage type.
+ */
+function getMarkdown(editor: Editor): string {
+  const storage = editor.storage as { markdown?: { getMarkdown: () => string } }
+  return storage.markdown?.getMarkdown() ?? editor.getText()
 }
 
-const setDiffEffect = StateEffect.define<DiffDecorations>()
-
-const diffField = StateField.define<DiffDecorations>({
-  create: () => ({ decorations: Decoration.none, insertions: 0, deletions: 0 }),
-  update(value, tr) {
-    for (const e of tr.effects) if (e.is(setDiffEffect)) return e.value
-    return tr.docChanged
-      ? { ...value, decorations: value.decorations.map(tr.changes) }
-      : value
-  },
-  provide: (f) => EditorView.decorations.from(f, (v) => v.decorations),
-})
-
-class DeletionWidget extends WidgetType {
-  constructor(readonly text: string) {
-    super()
-  }
-  toDOM(): HTMLElement {
-    const el = document.createElement('span')
-    el.className = 'cm-suggestion-deletion'
-    // Show whitespace-only deletions as visible markers so a reviewer
-    // can see e.g. "newline removed" instead of an invisible strike.
-    el.textContent = this.text.replace(/\n/g, '↵\n').replace(/\t/g, '→')
-    return el
-  }
-  eq(other: WidgetType): boolean {
-    return other instanceof DeletionWidget && other.text === this.text
-  }
-  // Allow caret to land before the widget normally.
-  ignoreEvent(): boolean {
-    return false
-  }
+/**
+ * Strip the most common markdown syntax markers so the result roughly
+ * matches what Tiptap emits as the doc's `textBetween`. We don't
+ * round-trip through the full markdown parser here (that would mean
+ * standing up a second editor instance just to read its text), so this
+ * is "good enough" for diff alignment on prose-heavy prompts. Edge
+ * cases (e.g. nested formatting, reference links) won't align
+ * perfectly but the inline diff degrades gracefully when they don't.
+ */
+export function markdownToPlainText(md: string): string {
+  return md
+    // fenced code blocks: drop fence lines, keep the code body
+    .replace(/```[a-zA-Z0-9_-]*\n?([\s\S]*?)```/g, '$1')
+    // setext-style headings underlines (=== / ---)
+    .replace(/^(.+)\n[=-]{2,}\s*$/gm, '$1')
+    // ATX headings: drop the leading hashes
+    .replace(/^#{1,6}\s+/gm, '')
+    // blockquote markers
+    .replace(/^>\s?/gm, '')
+    // list bullets and ordered markers
+    .replace(/^\s*[-*+]\s+/gm, '')
+    .replace(/^\s*\d+\.\s+/gm, '')
+    // emphasis / strong / strikethrough
+    .replace(/\*\*\*([^*]+)\*\*\*/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/_([^_]+)_/g, '$1')
+    .replace(/~~([^~]+)~~/g, '$1')
+    // inline code
+    .replace(/`([^`]+)`/g, '$1')
+    // images: keep the alt text only
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    // links: keep the text only
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    // horizontal rule lines: drop entirely
+    .replace(/^\s*[-*_]{3,}\s*$/gm, '')
+    // collapse runs of blank lines to a single newline so the result
+    // aligns with what Tiptap emits for `textBetween` with a single
+    // `\n` block separator. Without this, every paragraph break in
+    // the original shows up as a spurious deletion in the inline
+    // diff, even on an unedited prompt.
+    .replace(/\n{2,}/g, '\n')
+    .replace(/^\n+/, '')
+    .replace(/\n+$/, '')
 }
 
-/** Char-level insertion / deletion totals — used by the parent for the "+12 −3" badge. */
+/** Word-level insertion / deletion totals — used by the parent for the "+12 −3" badge. */
 export function computeDiffStats(original: string, current: string): { insertions: number; deletions: number } {
   let insertions = 0
   let deletions = 0
-  for (const change of diffChars(original, current)) {
+  for (const change of diffWordsWithSpace(original, current)) {
+    // Word boundaries don't always match exact word boundaries of intent,
+    // so count by characters within each chunk — same scale the user
+    // sees as "+N −M" and matches the unit the diff lib actually emits.
     if (change.added) insertions += change.value.length
     else if (change.removed) deletions += change.value.length
   }
   return { insertions, deletions }
 }
 
-/** Build CodeMirror decorations from a char-level diff. */
-function buildDiff(original: string, current: string): DiffDecorations {
-  const changes: Change[] = diffChars(original, current)
-  const decorations: { from: number; spec: Decoration }[] = []
-  let pos = 0 // position in `current`
-  let insertions = 0
-  let deletions = 0
-  for (const change of changes) {
-    if (change.added) {
-      const from = pos
-      const to = pos + change.value.length
-      decorations.push({
-        from,
-        spec: Decoration.mark({ class: 'cm-suggestion-insertion' }).range(from, to) as never,
-      })
-      pos = to
-      insertions += change.value.length
-    } else if (change.removed) {
-      // Deletion happens at `pos` in the current doc — render the
-      // removed slice as an inline widget. side: -1 keeps it visually
-      // anchored before any insertion at the same spot.
-      const widget = Decoration.widget({
-        widget: new DeletionWidget(change.value),
-        side: -1,
-      }).range(pos)
-      decorations.push({ from: pos, spec: widget as never })
-      deletions += change.value.length
-    } else {
-      pos += change.value.length
-    }
-  }
-  decorations.sort((a, b) => a.from - b.from)
-  return {
-    decorations: Decoration.set(decorations.map((d) => d.spec) as never),
-    insertions,
-    deletions,
-  }
-}
-
-const editorTheme = EditorView.theme({
-  '&': { height: '100%', fontSize: '13px' },
-  '&.cm-focused': { outline: 'none' },
-  '.cm-content': {
-    padding: '14px',
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, monospace',
-    lineHeight: '1.55',
-  },
-  '.cm-scroller': { overflow: 'auto' },
-  '.cm-suggestion-insertion': {
-    backgroundColor: 'rgba(74, 124, 89, 0.15)',
-    color: '#2f5b3a',
-    textDecoration: 'underline',
-    textDecorationColor: '#4A7C59',
-    textDecorationThickness: '1px',
-  },
-  '.cm-suggestion-deletion': {
-    color: '#9B4340',
-    backgroundColor: 'rgba(155, 67, 64, 0.08)',
-    textDecoration: 'line-through',
-    textDecorationColor: '#9B4340',
-    padding: '0 1px',
-    borderRadius: '2px',
-    whiteSpace: 'pre-wrap',
-    fontStyle: 'italic',
-  },
-})
+export type EditorStatus = 'idle' | 'saving' | 'saved' | 'error'
 
 export interface SuggestionEditorProps {
-  /** The unedited prompt body (server truth). Diffs anchor against this. */
+  /** The unedited prompt body (server truth). Used for diff stats. */
   original: string
-  /** Current draft text. The parent controls this so it can persist drafts. */
+  /** Current draft markdown text. The parent controls this so it can persist drafts. */
   value: string
   onChange: (next: string) => void
   /** Surfaces the live diff stats so the parent can show "+12 / −3". */
   onDiffStats?: (stats: { insertions: number; deletions: number }) => void
   /** Optional aria-label override; default "Prompt draft". */
   ariaLabel?: string
+  /** Auto-save status; renders a small indicator on the right of the toolbar. */
+  status?: EditorStatus
 }
 
 export function SuggestionEditor({
@@ -161,11 +142,10 @@ export function SuggestionEditor({
   onChange,
   onDiffStats,
   ariaLabel = 'Prompt draft',
+  status = 'idle',
 }: SuggestionEditorProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const viewRef = useRef<EditorView | null>(null)
-  // Latest callbacks live in refs so the editor effect doesn't have to
-  // re-mount on every render (mounting CodeMirror eats the user's cursor).
+  // Latest callbacks live in refs so onChange/onDiffStats identity
+  // changes don't tear down the editor.
   const onChangeRef = useRef(onChange)
   const onDiffStatsRef = useRef(onDiffStats)
   const originalRef = useRef(original)
@@ -173,79 +153,264 @@ export function SuggestionEditor({
   onDiffStatsRef.current = onDiffStats
   originalRef.current = original
 
-  // Mount the editor exactly once. The doc is initialised with `value`
-  // at mount time; further parent-driven `value` changes are pushed in
-  // via the second effect below.
-  useEffect(() => {
-    if (!containerRef.current) return
-    const initial = value
-    const extensions: Extension[] = [
-      keymap.of([...defaultKeymap, ...historyKeymap]),
-      history(),
-      markdown(),
-      editorTheme,
-      diffField,
-      EditorView.lineWrapping,
-      EditorView.updateListener.of((update) => {
-        if (!update.docChanged) return
-        const next = update.state.doc.toString()
-        onChangeRef.current(next)
-        const diff = buildDiff(originalRef.current, next)
-        update.view.dispatch({ effects: setDiffEffect.of(diff) })
-        onDiffStatsRef.current?.({ insertions: diff.insertions, deletions: diff.deletions })
+  const extensions = useMemo(
+    () => [
+      StarterKit.configure({
+        // History is included by default in StarterKit; everything else
+        // ships with sensible markdown-friendly defaults. We disable the
+        // built-in code block highlight (StarterKit ships the basic
+        // codeBlock; a syntax-highlighted variant is overkill for a
+        // prompt editor and would drag in a parser dep).
       }),
-    ]
-    const view = new EditorView({
-      state: EditorState.create({ doc: initial, extensions }),
-      parent: containerRef.current,
-    })
-    viewRef.current = view
-    // Seed initial diff so insertions in an existing draft show on mount.
-    const seeded = buildDiff(originalRef.current, initial)
-    view.dispatch({ effects: setDiffEffect.of(seeded) })
-    onDiffStatsRef.current?.({ insertions: seeded.insertions, deletions: seeded.deletions })
-    return () => {
-      view.destroy()
-      viewRef.current = null
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+      Link.configure({
+        openOnClick: false,
+        HTMLAttributes: {
+          class: 'text-primary underline underline-offset-2 hover:text-primary-dark',
+        },
+      }),
+      Placeholder.configure({
+        placeholder: 'Start writing your prompt…',
+      }),
+      // Markdown round-trip: parses the initial value as markdown into
+      // the doc, and `getMarkdown(editor)` serialises
+      // back to a markdown string for save.
+      Markdown.configure({
+        html: false,
+        tightLists: true,
+        linkify: false,
+        breaks: false,
+        transformPastedText: true,
+      }),
+      SuggestionDiff,
+    ],
+    [],
+  )
+
+  const editor = useEditor({
+    extensions,
+    content: value,
+    editorProps: {
+      attributes: {
+        role: 'textbox',
+        'aria-label': ariaLabel,
+        'aria-multiline': 'true',
+        'data-testid': 'suggestion-editor-content',
+        // `gravel-prose` styles (defined in editor.css below) give
+        // headings, lists, code, quote etc. the visual treatment
+        // expected of a WYSIWYG markdown editor without dragging in
+        // @tailwindcss/typography.
+        class: 'gravel-prose focus:outline-none px-4 py-3 leading-relaxed',
+      },
+    },
+    onUpdate({ editor }) {
+      const md: string = getMarkdown(editor)
+      onChangeRef.current(md)
+      const stats = computeDiffStats(originalRef.current, md)
+      onDiffStatsRef.current?.(stats)
+    },
+  })
 
   // Push parent-driven value changes (e.g. "Reset" sets value back to
-  // original) into the doc. Skip when the new value already matches the
-  // editor — this is the common case during typing and a redundant
-  // dispatch would clobber the cursor.
+  // original) into the editor. Skip when the markdown already matches
+  // re-setting content would clobber the cursor on every keystroke.
   useEffect(() => {
-    const view = viewRef.current
-    if (!view) return
-    const current = view.state.doc.toString()
+    if (!editor) return
+    const current: string = getMarkdown(editor)
     if (current === value) return
-    view.dispatch({
-      changes: { from: 0, to: current.length, insert: value },
-    })
-  }, [value])
+    editor.commands.setContent(value, { emitUpdate: false })
+    // Re-emit diff stats after a parent-driven content swap.
+    onDiffStatsRef.current?.(computeDiffStats(originalRef.current, value))
+  }, [editor, value])
 
-  // Re-diff when the original itself changes (e.g. the prompt was
-  // re-fetched from a different revision). This dispatches a new diff
-  // effect against the existing doc.
+  // Re-emit diff stats AND push the new original-text into the
+  // SuggestionDiff plugin whenever the original itself changes (or
+  // the editor finishes mounting).
   useEffect(() => {
-    const view = viewRef.current
-    if (!view) return
-    const next = view.state.doc.toString()
-    const diff = buildDiff(original, next)
-    view.dispatch({ effects: setDiffEffect.of(diff) })
-    onDiffStatsRef.current?.({ insertions: diff.insertions, deletions: diff.deletions })
-  }, [original])
+    if (!editor) return
+    const current: string = getMarkdown(editor)
+    onDiffStatsRef.current?.(computeDiffStats(original, current))
+    setSuggestionDiffOriginal(editor.view, markdownToPlainText(original))
+  }, [editor, original])
 
   return (
     <div
-      ref={containerRef}
-      role="textbox"
-      aria-label={ariaLabel}
-      aria-multiline="true"
-      className="h-full cursor-text overflow-hidden rounded-xl border border-warm bg-white"
-      onClick={() => viewRef.current?.focus()}
+      className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-warm bg-white"
       data-testid="suggestion-editor"
+    >
+      <MarkdownToolbar editor={editor} status={status} />
+      <div className="min-h-0 flex-1 cursor-text overflow-y-auto">
+        <EditorContent editor={editor} className="h-full" />
+      </div>
+    </div>
+  )
+}
+
+// ---------- Toolbar ----------
+
+interface ToolbarButtonProps {
+  icon: LucideIcon
+  title: string
+  onClick: () => void
+  active?: boolean
+  testId?: string
+}
+
+function ToolbarButton({ icon: Icon, title, onClick, active, testId }: ToolbarButtonProps) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      aria-pressed={active}
+      data-testid={testId}
+      onMouseDown={(e) => {
+        // Keep editor focus.
+        e.preventDefault()
+        onClick()
+      }}
+      className={cx(
+        'flex h-7 w-7 cursor-pointer items-center justify-center rounded transition',
+        active
+          ? 'bg-warm text-text-dark'
+          : 'text-text-mid hover:bg-warm/40 hover:text-text-dark',
+      )}
+    >
+      <Icon size={16} strokeWidth={1.75} />
+    </button>
+  )
+}
+
+function ToolbarSeparator() {
+  return <span aria-hidden className="mx-0.5 h-4 w-px bg-warm" />
+}
+
+function MarkdownToolbar({ editor, status }: { editor: Editor | null; status: EditorStatus }) {
+  if (!editor) {
+    return (
+      <div
+        className="flex items-center gap-0.5 border-b border-warm bg-cream/60 px-2 py-1"
+        data-testid="suggestion-editor-toolbar"
+        aria-hidden
+      />
+    )
+  }
+  const promptForLink = () => {
+    const previous: string = editor.getAttributes('link').href ?? ''
+    // eslint-disable-next-line no-alert
+    const url = window.prompt('Link URL', previous)
+    if (url === null) return
+    if (url === '') {
+      editor.chain().focus().extendMarkRange('link').unsetLink().run()
+    } else {
+      editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run()
+    }
+  }
+  return (
+    <div
+      className="flex flex-wrap items-center gap-0.5 border-b border-warm bg-cream/60 px-2 py-1"
+      data-testid="suggestion-editor-toolbar"
+    >
+      <ToolbarButton
+        icon={Heading1}
+        title="Heading 1"
+        active={editor.isActive('heading', { level: 1 })}
+        onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
+      />
+      <ToolbarButton
+        icon={Heading2}
+        title="Heading 2"
+        active={editor.isActive('heading', { level: 2 })}
+        onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+      />
+      <ToolbarButton
+        icon={Heading3}
+        title="Heading 3"
+        active={editor.isActive('heading', { level: 3 })}
+        onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
+      />
+      <ToolbarSeparator />
+      <ToolbarButton
+        icon={Bold}
+        title="Bold"
+        active={editor.isActive('bold')}
+        onClick={() => editor.chain().focus().toggleBold().run()}
+      />
+      <ToolbarButton
+        icon={Italic}
+        title="Italic"
+        active={editor.isActive('italic')}
+        onClick={() => editor.chain().focus().toggleItalic().run()}
+      />
+      <ToolbarButton
+        icon={Code}
+        title="Inline code"
+        active={editor.isActive('code')}
+        onClick={() => editor.chain().focus().toggleCode().run()}
+      />
+      <ToolbarButton
+        icon={FileCode2}
+        title="Code block"
+        active={editor.isActive('codeBlock')}
+        onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+      />
+      <ToolbarSeparator />
+      <ToolbarButton
+        icon={List}
+        title="Unordered list"
+        active={editor.isActive('bulletList')}
+        onClick={() => editor.chain().focus().toggleBulletList().run()}
+      />
+      <ToolbarButton
+        icon={ListOrdered}
+        title="Ordered list"
+        active={editor.isActive('orderedList')}
+        onClick={() => editor.chain().focus().toggleOrderedList().run()}
+      />
+      <ToolbarButton
+        icon={Quote}
+        title="Block quote"
+        active={editor.isActive('blockquote')}
+        onClick={() => editor.chain().focus().toggleBlockquote().run()}
+      />
+      <ToolbarSeparator />
+      <ToolbarButton
+        icon={LinkIcon}
+        title="Insert or edit link"
+        active={editor.isActive('link')}
+        onClick={promptForLink}
+      />
+      <SaveStatus status={status} />
+    </div>
+  )
+}
+
+function SaveStatus({ status }: { status: EditorStatus }) {
+  // Reserve the slot at all times (`ml-auto`) so toolbar buttons don't
+  // jump as the indicator transitions between idle / saving / saved.
+  return (
+    <span
+      className="ml-auto flex h-5 min-w-[5rem] items-center justify-end gap-1 text-[11px] text-text-muted"
+      aria-live="polite"
+      data-testid="suggestion-editor-status"
+      data-status={status}
+    >
+      {status === 'saving' && (
+        <>
+          <Spinner />
+          <span>Saving…</span>
+        </>
+      )}
+      {status === 'saved' && <span className="text-forest">Saved</span>}
+      {status === 'error' && <span className="text-primary-dark">Save failed</span>}
+    </span>
+  )
+}
+
+function Spinner() {
+  return (
+    <span
+      className="inline-block h-3 w-3 animate-spin rounded-full border border-text-muted/40 border-t-text-mid"
+      aria-hidden
     />
   )
 }

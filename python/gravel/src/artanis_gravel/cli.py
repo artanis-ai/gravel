@@ -90,6 +90,24 @@ def migrate() -> None:
     click.echo("Schema bootstrap complete.")
 
 
+@cli.command()
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Emit machine-readable JSON instead of human-readable text.",
+)
+def doctor(as_json: bool) -> None:
+    """Show installed SDK version + the latest tag on PyPI.
+
+    Exits 1 if there's an update available, so CI can gate on
+    ``artanis-gravel doctor``. Honours ``GRAVEL_VERSION_CHECK_DISABLED=1``
+    for offline / privacy-conscious envs.
+    """
+    from .doctor import run_doctor
+    sys.exit(run_doctor(as_json=as_json))
+
+
 def main() -> None:
     cli()
 

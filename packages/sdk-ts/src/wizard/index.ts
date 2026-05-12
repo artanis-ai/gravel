@@ -378,6 +378,30 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardSummary
   } else if (wantTracesResolved === false) {
     bullet('Traces: skipped (re-run with `gravel init --traces`)', 'skip')
   }
+  // One-shot version check on init exit. We don't want to add latency
+  // (registry calls can be slow on poor networks), so race it against a
+  // 3-second budget and just skip the line if it doesn't finish in time.
+  // Honors GRAVEL_VERSION_CHECK_DISABLED=1 (the version module already
+  // returns null in that case).
+  try {
+    const { getVersionInfo } = await import('../handler/version.js')
+    const info = await Promise.race([
+      getVersionInfo(),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 3_000)),
+    ])
+    if (info && info.hasUpdate && info.latest) {
+      const { updateCommand } = await import('../cli/doctor.js')
+      const cmd = updateCommand(info.packageManager, info.latest)
+      say('')
+      bullet(
+        `Update available: ${info.current} → ${c.bold(info.latest)}. Run ${c.cyan(cmd)}.`,
+        'skip',
+      )
+    }
+  } catch {
+    /* never block init on a version check */
+  }
+
   say('')
   say(`Docs: ${c.cyan('https://gravel.artanis.ai/docs')}`)
 

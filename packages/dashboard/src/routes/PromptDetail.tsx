@@ -1,25 +1,27 @@
 /**
- * Prompt editor — single-pane CodeMirror surface (Mallet-shaped) where
- * the DE's edits show as Google-Docs-style suggestions: insertions
- * underlined green, deletions struck through inline. The actual edit
- * commits to a localStorage draft on save; the PR is opened from the
- * Prompts list "Submit changes" flow.
+ * Prompt editor — WYSIWYG markdown surface (Tiptap) with auto-save.
  *
- * Drafts live in this browser's localStorage (see lib/drafts.ts).
+ * The editor doc is rendered live (headings get heading sizes, bold
+ * renders bold, lists indent), but the underlying truth is markdown:
+ * we serialize on every change and persist that text to a localStorage
+ * draft. The PR opened from the Prompts list "Submit changes" flow
+ * uses the same markdown verbatim.
+ *
+ * Drafts live in this browser's localStorage (see lib/drafts.ts). Save
+ * is debounced — the user types, we wait ~500ms of quiet, then flush.
  *
  * Spec: gravel-cloud/docs/spec/prompts.md §2 (edit flow), §5 (inline diff).
  */
-import { useEffect, useState } from 'react'
-import { Link, useLocation } from 'wouter'
+import { useEffect, useRef, useState } from 'react'
+import { Link } from 'wouter'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { SkeletonText } from '../components/Skeleton'
 import { Badge } from '../components/Badge'
 import { PromptBadge } from '../components/prompts/PromptBadge'
-import { SuggestionEditor } from '../components/prompts/SuggestionEditor'
+import { SuggestionEditor, type EditorStatus } from '../components/prompts/SuggestionEditor'
 import { cx } from '../lib/format'
 import {
-  draftBranchFor,
   getDraft,
   removeDraft,
   upsertDraft,
@@ -28,8 +30,10 @@ import {
 import { useCurrentUser } from '../lib/useCurrentUser'
 import type { PromptDetailResponse } from '../lib/types'
 
+const AUTOSAVE_DEBOUNCE_MS = 500
+const SAVED_BADGE_LINGER_MS = 1500
+
 export function PromptDetail({ promptId }: { promptId: string }) {
-  const [, navigate] = useLocation()
   const queryClient = useQueryClient()
   const me = useCurrentUser()
   const userId = me?.id ?? null
@@ -50,7 +54,11 @@ export function PromptDetail({ promptId }: { promptId: string }) {
     insertions: 0,
     deletions: 0,
   })
-  const [toast, setToast] = useState<string | null>(null)
+  const [status, setStatus] = useState<EditorStatus>('idle')
+  // Tracks the last value we successfully wrote to localStorage so the
+  // auto-save effect can no-op when nothing changed since.
+  const lastSavedTextRef = useRef<string | null>(null)
+  const savedBadgeTimerRef = useRef<number | null>(null)
 
   // Seed the editor once we know the current text + any existing draft.
   useEffect(() => {
@@ -65,12 +73,7 @@ export function PromptDetail({ promptId }: { promptId: string }) {
       return upsertDraft(userId, { promptId, newText })
     },
     onSuccess: () => {
-      const branch = userId ? draftBranchFor(userId) : ''
-      setToast(`Draft saved on branch ${branch}`)
       queryClient.invalidateQueries({ queryKey: ['prompts', 'drafts'] })
-      // Spec §2: "After save, returns user to /prompts with the row marked
-      // 'draft'." Wait a beat so the toast is readable in tests + real use.
-      window.setTimeout(() => navigate('/prompts'), 600)
     },
   })
 
@@ -81,15 +84,60 @@ export function PromptDetail({ promptId }: { promptId: string }) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['prompts', 'drafts'] })
-      navigate('/prompts')
+      // Wipe the in-memory editor text too so the freshly-cleared
+      // draft state matches what's now on disk; without this the
+      // auto-save effect would immediately re-create the draft.
+      setDraftText(detailQ.data?.content ?? '')
+      lastSavedTextRef.current = detailQ.data?.content ?? null
     },
   })
 
+  // Auto-save: whenever the draft text differs from server truth, schedule
+  // a save after AUTOSAVE_DEBOUNCE_MS of quiet. Tracks save state on the
+  // toolbar's right-side indicator. We compare against detail.content so
+  // that "draft equals original" still suppresses needless writes, and
+  // the parent's reset path emits the original text, which then no-ops.
+  useEffect(() => {
+    if (draftText === null) return
+    if (!detailQ.data) return
+    const original = detailQ.data.content
+    // No-op: no draft worth saving (matches original AND no existing draft).
+    if (draftText === original && !existingDraft) return
+    // No-op: text hasn't changed since the last successful save.
+    if (lastSavedTextRef.current === draftText) return
+
+    const handle = window.setTimeout(() => {
+      setStatus('saving')
+      save.mutate(draftText, {
+        onSuccess: () => {
+          lastSavedTextRef.current = draftText
+          setStatus('saved')
+          if (savedBadgeTimerRef.current) window.clearTimeout(savedBadgeTimerRef.current)
+          savedBadgeTimerRef.current = window.setTimeout(
+            () => setStatus('idle'),
+            SAVED_BADGE_LINGER_MS,
+          )
+        },
+        onError: () => setStatus('error'),
+      })
+    }, AUTOSAVE_DEBOUNCE_MS)
+    return () => window.clearTimeout(handle)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftText, detailQ.data, existingDraft])
+
+  // Cancel the linger timer on unmount so we don't setState-after-unmount.
+  useEffect(
+    () => () => {
+      if (savedBadgeTimerRef.current) window.clearTimeout(savedBadgeTimerRef.current)
+    },
+    [],
+  )
+
   if (detailQ.isLoading) {
     return (
-      <div className="space-y-4">
+      <div className="flex h-full min-h-0 flex-col gap-4">
         <SkeletonText lines={2} />
-        <div className="rounded-2xl border border-warm bg-cream p-4">
+        <div className="flex-1 rounded-2xl border border-warm bg-cream p-4">
           <SkeletonText lines={8} />
         </div>
       </div>
@@ -106,92 +154,73 @@ export function PromptDetail({ promptId }: { promptId: string }) {
   const detail = detailQ.data
   const editorText = draftText ?? detail.content
   const dirty = editorText !== detail.content
-  const draftBranch = userId ? draftBranchFor(userId) : null
+
+  // "Reset" and "Discard draft" used to be two buttons in a footer
+  // bar. Functionally they were the same action plus a navigation
+  // (Reset stayed, Discard navigated back to /prompts), so we
+  // collapse them into a single button on the right of the title row
+  // that reverts the editor text AND removes the draft entry from
+  // localStorage. The footer bar goes away entirely so the editor
+  // can take the full remaining height.
+  const resetAndDiscard = () => {
+    setDraftText(detail.content)
+    if (existingDraft) discard.mutate()
+  }
 
   return (
-    <div className="space-y-3">
-      <div>
-        <Link href="/prompts" className="cursor-pointer text-xs text-text-mid hover:text-text-dark">
-          ← Back to prompts
+    <div className="flex h-full min-h-0 flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Link
+          href="/prompts"
+          className="cursor-pointer rounded-lg border border-warm px-2 py-1 text-xs font-medium text-text-mid hover:bg-warm/40 hover:text-text-dark"
+          aria-label="Back to prompts"
+        >
+          ← Back
         </Link>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <h1 className="font-display text-xl font-semibold text-text-dark">
-            <code className="font-mono">{detail.path}</code>
-          </h1>
-          <PromptBadge type={detail.type} />
-          {detail.varName && <Badge tone="neutral">{detail.varName}</Badge>}
-          {existingDraft && <Badge tone="warn">draft</Badge>}
+        <h1 className="font-display text-xl font-semibold text-text-dark">
+          <code className="font-mono">{detail.path}</code>
+        </h1>
+        <PromptBadge type={detail.type} />
+        {detail.varName && <Badge tone="neutral">{detail.varName}</Badge>}
+        {existingDraft && <Badge tone="warn">draft</Badge>}
+        <div className="ml-auto flex items-center gap-2">
+          {(stats.insertions > 0 || stats.deletions > 0) && (
+            <span className="font-mono text-xs text-text-muted">
+              <span className="text-forest">+{stats.insertions}</span>{' '}
+              <span className="text-primary-dark">−{stats.deletions}</span>
+            </span>
+          )}
+          {(dirty || existingDraft) && (
+            <button
+              type="button"
+              disabled={discard.isPending}
+              className={cx(
+                'rounded-lg border px-2 py-1 text-xs font-medium',
+                discard.isPending
+                  ? 'cursor-not-allowed border-warm text-text-muted'
+                  : 'cursor-pointer border-warm text-text-mid hover:bg-warm/40 hover:text-text-dark',
+              )}
+              onClick={resetAndDiscard}
+            >
+              {discard.isPending ? 'Discarding…' : 'Reset'}
+            </button>
+          )}
         </div>
-        {draftBranch && (
-          <p className="mt-1 font-mono text-[11px] text-text-muted">{draftBranch}</p>
-        )}
       </div>
 
-      <div className="flex items-center justify-between gap-3 px-1 text-[11px] text-text-mid">
-        <span>
-          Edits show as suggestions: insertions underlined,{' '}
-          <span className="italic">deletions struck through</span>.
-        </span>
-        {(stats.insertions > 0 || stats.deletions > 0) && (
-          <span className="font-mono text-text-muted">
-            <span className="text-forest">+{stats.insertions}</span>{' '}
-            <span className="text-primary-dark">−{stats.deletions}</span>
-          </span>
-        )}
-      </div>
-
-      <div className="h-[28rem]">
+      <div className="min-h-0 flex-1">
         <SuggestionEditor
           original={detail.content}
           value={editorText}
           onChange={setDraftText}
           onDiffStats={setStats}
+          status={status}
         />
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          disabled={save.isPending || !dirty}
-          className={cx(
-            'rounded-lg px-3 py-1.5 text-sm font-medium text-white',
-            save.isPending || !dirty
-              ? 'cursor-not-allowed bg-primary/40'
-              : 'cursor-pointer bg-primary hover:bg-primary-dark',
-          )}
-          onClick={() => save.mutate(editorText)}
-        >
-          {save.isPending ? 'Saving…' : 'Save draft'}
-        </button>
-        {dirty && (
-          <button
-            type="button"
-            className="cursor-pointer rounded-lg border border-warm px-3 py-1.5 text-sm font-medium text-text-mid hover:bg-warm/40"
-            onClick={() => setDraftText(detail.content)}
-          >
-            Reset
-          </button>
-        )}
-        {existingDraft && (
-          <button
-            type="button"
-            disabled={discard.isPending}
-            className={cx(
-              'rounded-lg border px-3 py-1.5 text-sm font-medium',
-              discard.isPending
-                ? 'cursor-not-allowed border-warm text-text-muted'
-                : 'cursor-pointer border-primary text-primary hover:bg-primary/10',
-            )}
-            onClick={() => discard.mutate()}
-          >
-            {discard.isPending ? 'Discarding…' : 'Discard draft'}
-          </button>
-        )}
-        {toast && <span className="text-xs text-forest">{toast}</span>}
-        {save.isError && (
-          <span className="font-mono text-xs text-primary-dark">{save.error.message}</span>
-        )}
-      </div>
+      {save.isError && (
+        <p className="font-mono text-xs text-primary-dark">{save.error.message}</p>
+      )}
     </div>
   )
 }

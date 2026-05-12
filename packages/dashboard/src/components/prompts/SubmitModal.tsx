@@ -128,6 +128,7 @@ export function SubmitModal({
       open={open}
       onClose={onClose}
       title="Submit changes"
+      size="2xl"
       footer={
         <>
           <button
@@ -174,9 +175,6 @@ export function SubmitModal({
             placeholder="Pat"
             className="w-full rounded-md border border-warm bg-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
           />
-          <span className="text-[11px] font-normal text-text-muted">
-            Goes in the PR body so reviewers know who suggested the change. Saved in your browser for next time.
-          </span>
         </label>
 
         <label className="flex flex-col gap-1 text-xs font-medium text-text-mid">

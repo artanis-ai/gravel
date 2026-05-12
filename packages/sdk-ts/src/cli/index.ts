@@ -6,6 +6,7 @@
  * Spec: gravel-cloud/docs/spec/api-surface.md §6
  */
 import { runWizard } from '../wizard/index.js'
+import { runDoctor } from './doctor.js'
 import { runManifestCheck, runManifestUpdate } from './manifest.js'
 import { runMigrate } from './migrate.js'
 import { runDeepScan } from './scan.js'
@@ -23,6 +24,11 @@ Commands:
   scan --deep                Run LLM-assisted prompt detection (uses OPENAI_API_KEY).
                              --print-only inspects without writing the manifest.
   migrate                    Apply pending DB migrations (uses bootstrap.ts in v0).
+  doctor                     Show installed SDK version + the latest @latest tag
+                             on npm. Exits 1 if there's an update available, so
+                             CI can gate on \`gravel doctor\`. Pass --json for
+                             machine-readable output. Honors
+                             GRAVEL_VERSION_CHECK_DISABLED=1.
   help                       Show this message.
 
 Init flags:
@@ -130,6 +136,10 @@ async function main(): Promise<void> {
 
     case 'migrate':
       await runMigrate()
+      break
+
+    case 'doctor':
+      await runDoctor({ json: !!flags.json })
       break
 
     case 'help':

@@ -4,6 +4,7 @@ export default defineConfig({
   entry: {
     index: 'src/index.ts',
     auto: 'src/auto.ts',
+    define: 'src/define.ts',
     next: 'src/integrations/next.ts',
     'next-pages': 'src/integrations/next-pages.ts',
     node: 'src/integrations/node.ts',
@@ -20,4 +21,11 @@ export default defineConfig({
   splitting: true,
   sourcemap: true,
   target: 'node20',
+  // Auto-shims `import.meta.url` / `__dirname` so the same source code
+  // works in both the ESM and CJS bundles. Without this, a literal
+  // `import.meta` in a `.cjs` file is a SyntaxError at parse time
+  // (which then crashes any host that webpack-externalises us via
+  // `require('@artanis-ai/gravel/...')` from a Pages Router or App
+  // Router build that happens to resolve our CJS entry).
+  shims: true,
 })

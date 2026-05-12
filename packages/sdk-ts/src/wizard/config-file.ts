@@ -34,7 +34,7 @@ export async function generateConfigFile(
   // are out of scope for v0 — re-run `gravel init` to regenerate.
   if (detection.language === 'ts') {
     const path = join(cwd, 'gravel.config.ts')
-    await fs.writeFile(path, tsConfigContent(detection, opts))
+    await fs.writeFile(path, await tsConfigContent(detection, cwd, opts))
     return path
   }
   const path = join(cwd, 'gravel_config.py')
@@ -42,10 +42,25 @@ export async function generateConfigFile(
   return path
 }
 
-function tsConfigContent(detection: DetectionResult, opts: ConfigFileOptions): string {
-  const authBlock = detection.auth === 'clerk'
+async function tsConfigContent(
+  detection: DetectionResult,
+  cwd: string,
+  opts: ConfigFileOptions,
+): Promise<string> {
+  // The next-auth template imports `auth` from `@/auth` — the
+  // canonical NextAuth v5 location. Some projects keep their helper
+  // elsewhere (e.g. `lib/auth.ts`) or are pre-v5 and don't have one
+  // at all. If we can't find it we'd emit a config that 500s every
+  // dashboard request with "Module not found: @/auth", so fall back
+  // to the password-only template and let the user wire getUser
+  // themselves later.
+  let auth = detection.auth
+  if (auth === 'next-auth' && !(await nextAuthHelperExists(cwd))) {
+    auth = 'unknown'
+  }
+  const authBlock = auth === 'clerk'
     ? clerkAuthBlock()
-    : detection.auth === 'next-auth'
+    : auth === 'next-auth'
       ? nextAuthBlock()
       : passwordOnlyAuthBlock()
 
@@ -56,8 +71,16 @@ function tsConfigContent(detection: DetectionResult, opts: ConfigFileOptions): s
 `
     : ''
 
-  return `import { defineConfig } from '@artanis-ai/gravel'
-${authImport(detection.auth)}
+  // Import defineConfig from the dedicated edge-safe sub-entry. The
+  // main `@artanis-ai/gravel` entry pulls Node builtins (better-sqlite3,
+  // node:fs, etc.) and so fails to bundle for the edge runtime when the
+  // host has middleware (Clerk, NextAuth, …) — Next compiles
+  // `instrumentation.ts` for both runtimes whenever middleware exists,
+  // and a static `import { defineConfig } from '@artanis-ai/gravel'` in
+  // gravel.config.ts breaks the edge bundle. `/define` is just types +
+  // type-passthrough helpers, no Node deps.
+  return `import { defineConfig } from '@artanis-ai/gravel/define'
+${authImport(auth)}
 
 export const config = defineConfig({
   mountPath: '${opts.mountPath}',
@@ -70,6 +93,26 @@ function authImport(auth: DetectionResult['auth']): string {
   if (auth === 'clerk') return "import { auth } from '@clerk/nextjs/server'"
   if (auth === 'next-auth') return "import { auth as nextAuth } from '@/auth'"
   return ''
+}
+
+/**
+ * NextAuth v5 conventionally exports `auth` from `auth.ts` at the
+ * project root (or `src/auth.ts` for `src/`-layout projects). Older
+ * setups use `pages/api/auth/[...nextauth].ts` instead, which doesn't
+ * export a request-side `auth()` helper. We require the v5 helper to
+ * exist before generating the next-auth config — otherwise the
+ * dashboard 500s on every request with `Module not found: '@/auth'`.
+ */
+async function nextAuthHelperExists(cwd: string): Promise<boolean> {
+  for (const candidate of ['auth.ts', 'auth.js', 'src/auth.ts', 'src/auth.js']) {
+    try {
+      await fs.access(join(cwd, candidate))
+      return true
+    } catch {
+      /* keep looking */
+    }
+  }
+  return false
 }
 
 function clerkAuthBlock(): string {

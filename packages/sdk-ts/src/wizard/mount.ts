@@ -94,7 +94,11 @@ async function mountNextAppRouter(
   // which makes `@/gravel.config` resolve to `./src/gravel.config`. The
   // wizard writes `gravel.config.ts` at the cwd root, so we use a relative
   // import from the route file instead.
-  const relPrefix = appDir === 'src/app' ? '../'.repeat(segments.length + 2) : '@/'
+  //
+  // Depth from `src/app/<segs>/[[...slug]]/route.ts` back to cwd is:
+  //   2 (src/app) + segments.length (mount path segs) + 1 ([[...slug]]) = N
+  // so we need N `../` segments to reach the cwd-level gravel.config.
+  const relPrefix = appDir === 'src/app' ? '../'.repeat(segments.length + 3) : '@/'
   const configImport = appDir === 'src/app' ? `${relPrefix}gravel.config` : `@/gravel.config`
   await fs.writeFile(
     file,
@@ -123,24 +127,116 @@ export const DELETE = handler
 
 async function mountNextPagesRouter(cwd: string, mountPath: string, opts: MountOptions = {}): Promise<MountResult> {
   const segments = mountPath.replace(/^\//, '').split('/').filter(Boolean)
-  const dir = join(cwd, 'pages', ...segments)
+  // Pages Router treats `pages/foo.ts` as a server-rendered React page
+  // (bundled for both client AND server). Our handler is an API route
+  // (it inspects the request method and returns a Response), so it
+  // must live under `pages/api/...` — otherwise Next bundles it for
+  // the client and webpack chokes on the SDK's transitive `node:fs`,
+  // `better-sqlite3`, `pg` requires with "Module not found: 'fs'".
+  // We then add a rewrite so the user-facing URL stays at mountPath.
+  const dir = join(cwd, 'pages', 'api', ...segments)
   const file = join(dir, '[[...slug]].ts')
   if (await pathExists(file)) await safeBackup(file)
   await fs.mkdir(dir, { recursive: true })
+  // Pages Router fixtures aren't guaranteed to have a `@/` tsconfig
+  // alias, so use a relative import. Depth from the dir containing
+  // `pages/api/<segs>/[[...slug]].ts` back to cwd is:
+  //   2 (pages/api) + segments.length
+  // The `[[...slug]]` here is the file basename, NOT a wrapping
+  // folder (App Router would use `[[...slug]]/route.ts` — different).
+  const relPrefix = '../'.repeat(segments.length + 2)
   await fs.writeFile(
     file,
     `import { createGravelHandler } from '@artanis-ai/gravel/next-pages'
-import { config } from '@/gravel.config'
+import { config } from '${relPrefix}gravel.config'
 
 export default createGravelHandler({ config })
 `,
   )
+  await ensureNextPagesRewrite(cwd, mountPath)
   if (opts.withTracingDeps) {
     // Pages projects may still use `src/` for `pages/`; the helper
     // probes both instrumentation.ts candidates internally.
     await installNextTracingHooks(cwd, { srcLayout: false })
   }
   return { path: file, mode: 'created' }
+}
+
+/**
+ * Patch next.config to rewrite `<mountPath>/*` → `/api<mountPath>/*`
+ * so the dashboard answers at the URL the user expects (e.g.
+ * `/admin/ai`) even though the file lives under `pages/api/admin/ai/`.
+ *
+ * Idempotent: if the rewrite is already present (matched by the
+ * literal `/api${mountPath}` destination string) we leave the file
+ * alone. Only patches the cheap `export default {}` shape — anything
+ * more complex gets a sibling `.suggestion.txt` to avoid corrupting
+ * a hand-written rewrites function.
+ */
+async function ensureNextPagesRewrite(cwd: string, mountPath: string): Promise<void> {
+  const candidates = ['next.config.ts', 'next.config.mjs', 'next.config.js']
+  let target: string | null = null
+  let body = ''
+  for (const f of candidates) {
+    const p = join(cwd, f)
+    if (await pathExists(p)) {
+      target = p
+      body = await fs.readFile(p, 'utf8')
+      break
+    }
+  }
+  const dest = `/api${mountPath}`
+  if (target && body.includes(`destination: '${dest}/:path*'`)) return
+
+  const block = `
+  async rewrites() {
+    return [
+      // Pages Router mount: file lives at \`pages/api${mountPath}/[[...slug]].ts\`
+      // (must be under /api/ so Next doesn't bundle it for the client).
+      // This rewrite keeps the user-facing URL at \`${mountPath}\`.
+      { source: '${mountPath}', destination: '${dest}' },
+      { source: '${mountPath}/:path*', destination: '${dest}/:path*' },
+    ]
+  },`
+
+  if (!target) {
+    // No next.config — write a minimal one with both the rewrite and
+    // the externals (the externals patcher is a no-op when it sees
+    // our packages already listed, so it's safe to append later).
+    const newPath = join(cwd, 'next.config.mjs')
+    await fs.writeFile(newPath, `const config = {${block}\n}\nexport default config\n`)
+    return
+  }
+
+  // Empty default export → splice cleanly.
+  if (/export default\s*\{\s*\}/.test(body)) {
+    const patched = body.replace(/export default\s*\{\s*\}/, `export default {${block}\n}`)
+    await safeBackup(target)
+    await fs.writeFile(target, patched)
+    return
+  }
+
+  // The externals patcher (running just after this in step 3) writes
+  // its `serverExternalPackages` block into the same `export default
+  // {…}` body, so by the time we get here the file usually has a
+  // populated default export. Splice the rewrite block in just before
+  // the closing brace of that export.
+  const m = body.match(/export default\s*\{([\s\S]*?)\n\}/)
+  if (m) {
+    const patched = body.replace(m[0], `export default {${m[1]}${block}\n}`)
+    await safeBackup(target)
+    await fs.writeFile(target, patched)
+    return
+  }
+
+  // Anything else: emit a sibling suggestion.
+  await fs.writeFile(
+    target + '.gravel.next-config.rewrites.suggestion.txt',
+    `Add this to your Next.js config so the dashboard answers at the
+URL you configured (the actual route file lives under \`pages/api/\`
+to keep webpack from bundling it for the client):${block}
+`,
+  )
 }
 
 async function mountFastApi(cwd: string, mountPath: string): Promise<MountResult> {
@@ -445,6 +541,16 @@ async function ensureNextInstrumentation(cwd: string, srcLayout: boolean): Promi
   // persist (the in-handler `setGravelTracingConfig` call hasn't run
   // yet) and the trace is dropped.
   const configImport = srcLayout ? '../gravel.config' : './gravel.config'
+  // /* webpackIgnore: true */ on the SDK imports is essential when the
+  // host has middleware. Next compiles instrumentation for BOTH the
+  // node and edge runtimes (so middleware can hook in too); the edge
+  // bundler can't resolve the SDK chain (better-sqlite3, pg, node:fs).
+  // webpackIgnore tells webpack to leave those imports alone, and the
+  // runtime guard `NEXT_RUNTIME !== 'nodejs'` ensures they never
+  // execute on edge. The configImport is left UN-ignored so webpack
+  // resolves the relative path at compile time — gravel.config.ts
+  // imports `defineConfig` from the edge-safe `@artanis-ai/gravel/define`
+  // sub-entry specifically so this bundling step doesn't choke.
   const body = `// Added by Gravel wizard. Next.js calls register() once on server
 // startup — the canonical place to bootstrap server-side instrumentation.
 // We import \`@artanis-ai/gravel/auto\` so the SDK's monkey-patches for
@@ -454,12 +560,17 @@ async function ensureNextInstrumentation(cwd: string, srcLayout: boolean): Promi
 // (without this, the first LLM call before any /admin/ai/* request
 // gets dropped because the handler hasn't initialised the DB yet).
 //
+// /* webpackIgnore: true */ keeps webpack from bundling the heavy SDK
+// chunks into the edge runtime when the host has middleware (which
+// forces instrumentation to compile for both runtimes). The runtime
+// guard above ensures these imports only fire on the node runtime.
+//
 // See https://nextjs.org/docs/app/building-your-application/optimizing/instrumentation
 export async function register() {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return
-  await import('@artanis-ai/gravel/auto')
+  await import(/* webpackIgnore: true */ '@artanis-ai/gravel/auto')
   const [{ setGravelTracingConfig, resolveConfig }, { config }] = await Promise.all([
-    import('@artanis-ai/gravel'),
+    import(/* webpackIgnore: true */ '@artanis-ai/gravel'),
     import('${configImport}'),
   ])
   setGravelTracingConfig(resolveConfig(config))
@@ -476,9 +587,9 @@ export async function register() {
 // DB to write to before the first request:
 
 if (process.env.NEXT_RUNTIME === 'nodejs') {
-  await import('@artanis-ai/gravel/auto')
+  await import(/* webpackIgnore: true */ '@artanis-ai/gravel/auto')
   const [{ setGravelTracingConfig, resolveConfig }, { config }] = await Promise.all([
-    import('@artanis-ai/gravel'),
+    import(/* webpackIgnore: true */ '@artanis-ai/gravel'),
     import('${configImport}'),
   ])
   setGravelTracingConfig(resolveConfig(config))
@@ -560,12 +671,45 @@ async function ensureNextServerExternalPackages(cwd: string): Promise<void> {
   // need a webpack `externals` block too. We add both so a project that
   // mounts under either router (or both) works.
   const required = ['@artanis-ai/gravel', 'pg', 'better-sqlite3']
+  // Externals as a FUNCTION rather than an object. Next.js prepends
+  // its own externals function (handling React server components,
+  // module-resolution rules, etc.). When we push an object after it,
+  // Next's function still runs first per request and returns
+  // `undefined` (signalling "let bundling continue") on our packages
+  // — webpack then resolves them statically and bundles the
+  // better-sqlite3 + pg chain INSIDE its node_modules, hitting
+  // `require('fs')` and failing with "Module not found: 'fs'" on
+  // Pages Router server bundles. A function in the externals array
+  // is consulted for EVERY import request after Next's function and
+  // we explicitly externalise ours as commonjs.
   const block = `
   serverExternalPackages: ['@artanis-ai/gravel', 'pg', 'better-sqlite3'],
   webpack: (cfg, { isServer }) => {
     if (isServer) {
-      cfg.externals = cfg.externals || []
-      cfg.externals.push('better-sqlite3', 'pg', '@artanis-ai/gravel', '@artanis-ai/gravel/next', '@artanis-ai/gravel/next-pages', '@artanis-ai/gravel/auto')
+      const externalize = (request) =>
+        request === 'better-sqlite3' ||
+        request === 'pg' ||
+        request === 'fs' ||
+        request === 'crypto' ||
+        request === 'path' ||
+        request.startsWith('@artanis-ai/gravel')
+      // UNSHIFT (not push) so our matcher runs BEFORE Next's default
+      // externals function. Next's function returns nothing for these
+      // packages but its presence first in the array doesn't matter
+      // because webpack iterates left-to-right and uses the first
+      // function that returns a value via callback. We need ours to
+      // win because Pages Router otherwise bundles better-sqlite3 ->
+      // 'fs' and bombs with "Module not found: 'fs'" at compile time.
+      const existing = Array.isArray(cfg.externals) ? cfg.externals : [cfg.externals].filter(Boolean)
+      cfg.externals = [
+        ({ request }, callback) => {
+          if (request && externalize(request)) {
+            return callback(null, 'commonjs ' + request)
+          }
+          callback()
+        },
+        ...existing,
+      ]
     }
     return cfg
   },`
