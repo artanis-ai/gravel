@@ -56,9 +56,17 @@ jobs:
       - name: Install build deps
         run: pip install build
 
-      - name: Build wheel + sdist
+      - name: Build wheel
         working-directory: python/gravel
-        run: python -m build
+        # `python -m build` (no flag) builds sdist first, then rebuilds
+        # the wheel FROM the sdist in /tmp/. The sdist doesn't include
+        # the `../../packages/dashboard/dist` force-include target
+        # (relative path resolves to /tmp/packages/...), so the wheel-
+        # from-sdist build fails with "Forced include not found".
+        # `--wheel` skips the sdist round-trip and builds in-place, so
+        # the relative path resolves to the actual dashboard dist that
+        # `pnpm build` produced two steps ago.
+        run: python -m build --wheel
 
       - name: Verify dashboard was bundled into the wheel
         # Belt-and-suspenders: if the force-include glob misses the
