@@ -54,7 +54,11 @@ class GravelConfig:
     database: GravelDatabaseConfig
     auth: GravelAuthConfig
     mount_path: str = "/admin/ai"
-    product_name: str = "Gravel"
+    # Empty default: the dashboard renders neutral chrome (no "Gravel"
+    # header, no G logo). Customers embedding the dashboard inside their
+    # own product should leave it empty or set their own brand. Mirrors
+    # packages/sdk-ts/src/types.ts §DEFAULT_PRODUCT_NAME.
+    product_name: str = ""
     run_pipeline: RunPipelineFn | None = None
     environments: list[str] = field(default_factory=lambda: ["prod"])
     hide_artanis_branding: bool = False
@@ -66,7 +70,10 @@ class GravelConfig:
 # ---------- Defaults ----------
 
 DEFAULT_MOUNT_PATH = "/admin/ai"
-DEFAULT_PRODUCT_NAME = "Gravel"
+# Empty string -> dashboard hides its own brand chrome (header / G logo).
+# Customers embedding the dashboard set their own product name explicitly.
+# Mirrors packages/sdk-ts/src/types.ts §DEFAULT_PRODUCT_NAME.
+DEFAULT_PRODUCT_NAME = ""
 DEFAULT_TABLE_PREFIX = "gravel_"
 DEFAULT_CONCURRENCY = {"trace": 5, "live": 2}
 DEFAULT_ENVIRONMENT = "prod"
@@ -126,7 +133,11 @@ def resolve_config(config: GravelConfig) -> ResolvedGravelConfig:
         database=db,
         auth=auth,
         mount_path=config.mount_path or DEFAULT_MOUNT_PATH,
-        product_name=config.product_name or DEFAULT_PRODUCT_NAME,
+        # Preserve explicit empty strings (signals "no brand chrome").
+        # TS equivalent uses `??` which only falls through on null/undefined;
+        # Python `or` would clobber empty string with DEFAULT, so use an
+        # explicit `is None` check via the dataclass default.
+        product_name=config.product_name if config.product_name is not None else DEFAULT_PRODUCT_NAME,
         environments=list(config.environments) if config.environments else [DEFAULT_ENVIRONMENT],
         hide_artanis_branding=bool(config.hide_artanis_branding),
         evals=evals,
