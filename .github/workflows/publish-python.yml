@@ -31,6 +31,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The Python wheel bundles the built dashboard SPA at
+      # artanis_gravel/_dashboard_dist/ (see python/gravel/pyproject.toml
+      # `[tool.hatch.build.targets.wheel.force-include]`). The dist is
+      # gitignored, so we have to build it here before invoking
+      # `python -m build`. Mirrors the dashboard step in publish-npm.yml.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install workspace deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build dashboard SPA (bundled into the wheel)
+        working-directory: packages/dashboard
+        run: pnpm build
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -41,6 +59,24 @@ jobs:
       - name: Build wheel + sdist
         working-directory: python/gravel
         run: python -m build
+
+      - name: Verify dashboard was bundled into the wheel
+        # Belt-and-suspenders: if the force-include glob misses the
+        # dashboard for any reason (path drift, build order race), fail
+        # the publish before it lands on PyPI with a broken wheel.
+        working-directory: python/gravel
+        run: |
+          set -e
+          WHEEL=$(ls dist/*.whl)
+          python -c "
+          import sys, zipfile
+          with zipfile.ZipFile('$WHEEL') as z:
+              dashboard = [n for n in z.namelist() if '_dashboard_dist/index.html' in n]
+              if not dashboard:
+                  print('FAIL: dashboard SPA missing from wheel', file=sys.stderr)
+                  sys.exit(1)
+              print(f'OK: dashboard bundled at {dashboard[0]}')
+          "
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
