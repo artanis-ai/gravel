@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "artanis-gravel"
-version = "0.5.2"
+version = "0.5.3"
 description = "Embedded prompt management, tracing, and evals for AI engineering teams."
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -63,6 +63,22 @@ Issues = "https://github.com/artanis-ai/gravel/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/artanis_gravel"]
+
+# Bundle the dashboard SPA's built `dist/` into the wheel as
+# `artanis_gravel/_dashboard_dist/`. Without this, customers
+# pip-installing the package get a dashboard route that 503s with
+# `dashboard_dist_not_found` because find_dashboard_dist() can't
+# walk up from site-packages to a sibling repo that doesn't exist
+# on their machine. Built ahead-of-time in CI / release.sh.
+[tool.hatch.build.targets.wheel.force-include]
+"../../packages/dashboard/dist" = "artanis_gravel/_dashboard_dist"
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "src/artanis_gravel/**/*.py",
+  "README.md",
+  "../../packages/dashboard/dist/**/*",
+]
 
 [tool.ruff]
 line-length = 100

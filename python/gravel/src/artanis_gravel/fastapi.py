@@ -102,12 +102,22 @@ def create_gravel_router(config: GravelConfig, *, engine: Any = None) -> APIRout
     directly. Otherwise we open one from the config's `database.url`.
     Pass an explicit engine when the host app shares an in-memory DB
     with the tracer (demo mode, tests).
+
+    A missing or empty `database.url` does NOT raise: the wizard's
+    prompts-only / dashboard-only installs run without a DB at all,
+    and the SDK serves auth + manifest + SPA routes regardless. The
+    samples/feedback endpoints check the engine before issuing
+    queries and return empty pages when it's None.
     """
     resolved = resolve_config(config)
     mount_path = resolved.mount_path.rstrip("/") or ""
     password = resolved.auth.get("default_password") if resolved.auth else None
     if engine is None:
-        engine = open_database(resolved.database["url"])
+        # Empty / missing URL is the prompts-only install case. Skip
+        # opening anything; samples routes degrade to "no DB yet".
+        db_url = resolved.database.get("url", "") if resolved.database else ""
+        if db_url:
+            engine = open_database(db_url)
     dist = find_dashboard_dist()
     shell_html = (dist / "index.html").read_text(encoding="utf-8") if dist else None
     assets_dir = (dist / "assets") if dist else None

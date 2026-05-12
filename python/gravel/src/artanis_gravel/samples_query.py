@@ -227,7 +227,16 @@ def record_sample_feedback(
     return {"id": fid}
 
 
-def gravel_tables_exist(engine: Engine) -> bool:
+def gravel_tables_exist(engine: Engine | None) -> bool:
+    """True when both gravel_* tables exist on the engine.
+
+    `engine=None` is the prompts-only install case (the host hasn't
+    configured a DATABASE_URL). Treat it as "no tables" so the dashboard
+    routes that depend on samples/feedback degrade gracefully to empty
+    pages rather than throwing.
+    """
+    if engine is None:
+        return False
     from sqlalchemy import inspect
 
     insp = inspect(engine)

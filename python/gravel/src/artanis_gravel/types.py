@@ -94,7 +94,14 @@ class ResolvedGravelConfig:
 def resolve_config(config: GravelConfig) -> ResolvedGravelConfig:
     """Apply defaults + validate. Mirrors src/types.ts resolveConfig."""
     auth = config.auth or {}
-    if not auth.get("get_user") and not auth.get("default_password"):
+    # Check key PRESENCE, not value truthiness. The wizard-generated
+    # config reads `default_password` from os.environ.get(..., ''),
+    # which evaluates to empty string when the user starts uvicorn
+    # without their .env loaded. That's a runtime env issue (the auth
+    # endpoints already return 400 for empty passwords), NOT a
+    # misconfiguration; raising here breaks app startup before the
+    # user can see a clearer error.
+    if "get_user" not in auth and "default_password" not in auth:
         raise ValueError(
             "[gravel] Auth misconfigured: provide either auth['get_user'] or "
             "auth['default_password']. See https://gravel.artanis.ai/docs/auth"
