@@ -34,7 +34,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          registry-url: 'https://registry.npmjs.org'
+          # Intentionally NO `registry-url:` — that injects
+          # `_authToken=${NODE_AUTH_TOKEN}` into .npmrc, which makes
+          # npm CLI prefer a (stale) NODE_AUTH_TOKEN secret over the
+          # OIDC token from the trusted publisher. We want OIDC.
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -49,4 +52,8 @@ jobs:
 
       - name: Publish
         working-directory: packages/sdk-ts
+        # `npm publish --provenance` auto-detects the GH OIDC environment
+        # when id-token: write is granted (see permissions block above).
+        # No NODE_AUTH_TOKEN needed; the trusted publisher on npmjs.com
+        # accepts the OIDC token directly.
         run: npm publish --access public --provenance
