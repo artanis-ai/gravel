@@ -57,7 +57,7 @@ describe('PendingMigrationsBanner', () => {
     render(<PendingMigrationsBanner mountPath="/admin/ai" isAdmin={true} />)
     expect(await screen.findByText(/3 pending DB migrations/)).toBeInTheDocument()
     expect(screen.getByText(/Auto-migrate is off/i)).toBeInTheDocument()
-    expect(screen.getByText('npx @artanis-ai/gravel migrate')).toBeInTheDocument()
+    expect(screen.getByText('gravel migrate')).toBeInTheDocument()
   })
 
   it('renders the banner with the "auto-migrate failed" copy when auto-migrate is ON', async () => {
@@ -70,12 +70,12 @@ describe('PendingMigrationsBanner', () => {
     expect(screen.getByText(/Auto-migrate is on but did not complete/i)).toBeInTheDocument()
   })
 
-  it('renders the Python migrate command when language=python', async () => {
+  it('renders the same `gravel migrate` command on a Python host (the binary is on PATH, stack-agnostic)', async () => {
     mock({
       status: { pending: 2, dialect: 'sqlite', autoMigrate: false },
       version: { packageManager: 'uv', language: 'python' },
     })
     render(<PendingMigrationsBanner mountPath="/admin/ai" isAdmin={true} />)
-    expect(await screen.findByText('uv run artanis-gravel migrate')).toBeInTheDocument()
+    expect(await screen.findByText('gravel migrate')).toBeInTheDocument()
   })
 })

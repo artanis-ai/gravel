@@ -145,10 +145,9 @@ async function openSqlite(config: GravelDatabaseConfig): Promise<Database> {
   // Apply any pending drizzle-kit migrations in dev. Bootstrap handles
   // first-install schema, but doesn't migrate forward when the SDK
   // ships a new column. Skipped in prod (deploy step should call
-  // `npx @artanis-ai/gravel migrate` explicitly so the DDL doesn't
-  // race across instances). Best-effort: failure here doesn't abort
-  // the open — the dashboard's `/api/migrations/status` will surface
-  // a banner instead.
+  // `gravel migrate` explicitly so the DDL doesn't race across
+  // instances). Best-effort: failure here doesn't abort the open;
+  // the dashboard's `/api/migrations/status` surfaces a banner.
   try {
     const { shouldAutoMigrate, migrate, pendingMigrationCount } = await import('./migrate.js')
     if (shouldAutoMigrate() && (await pendingMigrationCount(handle)) > 0) {

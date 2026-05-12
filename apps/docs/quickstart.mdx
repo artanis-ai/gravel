@@ -1,6 +1,6 @@
 ---
 title: Quickstart
-description: "From `npx init` to your first prompt PR."
+description: "From install to your first prompt PR."
 ---
 
 This walks through end-to-end. **Some steps are not fully wired yet** during pre-v0 — they're flagged inline.
@@ -8,8 +8,9 @@ This walks through end-to-end. **Some steps are not fully wired yet** during pre
 ## 1. Install
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/artanis-ai/gravel/main/install.sh | sh
 cd your-existing-app
-npx @artanis-ai/gravel init
+gravel init
 ```
 
 (See [Install](/install) for what the wizard does.)
@@ -27,7 +28,7 @@ The Prompts tab lists every prompt the lib found in your repo. By default that's
 To detect prompts embedded in code (`SYSTEM_PROMPT = "..."` etc.), run:
 
 ```bash
-npx @artanis-ai/gravel scan --deep
+gravel scan --deep
 ```
 
 <Warning>Deep scan isn't implemented yet (pre-v0). It will run locally on your machine using your own LLM key — code never leaves your device.</Warning>

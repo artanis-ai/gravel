@@ -35,14 +35,14 @@ describe('installHook — Husky', () => {
     expect(result.mode).toBe('husky')
     expect(result.alreadyInstalled).toBeUndefined()
     const after = await readFile(join(repoRoot, '.husky', 'pre-commit'), 'utf8')
-    expect(after).toMatch(/^#!\/usr\/bin\/env sh\nnpm test\nnpx --no-install @artanis-ai\/gravel manifest --check/)
+    expect(after).toMatch(/^#!\/usr\/bin\/env sh\nnpm test\ngravel manifest --check/)
   })
 
   it('is idempotent — second install reports alreadyInstalled and does NOT duplicate the line', async () => {
     await mkdir(join(repoRoot, '.husky'), { recursive: true })
     await writeFile(
       join(repoRoot, '.husky', 'pre-commit'),
-      '#!/usr/bin/env sh\nnpx --no-install @artanis-ai/gravel manifest --check\n',
+      '#!/usr/bin/env sh\ngravel manifest --check\n',
     )
     const result = await installHook(repoRoot)
     expect(result.mode).toBe('husky')

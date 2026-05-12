@@ -37,23 +37,11 @@ interface VersionInfo {
   language?: 'ts' | 'python'
 }
 
-function migrateCommand(v: VersionInfo): string {
-  if (v.language === 'python') {
-    // The Python CLI exposes `migrate` as a subcommand; the wrapper
-    // command depends on the installer they're using.
-    switch (v.packageManager) {
-      case 'uv':
-        return 'uv run artanis-gravel migrate'
-      case 'poetry':
-        return 'poetry run artanis-gravel migrate'
-      case 'pipenv':
-        return 'pipenv run artanis-gravel migrate'
-      default:
-        return 'python -m artanis_gravel migrate'
-    }
-  }
-  // JS/TS — npx wraps any installed package manager.
-  return 'npx @artanis-ai/gravel migrate'
+function migrateCommand(_v: VersionInfo): string {
+  // The CLI binary is installed via install.sh and lives on PATH
+  // regardless of host language or package manager. Both TS and Python
+  // hosts surface the same command.
+  return 'gravel migrate'
 }
 
 export function PendingMigrationsBanner({

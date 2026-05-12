@@ -1,0 +1,171 @@
+name: Release CLI binary
+
+# Cross-compiles `gravel` for every supported target, produces sha256
+# sums, and uploads everything as a GitHub Release on tags `v*`.
+#
+# This release is what install.sh fetches. The SDK package workflows
+# (publish-npm.yml, publish-python.yml) run independently on the same
+# tag to publish the SDK *library* (no CLI bin), so a single
+# `git push --tags` ships everything for a version in lockstep.
+#
+# Setup notes:
+#   - No secrets needed; uses GITHUB_TOKEN with `contents: write`.
+#   - Build artifacts are reproducible: `-trimpath` strips local paths,
+#     `-buildvcs=false` removes git stamping, version is injected via
+#     -ldflags so two builds of the same tag produce identical bytes.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v0.3.0). Must already exist.'
+        required: true
+
+permissions:
+  contents: write   # Required to create the GitHub Release.
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false   # One failed target shouldn't poison the rest.
+      matrix:
+        include:
+          - target: linux-amd64
+            goos: linux
+            goarch: amd64
+            ext: ''
+          - target: linux-arm64
+            goos: linux
+            goarch: arm64
+            ext: ''
+          - target: darwin-amd64
+            goos: darwin
+            goarch: amd64
+            ext: ''
+          - target: darwin-arm64
+            goos: darwin
+            goarch: arm64
+            ext: ''
+          - target: windows-amd64
+            goos: windows
+            goarch: amd64
+            ext: '.exe'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          # 1.25+ required by modernc.org/sqlite (pure-Go driver).
+          # Pinned not floating so a Go release doesn't unexpectedly
+          # change build output mid-flight.
+          go-version: '1.25'
+          cache-dependency-path: cli/go.sum
+
+      - name: Resolve version from tag
+        id: version
+        run: |
+          # Tag is e.g. `refs/tags/v0.3.0`; we strip the `v` for the
+          # version literal compiled into the binary.
+          TAG="${{ inputs.tag || github.ref_name }}"
+          VERSION="${TAG#v}"
+          echo "tag=$TAG"     >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        working-directory: cli
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '0'
+        run: |
+          set -eu
+          OUT="gravel-${{ matrix.target }}${{ matrix.ext }}"
+          go build \
+            -trimpath \
+            -buildvcs=false \
+            -ldflags="-s -w -X github.com/artanis-ai/gravel/cli/internal/version.Version=${{ steps.version.outputs.version }}" \
+            -o "$OUT" \
+            ./cmd/gravel
+          sha256sum "$OUT" > "$OUT.sha256"
+          ls -lh "$OUT" "$OUT.sha256"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gravel-${{ matrix.target }}
+          path: |
+            cli/gravel-${{ matrix.target }}${{ matrix.ext }}
+            cli/gravel-${{ matrix.target }}${{ matrix.ext }}.sha256
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Sanity-check the manifest
+        run: |
+          set -eu
+          cd dist
+          ls -lh
+          # Every target must produce exactly two files (binary + sha256).
+          for t in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64; do
+            test -f "gravel-$t"        || { echo "missing gravel-$t"; exit 1; }
+            test -f "gravel-$t.sha256" || { echo "missing gravel-$t.sha256"; exit 1; }
+          done
+          test -f gravel-windows-amd64.exe        || { echo "missing gravel-windows-amd64.exe"; exit 1; }
+          test -f gravel-windows-amd64.exe.sha256 || { echo "missing gravel-windows-amd64.exe.sha256"; exit 1; }
+
+      - name: Resolve tag
+        id: tag
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.tag.outputs.tag }}
+          files: dist/*
+          fail_on_unmatched_files: true
+          body: |
+            ## Install
+
+            ```sh
+            curl -fsSL https://raw.githubusercontent.com/artanis-ai/gravel/main/install.sh | sh
+            ```
+
+            Windows (PowerShell):
+
+            ```powershell
+            irm https://raw.githubusercontent.com/artanis-ai/gravel/main/install.ps1 | iex
+            ```
+
+            Pin a specific version:
+
+            ```sh
+            GRAVEL_VERSION=${{ steps.tag.outputs.tag }} curl -fsSL https://raw.githubusercontent.com/artanis-ai/gravel/main/install.sh | sh
+            ```
+
+            ## Verification
+
+            Each binary has a matching `.sha256` next to it. `install.sh` verifies it automatically; if you download manually:
+
+            ```sh
+            sha256sum -c gravel-linux-amd64.sha256
+            ```

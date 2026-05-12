@@ -45,17 +45,17 @@ Stable `id` values survive renames. Hashes are normalized (line endings + traili
 | Mode | When | Cost | Detects |
 | --- | --- | --- | --- |
 | **Fast scan** | Pre-commit hook | Zero LLM | Edits to known prompts; new `.md` / `.txt` files |
-| **Deep scan** | `npx @artanis-ai/gravel scan --deep` | One LLM call per code file (cached) | Embedded prompts in code |
+| **Deep scan** | `gravel scan --deep` | One LLM call per code file (cached) | Embedded prompts in code |
 
 The deep scan runs **on your machine** using your own LLM key (or Claude Code / Codex if installed). Source code never leaves your device.
 
 ## Pre-commit hook
 
-The wizard installs a polite-blocking pre-commit hook by default. It runs `npx @artanis-ai/gravel manifest --check`. If the manifest is out of date, the commit is rejected with an actionable message:
+The wizard installs a polite-blocking pre-commit hook by default. It runs `gravel manifest --check`. If the manifest is out of date, the commit is rejected with an actionable message:
 
 ```
 Gravel: Your prompt manifest is out of date.
-Run:    npx @artanis-ai/gravel manifest --update
+Run:    gravel manifest --update
 Then:   git add .gravel/manifest.json && git commit
 
 (To bypass: git commit --no-verify)

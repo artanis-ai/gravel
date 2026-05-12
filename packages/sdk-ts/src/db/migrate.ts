@@ -8,7 +8,7 @@
  *   - Dev (NODE_ENV != 'production'): auto-applies pending migrations on app
  *     boot, with a console notice. Disable via GRAVEL_DISABLE_AUTO_MIGRATE=1.
  *   - Prod: refuses to apply automatically; surfaces an error directing the
- *     user to run `npx @artanis-ai/gravel migrate` as a deploy step.
+ *     user to run `gravel migrate` as a deploy step.
  */
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'

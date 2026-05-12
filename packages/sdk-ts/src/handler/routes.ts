@@ -421,7 +421,7 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
     const repoName = url.searchParams.get('repo_name')
     if (installationIdRaw && installSecret && repoOwner && repoName) {
       try {
-        const { writeEnvAdditions } = await import('../wizard/env.js')
+        const { writeEnvAdditions } = await import('./env.js')
         await writeEnvAdditions(
           process.cwd(),
           {

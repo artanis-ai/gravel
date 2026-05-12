@@ -1,42 +1,54 @@
 ---
 title: Install
-description: "One command. Wizard does the rest."
+description: "Two commands. Wizard does the rest."
 ---
 
 <Note>
   Gravel is in pre-v0. The wizard runs locally and sets up your database + dashboard route, but the OAuth handshake against `gravel.artanis.ai` is stubbed until the control plane is provisioned. Pass `--api-key` and `--project` for now.
 </Note>
 
-## TypeScript
+## Install the CLI
+
+The `gravel` CLI is a single binary distributed from signed GitHub Release assets. Pull it via:
 
 ```bash
-npx @artanis-ai/gravel init
+curl -fsSL https://raw.githubusercontent.com/artanis-ai/gravel/main/install.sh | sh
+```
+
+That drops `gravel` in `$HOME/.local/bin` (override with `GRAVEL_INSTALL_DIR`). The script detects your OS + arch, downloads the matching binary, verifies its sha256, and reports the version. Re-run it anytime to upgrade.
+
+Pin a specific version (e.g. for CI):
+
+```bash
+GRAVEL_VERSION=v0.3.0 curl -fsSL https://raw.githubusercontent.com/artanis-ai/gravel/main/install.sh | sh
+```
+
+Windows users: download `gravel-windows-amd64.exe` from the [latest release](https://github.com/artanis-ai/gravel/releases/latest) and add it to your PATH.
+
+## Run the wizard
+
+```bash
+gravel init
 ```
 
 The wizard:
 
-1. Detects your framework (Next.js, Express, FastAPI fallback, generic Node).
-2. Opens a browser to authenticate against Artanis. *(Currently stubbed — pass `--api-key` and `--project`.)*
-3. Installs `@artanis-ai/gravel` with your detected package manager.
-4. Writes `gravel.config.ts` with auth wiring matched to your existing provider (Clerk, NextAuth, Better Auth, …).
-5. Mounts the dashboard route — `app/admin/ai/[[...slug]]/route.ts` for App Router, `pages/admin/ai/[[...slug]].ts` for Pages, generic adapter for Express.
+1. Detects your framework (Next.js, Express, FastAPI fallback, generic Node, FastAPI, Django, generic ASGI/WSGI for Python projects).
+2. Opens a browser to authenticate against Artanis. *(Currently stubbed; pass `--api-key` and `--project`.)*
+3. Installs the matching SDK with your detected package manager (`@artanis-ai/gravel` on npm or `artanis-gravel` on PyPI).
+4. Writes `gravel.config.ts` (or `gravel_config.py`) with auth wiring matched to your existing provider (Clerk, NextAuth, Better Auth, etc.).
+5. Mounts the dashboard route: `app/admin/ai/[[...slug]]/route.ts` for App Router, `pages/admin/ai/[[...slug]].ts` for Pages, generic adapter for Express.
 6. Runs idempotent CREATE TABLE migrations against your `DATABASE_URL`.
 7. Generates a random `GRAVEL_ADMIN_PASSWORD` and writes it to `.env.local`.
 8. Installs a pre-commit hook to keep your prompt manifest in sync.
 9. Sends a test trace through the lib and waits until it shows up.
 
-## Python
-
-```bash
-python -m artanis_gravel init
-```
-
-Same flow, adapted for FastAPI / Django / generic ASGI / WSGI.
+The wizard is stack-agnostic, the same binary serves TypeScript and Python projects. It picks the right output by detecting your repo's lockfiles.
 
 ## Non-interactive (CI)
 
 ```bash
-npx @artanis-ai/gravel init --ci --api-key $GRAVEL_API_KEY --project $GRAVEL_PROJECT_ID
+gravel init --ci --api-key $GRAVEL_API_KEY --project $GRAVEL_PROJECT_ID
 ```
 
 All prompts have flags:
@@ -52,10 +64,20 @@ All prompts have flags:
 | `--no-deep-scan`              | Skip the optional deep prompt scan              |
 | `--no-test-trace`             | Skip end-to-end test trace                      |
 
+## Upgrading
+
+```bash
+gravel doctor
+```
+
+Prints your current binary version, the latest release tag, and the upgrade command (which is just `install.sh` again; one channel for the binary). The SDK in your project upgrades through its own package manager; the dashboard's loopback banner shows the exact line for your stack.
+
+See [Upgrading](https://github.com/artanis-ai/gravel/blob/main/UPGRADING.md) for the full release-by-release breakdown.
+
 ## What you'll see after install
 
 ```bash
-$ npx @artanis-ai/gravel init
+$ gravel init
 Detected ts, next-app-router, pkg=pnpm, db=postgres, auth=clerk
 ✓ Wrote gravel.config.ts
 ✓ Created app/admin/ai/[[...slug]]/route.ts

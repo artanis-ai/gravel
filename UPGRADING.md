@@ -1,28 +1,34 @@
 # Upgrading Gravel
 
-The TL;DR for any release:
+Two things upgrade independently:
+
+1. **The `gravel` CLI binary** (this is what `gravel doctor` checks).
+2. **The SDK library** pinned in your `package.json` / `pyproject.toml`.
+
+They share a version number on each release (the release pipeline bumps them in lockstep), but they're installed and upgraded through different channels.
+
+### TL;DR for any release
 
 ```
-gravel doctor                         # see what's available
-pnpm update @artanis-ai/gravel@<v>    # (or your manager — gravel doctor prints the right one)
-gravel migrate                        # if the release ships DB changes
+gravel doctor                                                       # see what's available
+curl -fsSL https://raw.githubusercontent.com/artanis-ai/gravel/main/install.sh | sh   # upgrade the CLI
+pnpm update @artanis-ai/gravel@<v>                                  # upgrade the SDK (or your stack's command)
+gravel migrate                                                      # if the release ships DB changes
 ```
 
-For Python: `artanis-gravel doctor`, then `uv pip install --upgrade artanis-gravel==<v>` (or poetry/pipenv/pip), then `artanis-gravel migrate`.
+Python SDK: `uv pip install --upgrade artanis-gravel==<v>` (or poetry/pipenv/pip).
 
-This file is the canonical source of truth for everything that can break across an SDK upgrade. Skim the section for your target version before bumping.
+This file is the canonical source of truth for everything that can break across an upgrade. Skim the section for your target version before bumping.
 
 ---
 
 ## How the update journey works
 
-Three surfaces all share the same source of truth (`getVersionInfo()` on the JS side, `doctor.get_version_info()` on Python):
+Two surfaces, each owning one thing:
 
-1. **`gravel doctor` CLI.** Prints `current → latest`, detects your package manager from lockfiles in cwd, and emits exactly the right upgrade command for that stack. Exits non-zero if behind — use it in CI to fail loud when the host pin drifts. `--json` for scripting. `GRAVEL_VERSION_CHECK_DISABLED=1` to skip the registry hit.
+1. **`gravel doctor` CLI**. Checks the binary's version against the latest GitHub Release. If behind, prints the `curl | sh` install line (stack-agnostic, the binary lives outside your project's package manager). Detects your host stack (lockfiles in cwd) for informational reporting. Exits non-zero if behind, use it in CI to fail loud when the binary pin drifts. `--json` for scripting. `GRAVEL_VERSION_CHECK_DISABLED=1` to skip the GitHub API hit.
 
-2. **Dashboard banner (admin only).** Polls `/api/version` once on mount. On **loopback** (the developer's dev box) you see the actionable upgrade command. On **prod** (any non-loopback hostname) the command would be misleading — the operator viewing the dashboard usually isn't the deployer — so we swap to "ask your developer to update and redeploy".
-
-3. **`gravel init` exit notice.** A one-line note at the end of the wizard if a newer version is available. Budget-capped at 3s so a slow registry never blocks the install.
+2. **Dashboard banner (admin only)**. Reads the SDK version from your `package.json` / `pyproject.toml`, polls `/api/version` once on mount. On **loopback** (the developer's dev box) you see the actionable per-stack upgrade command. On **prod** (any non-loopback hostname) the command would be misleading (the operator viewing the dashboard usually isn't the deployer), so we swap to "ask your developer to update and redeploy".
 
 If a release ships DB migrations, a second banner — **PendingMigrationsBanner** — appears with the count + the right migrate command for your stack.
 
@@ -78,9 +84,10 @@ _Nothing breaking yet. This section template ships with every release._
 
 ### Migration steps
 
-1. Bump the version: `pnpm update @artanis-ai/gravel@0.2.0` (or whatever `gravel doctor` prints).
-2. If DB migrations: `npx @artanis-ai/gravel migrate` (prod) or restart your dev server (auto-applies).
-3. If codegen changes: re-run `gravel init`. Back up `gravel.config.*` first if you've customised it.
+1. Upgrade the CLI binary: `curl -fsSL https://raw.githubusercontent.com/artanis-ai/gravel/main/install.sh | sh`.
+2. Upgrade the SDK: `pnpm update @artanis-ai/gravel@0.2.0` (or whatever your stack's manager wants; the dashboard's loopback banner shows the exact line for your `package.json` / `pyproject.toml`).
+3. If DB migrations: `gravel migrate` (prod) or restart your dev server (auto-applies).
+4. If codegen changes: re-run `gravel init`. Back up `gravel.config.*` first if you've customised it.
 
 ### Manual fix-ups (rare)
 

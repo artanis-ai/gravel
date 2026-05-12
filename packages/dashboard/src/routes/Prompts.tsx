@@ -102,7 +102,7 @@ function PromptsList() {
       <DeveloperNote>
         <p>
           To re-scan your codebase for prompts, run{' '}
-          <CopyableCode>npx @artanis-ai/gravel manifest --update</CopyableCode>
+          <CopyableCode>gravel manifest --update</CopyableCode>
           .
         </p>
         {ghQ.data && !ghConnected && (

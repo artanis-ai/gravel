@@ -6,8 +6,11 @@
 
 ```bash
 # What this will do once v0 ships:
-npx @artanis-ai/gravel init
+curl -fsSL https://raw.githubusercontent.com/artanis-ai/gravel/main/install.sh | sh
+gravel init
 ```
+
+The CLI is a single Go binary distributed via [`install.sh`](install.sh) from signed GitHub Release assets. The SDK packages on npm and PyPI are library-only and never ship the binary. Design notes: [`cli/DESIGN.md`](cli/DESIGN.md).
 
 ## What it is
 
@@ -29,12 +32,14 @@ The judge service it talks to for paid evals is closed-source and lives elsewher
 
 ```
 gravel/
-├── packages/sdk-ts/        # @artanis-ai/gravel — TypeScript SDK + bundled dashboard + wizard
+├── install.sh              # curl | sh entrypoint for the CLI binary
+├── cli/                    # Go module: single source of truth for the `gravel` CLI
+├── packages/sdk-ts/        # @artanis-ai/gravel — TypeScript SDK + bundled dashboard (library only)
 ├── packages/dashboard/     # React app shipped inside the SDKs
-├── python/gravel/          # artanis-gravel — Python SDK + bundled dashboard + wizard
+├── python/gravel/          # artanis-gravel — Python SDK + bundled dashboard (library only)
 ├── apps/docs/              # Mintlify docs → gravel.artanis.ai
 ├── examples/               # Next.js, FastAPI, Django integration examples
-└── .github/workflows/      # CI: lint, test, schema-drift checks
+└── .github/workflows/      # CI: lint, test, schema-drift, cross-compile + release
 ```
 
 ## Contributing

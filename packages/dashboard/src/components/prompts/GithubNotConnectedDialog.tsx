@@ -57,7 +57,7 @@ export function GithubNotConnectedDialog({
             from the project root:
           </p>
           <div className="mt-2">
-            <CopyableCode>npx @artanis-ai/gravel github connect</CopyableCode>
+            <CopyableCode>gravel github connect</CopyableCode>
           </div>
         </div>
 
