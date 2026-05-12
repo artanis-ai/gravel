@@ -33,20 +33,17 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # Node 24 ships with npm >= 11.x, which is the version that
+          # supports trusted-publisher OIDC (the flow that lets
+          # `npm publish --provenance` mint a fresh token from the
+          # GH Actions id-token). Node 22's bundled npm 10.x doesn't.
+          # In-place `npm install -g npm@latest` corrupts the running
+          # npm mid-upgrade, so bumping the Node version is cleaner.
+          node-version: 24
           # Intentionally NO `registry-url:` — that injects
           # `_authToken=${NODE_AUTH_TOKEN}` into .npmrc, which makes
           # npm CLI prefer a (stale) NODE_AUTH_TOKEN secret over the
           # OIDC token from the trusted publisher. We want OIDC.
-
-      - name: Upgrade npm for trusted-publisher OIDC support
-        # Node 22 ships with npm 10.x. Trusted-publisher OIDC support
-        # (the flow that lets `npm publish --provenance` mint a fresh
-        # token from the GH Actions id-token) landed in npm 11.5.1.
-        # Pinning to @latest is safe here: the publish step is the
-        # only thing that runs after this, and a newer npm doesn't
-        # affect the SDK bundle (already built by tsup).
-        run: npm install -g npm@latest
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
