@@ -365,11 +365,12 @@ func TestRun_NextAppRouterEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	res, err := Run(context.Background(), RunOptions{
-		CWD:         dir,
-		MountPath:   "/admin/ai",
-		YesToAll:    true,
-		WithPrompts: true,
-		WithTraces:  false, // no DATABASE_URL fixture, keep it tracing-less
+		CWD:            dir,
+		MountPath:      "/admin/ai",
+		YesToAll:       true,
+		WithPrompts:    true,
+		WithTraces:     false, // no DATABASE_URL fixture, keep it tracing-less
+		SkipSDKInstall: true,  // fixture has no real registry; SDK install tested separately
 	}, os.Stdout)
 	if err != nil {
 		t.Fatalf("Run: %v", err)

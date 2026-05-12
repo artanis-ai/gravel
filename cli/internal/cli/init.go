@@ -145,6 +145,23 @@ func printSummary(cmd *cobra.Command, r wizard.RunResult) {
 		fmt.Fprintln(out, "Warning: both `app/` and `pages/` detected. Mounted under App Router (preferred).")
 	}
 
+	// SDK auto-install outcome. Surface before the config-file line
+	// because chronologically it ran first (and a Failed result is
+	// the thing the user most likely needs to act on).
+	switch r.SDKInstall.Kind {
+	case wizard.SDKAdded:
+		fmt.Fprintf(out, "OK Added %s to dependencies.\n", r.SDKInstall.Package)
+	case wizard.SDKAlreadyPresent:
+		fmt.Fprintf(out, "OK %s already in dependencies, kept as-is.\n", r.SDKInstall.Package)
+	case wizard.SDKSkippedNoManifest:
+		fmt.Fprintf(out, "Note: no manifest in cwd. Add the SDK yourself:\n    %s\n", r.SDKInstall.Command)
+	case wizard.SDKFailed:
+		fmt.Fprintf(out, "Warning: SDK install command failed. Re-run yourself:\n    %s\n", r.SDKInstall.Command)
+		if r.SDKInstall.Stderr != "" {
+			fmt.Fprintln(out, "  (stderr from the failed run is above)")
+		}
+	}
+
 	fmt.Fprintf(out, "OK Wrote %s\n", r.ConfigPath)
 	switch r.Mount.Mode {
 	case wizard.MountCreated:

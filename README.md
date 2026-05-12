@@ -5,17 +5,14 @@
 **Status: v0 wedge ~95% done.** Wizard installs cleanly against the live `gravel.artanis.ai` control plane; default-password auth, manifest-backed prompt list / draft / submit-as-PR backend, and dashboard prompt editor all landed. The dashboard SPA is being bundled into the SDK package as the last v0 step. v1 tracing auto-patches (OpenAI / Anthropic / Langchain / Vercel AI SDK) are live on both SDKs. v2 judge dispatcher + eval runner shipped ahead of schedule. v3 Mallet analysis plumbed through Clerk-org rate-limiting. Polar billing scaffolded; pricing wiring awaits validation. See [`STATUS.md`](STATUS.md).
 
 ```bash
-# What this will do once v0 ships, TypeScript:
-pnpm add @artanis-ai/gravel
-pnpm gravel init
+# TypeScript:
+npx @artanis-ai/gravel init
 
-# Or Python:
-uv add artanis-gravel
-uv run gravel init
+# Python:
+uvx artanis-gravel init
 
-# Or direct binary (Docker, CI, polyglot repos):
-curl -fsSL https://raw.githubusercontent.com/artanis-ai/gravel/main/install.sh | sh
-gravel init
+# Direct binary (Docker, CI, polyglot repos):
+curl -fsSL https://raw.githubusercontent.com/artanis-ai/gravel/main/install.sh | sh && gravel init
 ```
 
 The wizard logic lives in a single Go binary cross-compiled per platform. The npm and PyPI SDK packages each ship a thin (~100-line) wrapper that lazy-downloads the matching binary from signed GitHub Release assets on first invocation, so installing the SDK gives you a working `gravel` command in one step. No bundled binary in the SDK tarballs. See [`cli/DESIGN.md`](cli/DESIGN.md).

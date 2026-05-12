@@ -213,11 +213,12 @@ dependencies = ["django"]
 				t.Fatal(err)
 			}
 			_, err := Run(context.Background(), RunOptions{
-				CWD:         dir,
-				MountPath:   "/admin/ai",
-				YesToAll:    true,
-				WithPrompts: true,
-				WithTraces:  tc.withTraces,
+				CWD:            dir,
+				MountPath:      "/admin/ai",
+				YesToAll:       true,
+				WithPrompts:    true,
+				WithTraces:     tc.withTraces,
+				SkipSDKInstall: true, // fixtures don't have a real registry; tested separately in sdk_install_test.go
 			}, os.Stdout)
 			if err != nil {
 				t.Fatalf("Run: %v", err)

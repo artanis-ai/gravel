@@ -15,15 +15,16 @@ import (
 // Mirrors the CLI flags. Pass an explicit Prompter to override the
 // default (tty → real prompter, --yes → defaults).
 type RunOptions struct {
-	CWD           string
-	MountPath     string
-	YesToAll      bool
-	WithPrompts   bool // install the prompts pillar (manifest + hook)
-	WithTraces    bool // install the traces pillar (DB + migrations)
-	SkipTestTrace bool
-	APIKey        string   // pre-bake into .env.local
-	ProjectID     string   // pre-bake into .env.local
-	Prompter      Prompter // optional override; PrompterFromOptions(YesToAll) used otherwise
+	CWD            string
+	MountPath      string
+	YesToAll       bool
+	WithPrompts    bool // install the prompts pillar (manifest + hook)
+	WithTraces     bool // install the traces pillar (DB + migrations)
+	SkipTestTrace  bool
+	SkipSDKInstall bool // when true, don't auto-`pnpm add` the SDK (tests + advanced users)
+	APIKey         string   // pre-bake into .env.local
+	ProjectID      string   // pre-bake into .env.local
+	Prompter       Prompter // optional override; PrompterFromOptions(YesToAll) used otherwise
 }
 
 // RunResult bundles everything the cobra layer might want to surface
@@ -31,6 +32,7 @@ type RunOptions struct {
 // human-readable summary and a future `--json` flag.
 type RunResult struct {
 	Detection      Detection
+	SDKInstall     SDKInstallResult // populated unless SkipSDKInstall is set
 	ConfigPath     string
 	Mount          MountResult
 	AdminPassword  string
@@ -95,6 +97,19 @@ func Run(ctx context.Context, opts RunOptions, _ io.Writer) (RunResult, error) {
 		return RunResult{}, fmt.Errorf("write config: %w", err)
 	}
 
+	// Add the runtime SDK to the user's deps if it's not already
+	// there. Runs BEFORE the mount step because the mount writer
+	// emits a route file that imports from @artanis-ai/gravel/next;
+	// having the SDK in node_modules first means TS-aware editors
+	// type-check the new file immediately. The install is best-effort:
+	// failures surface in the summary but don't abort the rest of the
+	// wizard (the user can always re-run the package-manager command
+	// from the printed line).
+	var sdkResult SDKInstallResult
+	if !opts.SkipSDKInstall {
+		sdkResult = EnsureSDKInstalled(ctx, d)
+	}
+
 	mount, err := Mount(d, opts.MountPath, MountOptions{
 		WithTracingDeps: opts.WithTraces,
 	})
@@ -109,6 +124,7 @@ func Run(ctx context.Context, opts RunOptions, _ io.Writer) (RunResult, error) {
 
 	result := RunResult{
 		Detection:     d,
+		SDKInstall:    sdkResult,
 		ConfigPath:    configPath,
 		Mount:         mount,
 		AdminPassword: pw,

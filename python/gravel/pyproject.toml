@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "artanis-gravel"
-version = "0.4.0"
+version = "0.5.0"
 description = "Embedded prompt management, tracing, and evals for AI engineering teams."
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -50,6 +50,11 @@ dev = [
 # logic itself lives in the Go binary; see artanis_gravel/_cli.py for the
 # ~100-line shim and cli/DESIGN.md for the architecture rationale.
 gravel = "artanis_gravel._cli:main"
+# Second alias under the registry name. `uvx <pkg>` / `pipx run <pkg>`
+# both pick the script whose name matches the package name; without
+# this entry users would have to type `uvx --from artanis-gravel gravel init`
+# which defeats the one-liner UX. Same target as `gravel`.
+artanis-gravel = "artanis_gravel._cli:main"
 
 [project.urls]
 Homepage = "https://gravel.artanis.ai"

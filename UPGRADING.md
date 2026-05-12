@@ -14,14 +14,14 @@ For TypeScript projects:
 
 ```
 pnpm update @artanis-ai/gravel@<v>     # bumps SDK + wrapper; wrapper auto-fetches matching binary next run
-pnpm gravel migrate                    # if the release ships DB changes
+npx gravel migrate                     # if the release ships DB changes
 ```
 
 For Python projects:
 
 ```
 uv add artanis-gravel@<v>              # (or pip install --upgrade artanis-gravel==<v>, etc.)
-uv run gravel migrate
+uvx gravel migrate
 ```
 
 For users who installed via `install.sh`:
@@ -32,6 +32,13 @@ gravel migrate
 ```
 
 Run `gravel doctor` first to see what's available and what command applies to your install.
+
+**Fresh installs (>=0.5.0)** are even simpler — the SDK install is implicit:
+
+```
+npx @artanis-ai/gravel init    # TypeScript: wizard auto-adds the SDK to package.json
+uvx artanis-gravel init        # Python: wizard auto-adds artanis-gravel to pyproject.toml
+```
 
 This file is the canonical source of truth for everything that can break across an upgrade. Skim the section for your target version before bumping.
 

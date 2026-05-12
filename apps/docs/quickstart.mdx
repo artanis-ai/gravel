@@ -9,11 +9,10 @@ This walks through end-to-end. **Some steps are not fully wired yet** during pre
 
 ```bash
 cd your-existing-app
-pnpm add @artanis-ai/gravel    # or `uv add artanis-gravel` for Python projects
-pnpm gravel init               # or `uv run gravel init`
+npx @artanis-ai/gravel init    # or `uvx artanis-gravel init` for Python projects
 ```
 
-The SDK package ships a CLI wrapper that lazy-fetches the matching binary on first run. For Docker / CI / polyglot setups, see the [direct install path](/install).
+The wizard auto-adds the SDK to your project deps and writes the config + dashboard mount. For Docker / CI / polyglot setups, see the [direct install path](/install).
 
 ## 2. Open the dashboard
 
@@ -28,7 +27,7 @@ The Prompts tab lists every prompt the lib found in your repo. By default that's
 To detect prompts embedded in code (`SYSTEM_PROMPT = "..."` etc.), run:
 
 ```bash
-pnpm gravel scan --deep    # or `uv run gravel scan --deep`
+npx gravel scan --deep    # or `uvx gravel scan --deep`
 ```
 
 <Warning>Deep scan isn't implemented yet (pre-v0). It will run locally on your machine using your own LLM key — code never leaves your device.</Warning>

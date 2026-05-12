@@ -6,11 +6,10 @@ The TypeScript SDK for [Gravel](https://gravel.artanis.ai).
 
 ```bash
 # What this will look like once v0 ships:
-pnpm add @artanis-ai/gravel
-pnpm gravel init
+npx @artanis-ai/gravel init
 ```
 
-This package ships both the runtime SDK library AND a thin `bin/gravel.js` wrapper that lazy-downloads the matching Go binary from signed GitHub Release assets on first `gravel <cmd>` invocation. So `pnpm add` gives the user both the library their code imports AND a working CLI. The binary is NOT bundled in the npm tarball; the wrapper is ~100 lines of source-visible JS. See [`cli/DESIGN.md`](https://github.com/artanis-ai/gravel/blob/main/cli/DESIGN.md) for the rationale.
+This package ships both the runtime SDK library AND a thin `bin/gravel.js` wrapper that lazy-downloads the matching Go binary from signed GitHub Release assets on first invocation. `npx @artanis-ai/gravel init` runs the wizard; the wizard auto-adds `@artanis-ai/gravel` to your `package.json` deps so the generated `gravel.config.ts` resolves at runtime. The binary is NOT bundled in the npm tarball; the wrapper is ~150 lines of source-visible JS. See [`cli/DESIGN.md`](https://github.com/artanis-ai/gravel/blob/main/cli/DESIGN.md) for the rationale.
 
 For users who don't want Node in their CLI install path (Docker, CI, polyglot repos), the same binary is installable via [`install.sh`](https://raw.githubusercontent.com/artanis-ai/gravel/main/install.sh) directly.
 
