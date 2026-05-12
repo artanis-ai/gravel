@@ -1,0 +1,589 @@
+package wizard
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+)
+
+// mount_python.go: FastAPI + Django auto-mounters. Ported from the
+// pre-port TS wizard's packages/sdk-ts/src/wizard/mount.ts. The
+// strategy mirrors the JS-side Next mount: prefer to AST-patch (here,
+// regex-patch) the user's existing entry file so they don't have to
+// paste anything by hand. Only fall back to manual-instructions when
+// we can't find a safe edit point.
+
+// --- FastAPI ---------------------------------------------------------------
+
+// fastAPIEntryCandidates is the FAST PATH: well-known filenames the
+// patcher checks before walking the tree. Covers the layouts the TS
+// reference enumerated. Anything outside this list is found via
+// findFastAPIEntries below.
+var fastAPIEntryCandidates = []string{
+	"main.py",
+	"app.py",
+	"src/main.py",
+	"src/app.py",
+	"app/main.py",
+}
+
+// topLevelCtorRE locates a module-level `<name> = FastAPI(` binding.
+// Used to distinguish an actual FastAPI app declaration from incidental
+// FastAPI(...) references inside helper functions, tests, etc.
+//
+// Requirements:
+//   - Column zero (no leading whitespace) — anything indented is inside
+//     a function/class body and we'd corrupt the user's source if we
+//     injected `app.include_router(...)` after it.
+//   - Optional type annotation between name and `=` to support
+//     `app: FastAPI = FastAPI(...)` (mypy-strict shops).
+//   - The `=` and `FastAPI(` must be on the SAME line as the name (we
+//     don't try to parse multi-line line-continuation, which is rare
+//     for app declarations).
+var topLevelCtorRE = regexp.MustCompile(`(?m)^(\w+)(?:[ \t]*:[ \t]*[^=\n]+?)?[ \t]*=[ \t]*FastAPI[ \t]*\(`)
+
+// fastAPIDirSkip lists directory names that mountFastAPI never enters
+// when hunting for the app's entry file. Walking node_modules or .venv
+// can take seconds and is guaranteed to be wrong anyway.
+var fastAPIDirSkip = map[string]bool{
+	"node_modules":  true,
+	".git":          true,
+	".venv":         true,
+	"venv":          true,
+	"env":           true,
+	"__pycache__":   true,
+	".tox":          true,
+	".mypy_cache":   true,
+	".pytest_cache": true,
+	".ruff_cache":   true,
+	"dist":          true,
+	"build":         true,
+	"site-packages": true,
+	".next":         true,
+}
+
+// mountFastAPI patches the user's FastAPI entry file to import +
+// include the gravel router, and writes `gravel_route.py` ADJACENT
+// to that entry so Python's import system can always resolve it.
+//
+// Why adjacent and not at the project root: src-layout uv/poetry
+// projects (entry at `src/<pkg>/server.py`) don't have the project
+// root on sys.path. uv adds only `src/` to sys.path, so a
+// `gravel_route.py` at the project root is unreachable. Writing it
+// next to the entry file means the entry can use a relative import
+// (`from .gravel_route import …`) for package layouts, or a plain
+// absolute import for top-level scripts.
+//
+// `gravel_route.py` references `gravel_config.py` at the project
+// root via a sys.path bootstrap so the user's config stays where
+// they're used to seeing it.
+//
+// Returns MountResult{Mode: MountManual} only when no entry file
+// with a `<name> = FastAPI(` declaration can be found anywhere, OR
+// when the ctor structure defeats the paren scanner.
+func mountFastAPI(d Detection, mountPath string) (MountResult, error) {
+	// Two-phase search: the fast hard-coded list first, then a tree
+	// walk for src/<pkg>/server.py and similar.
+	for _, rel := range fastAPIEntryCandidates {
+		if res, ok := tryPatchFastAPIEntry(d.CWD, rel, mountPath); ok {
+			return res, nil
+		}
+	}
+	for _, rel := range findFastAPIEntries(d.CWD) {
+		if res, ok := tryPatchFastAPIEntry(d.CWD, rel, mountPath); ok {
+			return res, nil
+		}
+	}
+
+	// No entry file found at all. Write gravel_route.py at the
+	// project root anyway so the paste-into-your-entry instructions
+	// the user gets next have somewhere to import from.
+	rootRoute := filepath.Join(d.CWD, "gravel_route.py")
+	if err := writeGravelRoutePy(d.CWD, rootRoute, false); err != nil {
+		return MountResult{}, err
+	}
+	return manual(fastapiInstructions(mountPath)), nil
+}
+
+// writeGravelRoutePy emits the gravel router stub at the given path,
+// backing up any prior content. inPackage=true generates a package-
+// aware version that adds the project root to sys.path so the file
+// can find `gravel_config.py` even when it's not directly importable.
+func writeGravelRoutePy(projectRoot, dest string, inPackage bool) error {
+	if pathExists(dest) {
+		if err := safeBackup(dest); err != nil {
+			return err
+		}
+	}
+	var body string
+	if inPackage {
+		// Walk up at runtime looking for gravel_config.py. We compute the
+		// depth from a sentinel at file write time so we don't hard-code
+		// "../.." — survives the user moving the package within their
+		// repo without re-running the wizard.
+		body = `"""Gravel dashboard router — generated by ` + "`gravel init`" + `.
+
+This file is placed inside your FastAPI app's package so the host
+entry can import it with a relative import. ` + "`gravel_config.py`" + ` lives at
+the project root; the sys.path bootstrap below makes it importable
+from inside the package.
+"""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+# Walk up from this file looking for the project root (where
+# gravel_config.py lives). Stops at the filesystem root.
+_here = Path(__file__).resolve().parent
+for _candidate in (_here, *_here.parents):
+    if (_candidate / "gravel_config.py").is_file():
+        if str(_candidate) not in sys.path:
+            sys.path.insert(0, str(_candidate))
+        break
+
+from gravel_config import config  # noqa: E402  (sys.path bootstrap above)
+from artanis_gravel.fastapi import create_gravel_router  # noqa: E402
+
+router = create_gravel_router(config=config)
+`
+	} else {
+		body = `"""Gravel dashboard router — generated by ` + "`gravel init`" + `."""
+from gravel_config import config
+from artanis_gravel.fastapi import create_gravel_router
+
+router = create_gravel_router(config=config)
+`
+	}
+	return os.WriteFile(dest, []byte(body), 0o644)
+}
+
+// tryPatchFastAPIEntry reads a candidate file, checks for a FastAPI
+// declaration, applies the patcher if one is present, and writes a
+// gravel_route.py adjacent to the entry so the patched import line
+// resolves under uv/poetry src-layout (where the project root is not
+// on sys.path). Returns (result, true) on a successful patch or
+// idempotent re-detection; (zero, false) when the file isn't a real
+// FastAPI entry so the caller can try the next candidate.
+func tryPatchFastAPIEntry(cwd, rel, mountPath string) (MountResult, bool) {
+	entryPath := filepath.Join(cwd, rel)
+	original, err := os.ReadFile(entryPath)
+	if err != nil {
+		return MountResult{}, false
+	}
+	src := string(original)
+	entryDir := filepath.Dir(entryPath)
+	inPackage := pathExists(filepath.Join(entryDir, "__init__.py"))
+
+	// Idempotent: if the entry already imports gravel_router, leave
+	// it alone. Either the relative or absolute import form counts.
+	if strings.Contains(src, "from gravel_route import router as gravel_router") ||
+		strings.Contains(src, "from .gravel_route import router as gravel_router") {
+		return MountResult{Path: entryPath, Mode: MountUpdated}, true
+	}
+	// Must contain a top-level `<name> = FastAPI(` binding. An
+	// incidental FastAPI() reference inside a helper function or
+	// import alias isn't where we should inject.
+	if !topLevelCtorRE.MatchString(src) {
+		return MountResult{}, false
+	}
+	patched := patchFastAPIMain(src, mountPath, inPackage)
+	if patched == src {
+		// Top-level ctor was located but the scanner refused to patch.
+		return manual(fastapiInstructions(mountPath) + "\nTarget file: " + rel), true
+	}
+	if err := safeBackup(entryPath); err != nil {
+		return MountResult{}, false
+	}
+	if err := os.WriteFile(entryPath, []byte(patched), 0o644); err != nil {
+		return MountResult{}, false
+	}
+
+	// Write gravel_route.py adjacent to the entry. For package
+	// layouts (entry's dir has __init__.py), use the package-aware
+	// template that walks up looking for gravel_config.py at the
+	// project root.
+	routePath := filepath.Join(entryDir, "gravel_route.py")
+	if err := writeGravelRoutePy(cwd, routePath, inPackage); err != nil {
+		return MountResult{}, false
+	}
+	return MountResult{Path: entryPath, Mode: MountUpdated}, true
+}
+
+// findFastAPIEntries walks the project tree looking for any .py file
+// whose source declares a top-level `<name> = FastAPI(` binding.
+// Returns the relative paths sorted by directory depth ascending so
+// `src/<pkg>/main.py` wins over a deeper helper module.
+//
+// Skips obvious noise (.git, .venv, node_modules, __pycache__, …)
+// and refuses to walk past 6 levels deep — sane Python projects keep
+// the entry near the root.
+func findFastAPIEntries(cwd string) []string {
+	var matches []string
+	root := filepath.Clean(cwd)
+	_ = filepath.WalkDir(root, func(path string, dirent os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if dirent.IsDir() {
+			if path == root {
+				return nil
+			}
+			if fastAPIDirSkip[dirent.Name()] || strings.HasPrefix(dirent.Name(), ".") {
+				return filepath.SkipDir
+			}
+			// Limit depth so a vendored monorepo doesn't make the
+			// walk feel hung. 6 covers src/<pkg>/<sub>/<sub>/<sub>.
+			rel, _ := filepath.Rel(root, path)
+			if depth := strings.Count(rel, string(filepath.Separator)); depth >= 6 {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(dirent.Name(), ".py") {
+			return nil
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		if !topLevelCtorRE.Match(body) {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return nil
+		}
+		matches = append(matches, filepath.ToSlash(rel))
+		return nil
+	})
+	// Shallowest-first: prefer src/<pkg>/main.py to src/<pkg>/sub/main.py.
+	sort.SliceStable(matches, func(i, j int) bool {
+		di := strings.Count(matches[i], "/")
+		dj := strings.Count(matches[j], "/")
+		if di != dj {
+			return di < dj
+		}
+		return matches[i] < matches[j]
+	})
+	return matches
+}
+
+// patchFastAPIMain patches a FastAPI entry source so it imports the
+// gravel router + calls `<app>.include_router(gravel_router, ...)`
+// on it.
+//
+// Strategy:
+//   - Insert `from gravel_route import router as gravel_router\n`
+//     after the LAST `from fastapi import ...` line (or at the top
+//     of the file if there isn't one).
+//   - Find the first `<name> = FastAPI(` on a line start. Then walk
+//     forward with a paren-balanced scanner, skipping over Python
+//     string literals (`'`, `"`, `'''`, `"""`, f-strings) so nested
+//     parens inside argument expressions don't fool us. Insert the
+//     include_router line after the line containing the closing `)`.
+//
+// Returns the source unchanged when no `<name> = FastAPI(` can be
+// found at column 0; the caller then surfaces manual instructions
+// rather than risk a corrupt patch.
+//
+// Tested in mount_python_test.go: single-line, multi-line, nested
+// parens inside f-strings, alternate variable names, idempotency.
+//
+// inPackage controls the import form for gravel_route:
+//   * true  -> `from .gravel_route import router as gravel_router`
+//     (entry is inside a Python package; relative import resolves to
+//     the adjacent gravel_route.py the mounter writes)
+//   * false -> `from gravel_route import router as gravel_router`
+//     (entry is a top-level script; works when the entry's dir is on
+//     sys.path, which is the case for `python main.py` invocations)
+func patchFastAPIMain(source, mountPath string, inPackage bool) string {
+	if strings.Contains(source, "from gravel_route import router as gravel_router") ||
+		strings.Contains(source, "from .gravel_route import router as gravel_router") {
+		return source
+	}
+	importLine := "from gravel_route import router as gravel_router\n"
+	if inPackage {
+		importLine = "from .gravel_route import router as gravel_router\n"
+	}
+	includeTpl := "%s.include_router(gravel_router, prefix='%s')\n"
+
+	// Inject the import after the last `from fastapi import ...`. If
+	// no fastapi import is present we prepend, which is a safe (if
+	// noisy) fallback — the user can move it.
+	withImport := source
+	fastapiImportRE := regexp.MustCompile(`(?m)^from\s+fastapi\s+import\s+[^\n]+\n`)
+	if locs := fastapiImportRE.FindAllStringIndex(source, -1); len(locs) > 0 {
+		last := locs[len(locs)-1]
+		insertAt := last[1]
+		withImport = source[:insertAt] + importLine + source[insertAt:]
+	} else {
+		withImport = importLine + source
+	}
+
+	// Find the `<name> = FastAPI(` opening at column ZERO. See
+	// topLevelCtorRE's doc-comment for the rationale; in short, we
+	// refuse to patch inside function/class bodies.
+	m := topLevelCtorRE.FindStringSubmatchIndex(withImport)
+	if m == nil {
+		return source
+	}
+	appName := withImport[m[2]:m[3]]
+	openParenPos := m[1] - 1 // m[1] is one past the '('; back up to the '(' itself
+	closeParenPos := matchClosingParen(withImport, openParenPos)
+	if closeParenPos < 0 {
+		// Unbalanced / EOF — refuse to patch.
+		return source
+	}
+	// Find the end of the line containing the closing paren so we
+	// inject our include_router AFTER the whole ctor expression.
+	lineEnd := strings.IndexByte(withImport[closeParenPos:], '\n')
+	var insertAt int
+	if lineEnd < 0 {
+		insertAt = len(withImport)
+	} else {
+		insertAt = closeParenPos + lineEnd
+	}
+	include := fmt.Sprintf(includeTpl, appName, mountPath)
+	return withImport[:insertAt] + "\n" + include + withImport[insertAt:]
+}
+
+// matchClosingParen finds the position of the `)` that closes the
+// `(` at position openPos. Handles arbitrarily nested parens / square
+// brackets / curly braces, and skips over Python string literals
+// (single-quoted, double-quoted, triple-quoted, and prefixed forms
+// like r/b/f/rb/etc.). Returns -1 if the source is unbalanced or the
+// opener at openPos isn't actually a `(`.
+//
+// This is deliberately a small dedicated walker rather than a full
+// Python tokenizer: we only need to find ONE matched paren, not
+// parse the whole file. Strings are the only construct that can
+// legally contain unbalanced parens.
+func matchClosingParen(s string, openPos int) int {
+	if openPos < 0 || openPos >= len(s) || s[openPos] != '(' {
+		return -1
+	}
+	depth := 0
+	i := openPos
+	for i < len(s) {
+		c := s[i]
+		switch c {
+		case '(', '[', '{':
+			depth++
+			i++
+		case ')', ']', '}':
+			depth--
+			if depth == 0 && c == ')' {
+				return i
+			}
+			i++
+		case '"', '\'':
+			// Detect triple-quoted strings (""" / ''') vs single.
+			quote := c
+			if i+2 < len(s) && s[i+1] == quote && s[i+2] == quote {
+				// Triple-quoted: find the matching triple.
+				end := strings.Index(s[i+3:], string([]byte{quote, quote, quote}))
+				if end < 0 {
+					return -1
+				}
+				i = i + 3 + end + 3
+			} else {
+				// Single-line string: walk to the matching quote,
+				// honoring backslash escapes. Python forbids raw
+				// newlines inside non-triple strings, so we stop at
+				// LF defensively if we never see the closer.
+				j := i + 1
+				for j < len(s) && s[j] != quote && s[j] != '\n' {
+					if s[j] == '\\' && j+1 < len(s) {
+						j += 2
+						continue
+					}
+					j++
+				}
+				if j >= len(s) || s[j] == '\n' {
+					return -1
+				}
+				i = j + 1
+			}
+		case '#':
+			// Python comment — skip to EOL.
+			nl := strings.IndexByte(s[i:], '\n')
+			if nl < 0 {
+				return -1
+			}
+			i += nl
+		default:
+			i++
+		}
+	}
+	return -1
+}
+
+// --- Django ---------------------------------------------------------------
+
+// mountDjango patches the project's root urls.py to include the
+// gravel router as the FIRST entry of urlpatterns. Returns
+// MountManual when no urls.py with a urlpatterns list can be found.
+func mountDjango(d Detection, mountPath string) (MountResult, error) {
+	for _, file := range findDjangoRootURLs(d.CWD) {
+		original, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+		src := string(original)
+		if strings.Contains(src, "from artanis_gravel.django import gravel_urls") {
+			return MountResult{Path: file, Mode: MountUpdated}, nil
+		}
+		if !regexp.MustCompile(`\burlpatterns\s*=\s*\[`).MatchString(src) {
+			continue
+		}
+		patched := patchDjangoURLs(src, mountPath)
+		if patched == src {
+			return manual(djangoInstructions(mountPath)), nil
+		}
+		if err := safeBackup(file); err != nil {
+			return MountResult{}, err
+		}
+		if err := os.WriteFile(file, []byte(patched), 0o644); err != nil {
+			return MountResult{}, err
+		}
+		return MountResult{Path: file, Mode: MountUpdated}, nil
+	}
+	return manual(djangoInstructions(mountPath)), nil
+}
+
+// djangoDirSkip lists directories findDjangoRootURLs refuses to walk
+// into. Matches fastAPIDirSkip with two Django-specific additions
+// (`migrations` and `static`) that are guaranteed to be wrong targets.
+var djangoDirSkip = map[string]bool{
+	"node_modules":  true,
+	".git":          true,
+	".venv":         true,
+	"venv":          true,
+	"env":           true,
+	"__pycache__":   true,
+	".tox":          true,
+	".mypy_cache":   true,
+	".pytest_cache": true,
+	".ruff_cache":   true,
+	"dist":          true,
+	"build":         true,
+	"site-packages": true,
+	"migrations":    true,
+	"static":        true,
+}
+
+// findDjangoRootURLs returns candidate urls.py paths for the host's
+// root URL config. The walker looks at the project root first, then
+// any directory anywhere in the tree that contains BOTH settings.py
+// and urls.py — Django's canonical "project package" signature.
+//
+// This covers the common layouts:
+//   - `<project>/urls.py` (cwd is the project dir itself)
+//   - `<project>/<project>/urls.py` (django-admin startproject default)
+//   - `src/<project>/urls.py` (src-layout)
+//   - `apps/<project>/urls.py` (apps-dir pattern)
+//
+// Results are sorted shallowest-first so a top-level urls.py wins over
+// one nested under `apps/`. The depth cap (6) matches FastAPI's walker.
+//
+// We don't parse settings.py for ROOT_URLCONF; that'd require evaluating
+// arbitrary Python. The settings.py + urls.py co-location heuristic
+// covers every layout we've seen in real projects.
+func findDjangoRootURLs(cwd string) []string {
+	out := []string{}
+	if pathExists(filepath.Join(cwd, "urls.py")) {
+		out = append(out, filepath.Join(cwd, "urls.py"))
+	}
+	root := filepath.Clean(cwd)
+	_ = filepath.WalkDir(root, func(path string, dirent os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if !dirent.IsDir() {
+			return nil
+		}
+		if path == root {
+			return nil
+		}
+		if djangoDirSkip[dirent.Name()] || strings.HasPrefix(dirent.Name(), ".") {
+			return filepath.SkipDir
+		}
+		rel, _ := filepath.Rel(root, path)
+		if depth := strings.Count(rel, string(filepath.Separator)); depth >= 6 {
+			return filepath.SkipDir
+		}
+		settings := filepath.Join(path, "settings.py")
+		urls := filepath.Join(path, "urls.py")
+		if pathExists(settings) && pathExists(urls) {
+			out = append(out, urls)
+		}
+		return nil
+	})
+	// Shallowest-first; tie-break alphabetically.
+	sort.SliceStable(out, func(i, j int) bool {
+		di := strings.Count(out[i], string(filepath.Separator))
+		dj := strings.Count(out[j], string(filepath.Separator))
+		if di != dj {
+			return di < dj
+		}
+		return out[i] < out[j]
+	})
+	return out
+}
+
+// patchDjangoURLs adds the gravel include as the FIRST entry of
+// urlpatterns. First-not-last because /admin/ai is a prefix; placing
+// it after a catch-all swallows it. Returns the source unchanged if
+// urlpatterns can't be located safely.
+func patchDjangoURLs(source, mountPath string) string {
+	if strings.Contains(source, "from artanis_gravel.django import gravel_urls") {
+		return source
+	}
+	patched := source
+
+	// Ensure `path, include` are both imported from django.urls.
+	djangoImportRE := regexp.MustCompile(`(?m)^from\s+django\.urls\s+import\s+([^\n]+)$`)
+	if m := djangoImportRE.FindStringSubmatchIndex(patched); m != nil {
+		names := strings.Split(strings.TrimSpace(patched[m[2]:m[3]]), ",")
+		hasInclude := false
+		for _, n := range names {
+			if strings.TrimSpace(n) == "include" {
+				hasInclude = true
+				break
+			}
+		}
+		if !hasInclude {
+			fullLine := patched[m[0]:m[1]]
+			replacement := "from django.urls import " + strings.TrimSpace(patched[m[2]:m[3]]) + ", include"
+			patched = strings.Replace(patched, fullLine, replacement, 1)
+		}
+	} else {
+		// No django.urls import; prepend a complete one.
+		patched = "from django.urls import path, include\n" + patched
+	}
+
+	// Add the gravel import right after the django.urls import block.
+	gravelImport := "from artanis_gravel.django import gravel_urls\n"
+	afterRE := regexp.MustCompile(`(?m)^from\s+django\.urls\s+import[^\n]+\n`)
+	if loc := afterRE.FindStringIndex(patched); loc != nil {
+		patched = patched[:loc[1]] + gravelImport + patched[loc[1]:]
+	} else {
+		patched = gravelImport + patched
+	}
+
+	// Insert the path() at the start of urlpatterns. Match the
+	// literal `urlpatterns = [` (optionally followed by a newline)
+	// and inject our entry on the next line.
+	cleanMount := strings.Trim(mountPath, "/")
+	pathLine := fmt.Sprintf("    path('%s/', include(gravel_urls)),\n", cleanMount)
+	patternsRE := regexp.MustCompile(`(urlpatterns\s*=\s*\[\s*\n)`)
+	if !patternsRE.MatchString(patched) {
+		return source
+	}
+	patched = patternsRE.ReplaceAllString(patched, "${1}"+pathLine)
+	return patched
+}

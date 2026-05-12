@@ -62,6 +62,30 @@ func gravelPackageName(lang stack.Language) string {
 	return "@artanis-ai/gravel"
 }
 
+// minSDKVersion is the minimum SDK release the wizard's generated
+// configs are compatible with. Bumped together with the SDK whenever
+// the wizard relies on a fix that lives only in a new version (e.g.
+// the dashboard SPA bundled into the wheel, the no-DB stub URL path).
+// Without this pin, customers running `gravel init` against an old
+// PyPI version get a broken install with no useful error.
+//
+// Update in lockstep with python/gravel/pyproject.toml `version`.
+const minSDKVersion = "0.5.3"
+
+// gravelInstallSpec returns the dependency spec we hand to the
+// package manager. For Python we pin `>=minSDKVersion` so `uv add`
+// refuses to install a too-old SDK (which would crash at server
+// startup). The TS package isn't currently version-pinned because
+// the JS SDK hasn't shipped any wizard-breaking bumps yet; revisit
+// when it does.
+func gravelInstallSpec(lang stack.Language) string {
+	name := gravelPackageName(lang)
+	if lang == stack.LanguagePython {
+		return name + ">=" + minSDKVersion
+	}
+	return name
+}
+
 // EnsureSDKInstalled adds the gravel SDK to the user's project deps if
 // it's not already there. Idempotent: a second call on a project that
 // already has the SDK is a no-op.
@@ -78,7 +102,8 @@ func gravelPackageName(lang stack.Language) string {
 //      return SDKAdded or SDKFailed.
 func EnsureSDKInstalled(ctx context.Context, d Detection) SDKInstallResult {
 	pkg := gravelPackageName(d.Language)
-	command := buildAddCommand(d.PackageManager, pkg)
+	spec := gravelInstallSpec(d.Language)
+	command := buildAddCommand(d.PackageManager, spec)
 	result := SDKInstallResult{Package: pkg, Command: strings.Join(command, " ")}
 
 	manifestPath := manifestPathFor(d)

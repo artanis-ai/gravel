@@ -145,6 +145,38 @@ func Open(ctx context.Context, url string) (*sql.DB, Dialect, error) {
 	return nil, "", errors.New("unreachable")
 }
 
+// TablesAlreadyExist reports whether the gravel_samples and
+// gravel_feedback tables both already exist in the target database.
+// Connects, queries the catalog, closes the connection — caller passes
+// the URL + dialect so we don't entangle the wizard with sql.DB
+// lifetime. A nil error + false means "connected fine, tables absent";
+// errors only flow when the connection itself failed.
+func TablesAlreadyExist(ctx context.Context, url string, d Dialect) (bool, error) {
+	db, _, err := Open(ctx, url)
+	if err != nil {
+		return false, err
+	}
+	defer db.Close()
+	var q string
+	switch d {
+	case DialectPostgres:
+		q = `SELECT COUNT(*) FROM information_schema.tables
+		      WHERE table_schema = 'public'
+		        AND table_name IN ('gravel_samples', 'gravel_feedback')`
+	case DialectSQLite:
+		q = `SELECT COUNT(*) FROM sqlite_master
+		      WHERE type = 'table'
+		        AND name IN ('gravel_samples', 'gravel_feedback')`
+	default:
+		return false, fmt.Errorf("unsupported dialect %q", d)
+	}
+	var n int
+	if err := db.QueryRowContext(ctx, q).Scan(&n); err != nil {
+		return false, err
+	}
+	return n >= 2, nil
+}
+
 // PostgresBootstrapSQL returns the embedded postgres CREATE TABLE
 // script. Exposed so the schema-drift CI can diff it against the TS
 // reference at packages/sdk-ts/src/db/bootstrap.ts.

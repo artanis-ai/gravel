@@ -79,6 +79,69 @@ func TestDetect_NextBothRouters(t *testing.T) {
 	}
 }
 
+// REGRESSION: legacy / pre-PEP 518 Python projects ship a setup.py
+// without a pyproject.toml. Detection used to bail out and treat
+// them as "no project", so the install wizard offered Next.js
+// detection instead of FastAPI. Make sure setup.py alone is enough.
+func TestDetect_FastAPIWithSetupPyOnly(t *testing.T) {
+	dir := newFixture(t, map[string]string{
+		"setup.py": `from setuptools import setup
+setup(
+    name="myapp",
+    install_requires=["fastapi>=0.100", "openai>=1.0"],
+)
+`,
+	})
+	d := Detect(dir)
+	if d.Language != stack.LanguagePython {
+		t.Errorf("Language = %q (setup.py alone should still detect Python)", d.Language)
+	}
+	if d.Framework != FrameworkFastAPI {
+		t.Errorf("Framework = %q, want fastapi", d.Framework)
+	}
+	if !contains(d.LLMLibs, LLMOpenAI) {
+		t.Errorf("openai not detected from setup.py install_requires: %v", d.LLMLibs)
+	}
+}
+
+func TestDetect_FastAPIWithSetupCfg(t *testing.T) {
+	// setup.cfg [options] install_requires syntax — another legacy
+	// shape.
+	dir := newFixture(t, map[string]string{
+		"setup.cfg": `[metadata]
+name = myapp
+
+[options]
+install_requires =
+    fastapi
+    anthropic
+`,
+		"setup.py": "from setuptools import setup\nsetup()\n",
+	})
+	d := Detect(dir)
+	if d.Framework != FrameworkFastAPI {
+		t.Errorf("Framework = %q, want fastapi", d.Framework)
+	}
+	if !contains(d.LLMLibs, LLMAnthropic) {
+		t.Errorf("anthropic not detected from setup.cfg: %v", d.LLMLibs)
+	}
+}
+
+// REGRESSION: requirements.txt-only project (no pyproject.toml) is a
+// common workflow — pip install -r style.
+func TestDetect_FastAPIWithRequirementsTxtOnly(t *testing.T) {
+	dir := newFixture(t, map[string]string{
+		"requirements.txt": "fastapi==0.100.0\nopenai>=1.0\n",
+	})
+	d := Detect(dir)
+	if d.Language != stack.LanguagePython {
+		t.Errorf("Language = %q", d.Language)
+	}
+	if d.Framework != FrameworkFastAPI {
+		t.Errorf("Framework = %q", d.Framework)
+	}
+}
+
 func TestDetect_FastAPI(t *testing.T) {
 	dir := newFixture(t, map[string]string{
 		"pyproject.toml": `[project]
@@ -161,6 +224,141 @@ func TestGenerateConfig_TSNextAuthMissingHelper(t *testing.T) {
 	mustNotContain(t, got, "import { auth as nextAuth }")
 }
 
+// REGRESSION: the published artanis-gravel<=0.5.2 SDK crashes inside
+// `create_gravel_router` when `database.url` is empty (calls
+// `open_database('')` → ValueError). The wizard's `--no-traces`
+// install used to write `database={'url': ''}`, so any customer
+// running the wizard against the released SDK got a server that
+// failed to import.
+//
+// Fix: when WithDatabase=false, write a stub local SQLite URL
+// pointing at `<config-dir>/.gravel/dev.db`. The SDK opens this
+// empty file, sees no gravel_* tables, returns empty pages from
+// sample routes, and the dashboard SPA renders cleanly. Result:
+// the wizard's prompts-only contract works without requiring a
+// new SDK release.
+func TestGenerateConfig_PythonNoDatabase_WritesStubSqliteUrl(t *testing.T) {
+	dir := t.TempDir()
+	d := Detection{
+		CWD:      dir,
+		Language: stack.LanguagePython,
+		Auth:     AuthUnknown,
+		DBEnvVar: "DATABASE_URL",
+	}
+	path, err := GenerateConfig(d, ConfigOptions{MountPath: "/admin/ai", WithDatabase: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := os.ReadFile(path)
+	got := string(body)
+	// Stub URL must reference `.gravel/dev.db` relative to the config
+	// file's resolved directory. Path() is part of the env-loader
+	// preamble so we don't need to re-import.
+	mustContain(t, got, ".gravel/dev.db")
+	// No env-var lookup for DATABASE_URL when traces is skipped.
+	if strings.Contains(got, "os.environ['DATABASE_URL']") {
+		t.Errorf("config reads DATABASE_URL with bracket syntax (KeyError-prone):\n%s", got)
+	}
+	if strings.Contains(got, "os.environ.get('DATABASE_URL'") {
+		t.Errorf("WithDatabase=false should NOT lookup DATABASE_URL at all:\n%s", got)
+	}
+	// Empty URL would crash the published SDK — make sure we never
+	// emit it.
+	if strings.Contains(got, "database={'url': ''}") {
+		t.Errorf("regression: empty database URL would crash artanis-gravel<=0.5.2:\n%s", got)
+	}
+	mustContain(t, got, "mount_path='/admin/ai'")
+	mustContain(t, got, "'default_password': os.environ.get('GRAVEL_ADMIN_PASSWORD', '')")
+	// .gravel/ directory must be created so the SDK can write dev.db.
+	if _, err := os.Stat(filepath.Join(dir, ".gravel")); err != nil {
+		t.Errorf(".gravel/ directory not created: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".gravel", ".gitignore")); err != nil {
+		t.Errorf(".gravel/.gitignore not created: %v", err)
+	}
+}
+
+func TestGenerateConfig_PythonWithDatabase_EmitsDatabaseBlock(t *testing.T) {
+	dir := t.TempDir()
+	d := Detection{
+		CWD:      dir,
+		Language: stack.LanguagePython,
+		Auth:     AuthUnknown,
+		DBEnvVar: "DATABASE_URL",
+	}
+	path, _ := GenerateConfig(d, ConfigOptions{MountPath: "/admin/ai", WithDatabase: true})
+	body, _ := os.ReadFile(path)
+	got := string(body)
+	mustContain(t, got, "database={'url': os.environ.get('DATABASE_URL', '')}")
+}
+
+// REGRESSION: the generated gravel_config.py used to crash app
+// startup because env vars weren't loaded — `uv run` doesn't pull
+// .env.local into os.environ automatically. The generator now
+// inlines a tiny .env loader so the config resolves correctly no
+// matter how the host is launched.
+func TestGenerateConfig_PythonAutoLoadsDotEnv(t *testing.T) {
+	dir := t.TempDir()
+	d := Detection{
+		CWD:      dir,
+		Language: stack.LanguagePython,
+		Auth:     AuthUnknown,
+	}
+	path, _ := GenerateConfig(d, ConfigOptions{MountPath: "/admin/ai"})
+	body, _ := os.ReadFile(path)
+	got := string(body)
+	mustContain(t, got, `for _env_file in (".env.local", ".env"):`)
+	mustContain(t, got, "os.environ.setdefault")
+	// Loader must run BEFORE the env-var reads in the config body.
+	loaderIdx := strings.Index(got, "_env_file")
+	configIdx := strings.Index(got, "os.environ.get('GRAVEL_ADMIN_PASSWORD'")
+	if loaderIdx < 0 || configIdx < 0 || loaderIdx > configIdx {
+		t.Errorf("env loader must run before env reads in the config body:\n%s", got)
+	}
+}
+
+// REGRESSION: the generated config used to read env vars with
+// `os.environ['X']`, which raised KeyError at import time if the
+// user started uvicorn without their .env loaded. We now use
+// `os.environ.get(..., '')` so the import succeeds and the SDK
+// raises a clearer runtime error from the right place.
+func TestGenerateConfig_PythonUsesGetForEnvLookups(t *testing.T) {
+	dir := t.TempDir()
+	d := Detection{
+		CWD:      dir,
+		Language: stack.LanguagePython,
+		Auth:     AuthUnknown,
+		DBEnvVar: "DATABASE_URL",
+	}
+	path, _ := GenerateConfig(d, ConfigOptions{MountPath: "/admin/ai", WithDatabase: true})
+	body, _ := os.ReadFile(path)
+	got := string(body)
+	if strings.Contains(got, "os.environ['") || strings.Contains(got, "os.environ[\"") {
+		t.Errorf("config uses os.environ[X] subscript (KeyError-prone) instead of .get():\n%s", got)
+	}
+}
+
+func TestGenerateConfig_PythonDjangoNoDatabase(t *testing.T) {
+	// Django path generates its own auth block. WithDatabase=false
+	// emits the same stub-sqlite URL as the no-Django path so the
+	// SDK doesn't crash on import.
+	dir := t.TempDir()
+	d := Detection{
+		CWD:      dir,
+		Language: stack.LanguagePython,
+		Auth:     AuthDjango,
+		DBEnvVar: "DATABASE_URL",
+	}
+	path, _ := GenerateConfig(d, ConfigOptions{MountPath: "/admin/ai", WithDatabase: false})
+	body, _ := os.ReadFile(path)
+	got := string(body)
+	mustContain(t, got, ".gravel/dev.db")
+	if strings.Contains(got, "os.environ.get('DATABASE_URL'") {
+		t.Errorf("Django + WithDatabase=false should NOT lookup DATABASE_URL:\n%s", got)
+	}
+	mustContain(t, got, "'get_user': get_user")
+}
+
 func TestGenerateConfig_PythonDjango(t *testing.T) {
 	dir := t.TempDir()
 	d := Detection{
@@ -222,10 +420,12 @@ func TestMount_NextAppRouter_SrcLayoutRelativeImport(t *testing.T) {
 	mustNotContain(t, got, "@/gravel.config")
 }
 
-func TestMount_BackupsExistingRoute(t *testing.T) {
+func TestMount_BackupsExistingRoute_NoGit(t *testing.T) {
+	// No .git directory anywhere in the tree → safeBackup writes a
+	// .gravel.bak so user content is recoverable.
 	dir := newFixture(t, map[string]string{
-		"package.json": `{"dependencies":{"next":"15.0.0"}}`,
-		"app/page.tsx": "",
+		"package.json":                      `{"dependencies":{"next":"15.0.0"}}`,
+		"app/page.tsx":                      "",
 		"app/admin/ai/[[...slug]]/route.ts": "// existing user code\n",
 	})
 	d := Detect(dir)
@@ -235,11 +435,100 @@ func TestMount_BackupsExistingRoute(t *testing.T) {
 	}
 	bak := res.Path + ".gravel.bak"
 	if !pathExists(bak) {
-		t.Errorf("expected backup at %s", bak)
+		t.Errorf("expected .gravel.bak at %s (no git repo to fall back to)", bak)
 	}
 	bakBody, _ := os.ReadFile(bak)
 	if !strings.Contains(string(bakBody), "existing user code") {
 		t.Errorf("backup didn't preserve original content: %s", bakBody)
+	}
+}
+
+// REGRESSION: when the project is inside a git working tree, the
+// wizard should NOT write .gravel.bak files. Git is the safety net.
+// Yousef raised this specifically — previous installs cluttered up
+// his working tree with .gravel.bak files that he then had to clean
+// up by hand.
+func TestMount_NoBackup_InsideGitRepo(t *testing.T) {
+	dir := newFixture(t, map[string]string{
+		"package.json":                      `{"dependencies":{"next":"15.0.0"}}`,
+		"app/page.tsx":                      "",
+		"app/admin/ai/[[...slug]]/route.ts": "// existing user code\n",
+	})
+	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	d := Detect(dir)
+	res, err := Mount(d, "/admin/ai", MountOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bak := res.Path + ".gravel.bak"
+	if pathExists(bak) {
+		t.Errorf(".gravel.bak shouldn't exist inside a git working tree; the user can `git diff` to recover (found at %s)", bak)
+	}
+	// Confirm the new content landed on top of the old file.
+	body, _ := os.ReadFile(res.Path)
+	if strings.Contains(string(body), "existing user code") {
+		t.Errorf("new content should have overwritten the old file:\n%s", body)
+	}
+	if !strings.Contains(string(body), "createGravelHandler") {
+		t.Errorf("new content missing:\n%s", body)
+	}
+}
+
+// Walking up: a .git directory at the project root must satisfy
+// safeBackup even when the file being backed up is deeper (e.g.
+// src/app/admin/ai/[[...slug]]/route.ts).
+func TestMount_NoBackup_GitAtParent(t *testing.T) {
+	dir := newFixture(t, map[string]string{
+		"package.json":     `{"dependencies":{"next":"15.0.0"}}`,
+		"src/app/page.tsx": "",
+		"src/app/admin/ai/[[...slug]]/route.ts": "// existing\n",
+	})
+	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	d := Detect(dir)
+	res, _ := Mount(d, "/admin/ai", MountOptions{})
+	if pathExists(res.Path + ".gravel.bak") {
+		t.Errorf("walker didn't find .git at project root for a deeply nested mount file")
+	}
+}
+
+// .git file (worktree pointer) should count as well — git worktree
+// uses `.git` as a *file* containing `gitdir: ...`, not a directory.
+func TestMount_NoBackup_GitFile(t *testing.T) {
+	dir := newFixture(t, map[string]string{
+		"package.json":                      `{"dependencies":{"next":"15.0.0"}}`,
+		"app/page.tsx":                      "",
+		"app/admin/ai/[[...slug]]/route.ts": "// existing\n",
+		".git":                              "gitdir: /elsewhere/worktree/.git\n",
+	})
+	d := Detect(dir)
+	res, _ := Mount(d, "/admin/ai", MountOptions{})
+	if pathExists(res.Path + ".gravel.bak") {
+		t.Errorf(".git file (git worktree pointer) wasn't recognised as a git work tree")
+	}
+}
+
+func TestIsInsideGitWorkTree_NoGitAnywhere(t *testing.T) {
+	// Use a tempdir under t.TempDir so we don't accidentally pick up
+	// a real .git from /home/amar. t.TempDir is somewhere under
+	// /tmp, which has no .git ancestor.
+	dir := t.TempDir()
+	probe := filepath.Join(dir, "some", "deep", "file.ts")
+	if isInsideGitWorkTree(probe) {
+		t.Errorf("isInsideGitWorkTree true under bare tempdir %q", dir)
+	}
+}
+
+func TestIsInsideGitWorkTree_GitInImmediateParent(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if !isInsideGitWorkTree(filepath.Join(dir, "a.ts")) {
+		t.Errorf("isInsideGitWorkTree false when .git is in the immediate parent")
 	}
 }
 

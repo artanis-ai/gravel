@@ -11,38 +11,31 @@ import (
 
 func newInitCmd() *cobra.Command {
 	var (
-		mountPath   string
-		yes         bool
-		withPrompts bool
-		noPrompts   bool
-		withTraces  bool
-		noTraces    bool
-		noTestTrace bool
-		apiKey      string
-		projectID   string
+		mountPath      string
+		yes            bool
+		withPrompts    bool
+		noPrompts      bool
+		withTraces     bool
+		noTraces       bool
+		noTestTrace    bool
+		noDeepScan     bool
+		apiKey         string
+		projectID      string
+		skipSDKInstall bool
 	)
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Install Gravel into the current project.",
-		Long: `init runs the install wizard against the current directory:
+		Long: `init runs the install wizard against the current directory.
 
-  1. Detect framework, package manager, auth provider, DB driver.
-  2. (--oauth only) Authenticate against gravel.artanis.ai via a browser
-     handshake. Off by default while the control-plane endpoint is stubbed;
-     pre-bake creds via --api-key + --project for CI flows.
-  3. Write gravel.config.{ts,py} tailored to that stack.
-  4. Mount the dashboard route for the detected framework (Next.js App Router
-     and Pages Router get the route file written directly; other frameworks
-     get copy-paste instructions on stdout).
-  5. Generate GRAVEL_ADMIN_PASSWORD into .env.local if missing.
-  6. For the traces pillar (when --traces or no flag): pre-flight probe the
-     DB, run schema bootstrap if reachable, surface a clear note otherwise.
-  7. For the prompts pillar (when --prompts or no flag): scan known prompt
-     files and install a pre-commit hook that keeps the manifest in sync.
+Three pillars (Dashboard / Prompts / Traces) run in sequence; you can
+opt out of Prompts or Traces (Dashboard is always written — nothing
+else works without it). Walks the user through each pillar with a
+"Continue?" before doing anything.
 
-Default is "both pillars on" for an interactive run. Use --no-prompts or
---no-traces to opt out of one of them; the SDK still works (every
-DB-dependent path checks the config and short-circuits on null).
+Pre-bake cloud creds via --api-key + --project (or GRAVEL_API_KEY /
+GRAVEL_PROJECT_ID env). The wizard never opens a browser handshake;
+that belongs to a future ` + "`gravel login`" + ` subcommand.
 
 In --yes mode (CI / scripting), the wizard runs without prompting and
 either accepts what was passed via flags or applies the defaults.`,
@@ -70,21 +63,26 @@ either accepts what was passed via flags or applies the defaults.`,
 				projectID = os.Getenv("GRAVEL_PROJECT_ID")
 			}
 
+			// Resolve pillar state. Three outcomes per pillar:
+			//   --prompts     → explicit on,  skip "Continue?" question
+			//   --no-prompts  → explicit off, skip the whole pillar
+			//   neither       → ask, default yes (or yes-without-asking under --yes)
+			promptsExplicit := withPrompts || noPrompts || yes
+			tracesExplicit := withTraces || noTraces || yes
 			opts := wizard.RunOptions{
-				CWD:           cwd,
-				MountPath:     mountPath,
-				YesToAll:      yes,
-				WithPrompts:   !noPrompts,
-				WithTraces:    !noTraces,
-				SkipTestTrace: noTestTrace,
-				APIKey:        apiKey,
-				ProjectID:     projectID,
-			}
-			if withPrompts {
-				opts.WithPrompts = true
-			}
-			if withTraces {
-				opts.WithTraces = true
+				CWD:               cwd,
+				MountPath:         mountPath,
+				MountPathExplicit: cmd.Flags().Changed("mount-path"),
+				YesToAll:          yes,
+				WithPrompts:       !noPrompts, // disabled only via --no-prompts
+				PromptsExplicit:   promptsExplicit,
+				WithTraces:        !noTraces,
+				TracesExplicit:    tracesExplicit,
+				SkipTestTrace:     noTestTrace,
+				SkipDeepScan:      noDeepScan,
+				SkipSDKInstall:    skipSDKInstall,
+				APIKey:            apiKey,
+				ProjectID:         projectID,
 			}
 
 			res, err := wizard.Run(context.Background(), opts, out)
@@ -103,8 +101,14 @@ either accepts what was passed via flags or applies the defaults.`,
 	cmd.Flags().BoolVar(&withTraces, "traces", false, "Install the traces pillar (DB tables + tracing).")
 	cmd.Flags().BoolVar(&noTraces, "no-traces", false, "Skip the traces pillar.")
 	cmd.Flags().BoolVar(&noTestTrace, "no-test-trace", false, "Skip the end-to-end test trace step.")
+	cmd.Flags().BoolVar(&noDeepScan, "no-deep-scan", false, "Skip the 'Did I find everything?' loop after the regex scan.")
 	cmd.Flags().StringVar(&apiKey, "api-key", "", "Pre-bake project key into .env.local. Reads $GRAVEL_API_KEY if unset.")
 	cmd.Flags().StringVar(&projectID, "project", "", "Pre-bake project ID into .env.local. Reads $GRAVEL_PROJECT_ID if unset.")
+	// Smoke/test escape hatch. Hidden because production users should
+	// never need it; the wizard always wants the SDK in deps to make
+	// gravel.config.ts resolvable.
+	cmd.Flags().BoolVar(&skipSDKInstall, "skip-sdk-install", false, "Skip the pnpm/uv add step. Hidden; for smoke tests + advanced users.")
+	_ = cmd.Flags().MarkHidden("skip-sdk-install")
 	// Back-compat: silently accept old --oauth / --skip-oauth / --control-plane
 	// flags from v0.5.0 so existing scripts don't break. All three are no-ops
 	// now; the wizard never opens a browser handshake (was a v0.5.0 bug).
@@ -119,96 +123,12 @@ either accepts what was passed via flags or applies the defaults.`,
 	return cmd
 }
 
-func printSummary(cmd *cobra.Command, r wizard.RunResult) {
-	out := cmd.OutOrStdout()
-	d := r.Detection
-	fmt.Fprintf(out, "Detected %s, %s, pkg=%s",
-		d.Language, d.Framework, d.PackageManager,
-	)
-	if d.DBDriver != wizard.DBUnknown {
-		fmt.Fprintf(out, ", db=%s", d.DBDriver)
-	}
-	if d.Auth != wizard.AuthUnknown {
-		fmt.Fprintf(out, ", auth=%s", d.Auth)
-	}
-	fmt.Fprintln(out)
-	if d.NextHasBothRouters {
-		fmt.Fprintln(out, "Warning: both `app/` and `pages/` detected. Mounted under App Router (preferred).")
-	}
-
-	// SDK auto-install outcome. Surface before the config-file line
-	// because chronologically it ran first (and a Failed result is
-	// the thing the user most likely needs to act on).
-	switch r.SDKInstall.Kind {
-	case wizard.SDKAdded:
-		fmt.Fprintf(out, "OK Added %s to dependencies.\n", r.SDKInstall.Package)
-	case wizard.SDKAlreadyPresent:
-		fmt.Fprintf(out, "OK %s already in dependencies, kept as-is.\n", r.SDKInstall.Package)
-	case wizard.SDKSkippedNoManifest:
-		fmt.Fprintf(out, "Note: no manifest in cwd. Add the SDK yourself:\n    %s\n", r.SDKInstall.Command)
-	case wizard.SDKFailed:
-		fmt.Fprintf(out, "Warning: SDK install command failed. Re-run yourself:\n    %s\n", r.SDKInstall.Command)
-		if r.SDKInstall.Stderr != "" {
-			fmt.Fprintln(out, "  (stderr from the failed run is above)")
-		}
-	}
-
-	fmt.Fprintf(out, "OK Wrote %s\n", r.ConfigPath)
-	switch r.Mount.Mode {
-	case wizard.MountCreated:
-		fmt.Fprintf(out, "OK Created %s\n", r.Mount.Path)
-	case wizard.MountUpdated:
-		fmt.Fprintf(out, "OK Updated %s\n", r.Mount.Path)
-	case wizard.MountManual:
-		fmt.Fprintln(out, "\nDashboard mount: this framework needs a manual step.")
-		fmt.Fprintln(out, r.Mount.Instructions)
-	case wizard.MountSkipped:
-		fmt.Fprintln(out, "Dashboard mount: skipped.")
-	}
-	if r.AdminPwIsNew {
-		fmt.Fprintf(out, "OK Generated GRAVEL_ADMIN_PASSWORD: %s\n", r.AdminPassword)
-	} else {
-		fmt.Fprintln(out, "OK GRAVEL_ADMIN_PASSWORD already set, kept as-is.")
-	}
-
-	// DB probe + migrate outcome (traces pillar).
-	switch r.DBProbe.Kind {
-	case wizard.ProbeOK:
-		if r.MigrateApplied {
-			fmt.Fprintln(out, "OK Ran schema bootstrap.")
-		}
-	case wizard.ProbeNoURL:
-		fmt.Fprintln(out, "Traces: no DATABASE_URL detected. Set one in .env.local and re-run `gravel init --traces` when ready.")
-	case wizard.ProbePlaceholder:
-		fmt.Fprintf(out, "Traces: skipped (DATABASE_URL looks like a placeholder: %s). Update and re-run `gravel init --traces`.\n", r.DBProbe.URL)
-	case wizard.ProbeConnectFailed:
-		switch r.DBProbe.Reason {
-		case wizard.FailAuth:
-			fmt.Fprintf(out, "Traces: couldn't authenticate against %s. Check the credentials in your DATABASE_URL and re-run `gravel init --traces`.\n", r.DBProbe.URL)
-		case wizard.FailHost:
-			fmt.Fprintf(out, "Traces: couldn't reach %s. Start your DB and re-run `gravel init --traces`.\n", r.DBProbe.URL)
-		default:
-			fmt.Fprintf(out, "Traces: DB probe failed: %s\n", r.DBProbe.Message)
-		}
-	}
-
-	if r.ManifestPath != "" {
-		fmt.Fprintf(out, "OK Wrote %s (%d prompts).\n", r.ManifestPath, r.ManifestCount)
-	}
-	switch r.Hook.Mode {
-	case wizard.HookHusky:
-		fmt.Fprintf(out, "OK Installed pre-commit hook (husky): %s\n", r.Hook.Path)
-	case wizard.HookPreCommitFramework:
-		fmt.Fprintf(out, "OK Installed pre-commit hook (pre-commit framework): %s\n", r.Hook.Path)
-	case wizard.HookNative:
-		fmt.Fprintf(out, "OK Installed pre-commit hook (native git hook): %s\n", r.Hook.Path)
-	case wizard.HookSkipped:
-		fmt.Fprintln(out, "Pre-commit hook: skipped (no .git directory).")
-	}
-
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, "Gravel skeleton installed. Next:")
-	fmt.Fprintf(out, "  1. Visit /admin/ai in your app and log in.\n")
-	fmt.Fprintf(out, "  2. Edit your getUser callback in %s to match your auth.\n", r.ConfigPath)
-	fmt.Fprintln(out, "  3. Read https://gravel.artanis.ai/docs")
+// printSummary appends the final "Docs:" line. The bulk of the
+// closing summary (Done. + per-pillar bullets) is emitted by Run()
+// in internal/wizard/run.go alongside the step-by-step output, so
+// this function is intentionally tiny.
+func printSummary(_ *cobra.Command, _ wizard.RunResult) {
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintf(os.Stderr, "Docs: %s\n", wizard.Cyan("https://gravel.artanis.ai/docs"))
+	fmt.Fprintln(os.Stderr)
 }

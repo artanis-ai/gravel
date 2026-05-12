@@ -133,3 +133,73 @@ func TestPrompterFromOptions_YesPicksDefaults(t *testing.T) {
 		t.Errorf("expected DefaultsPrompter under --yes, got %T", p)
 	}
 }
+
+func TestTTYPrompter_PressEnter_BlocksUntilNewline(t *testing.T) {
+	var out bytes.Buffer
+	p := NewTTYPrompter(strings.NewReader("\n"), &out)
+	if err := p.PressEnter("Press to continue"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Press to continue") {
+		t.Errorf("press-Enter prompt missing:\n%s", out.String())
+	}
+}
+
+func TestTTYPrompter_PressEnter_DefaultMessage(t *testing.T) {
+	var out bytes.Buffer
+	p := NewTTYPrompter(strings.NewReader("\n"), &out)
+	if err := p.PressEnter(""); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Press Enter to continue") {
+		t.Errorf("default press-Enter message missing:\n%s", out.String())
+	}
+}
+
+func TestTTYPrompter_PressEnter_EOF_NotError(t *testing.T) {
+	// Stdin closed (pipe ended) shouldn't return an error — the wizard
+	// just moves on. Otherwise a no-newline input would deadlock the
+	// install.
+	var out bytes.Buffer
+	p := NewTTYPrompter(strings.NewReader(""), &out)
+	if err := p.PressEnter(""); err != nil {
+		t.Errorf("EOF should not be propagated as error: %v", err)
+	}
+}
+
+func TestTTYPrompter_Text_NoDefault_ReturnsEmpty(t *testing.T) {
+	var out bytes.Buffer
+	p := NewTTYPrompter(strings.NewReader("\n"), &out)
+	got, err := p.Text("path?", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "" {
+		t.Errorf("got %q, want empty (no default + empty input)", got)
+	}
+}
+
+func TestTTYPrompter_Text_StripsCRLF(t *testing.T) {
+	// Windows readline sends \r\n. We must strip both, not leave a
+	// trailing \r in the value.
+	var out bytes.Buffer
+	p := NewTTYPrompter(strings.NewReader("hello\r\n"), &out)
+	got, _ := p.Text("name?", "")
+	if got != "hello" {
+		t.Errorf("got %q (still contains \\r?), want %q", got, "hello")
+	}
+}
+
+func TestTTYPrompter_YesNo_EOF_ReturnsDefault(t *testing.T) {
+	// Stdin closed mid-prompt: must not deadlock / panic. Apply
+	// default and move on.
+	var out bytes.Buffer
+	p := NewTTYPrompter(strings.NewReader(""), &out)
+	got, err := p.YesNo("ok?", true)
+	if err != nil {
+		t.Errorf("EOF in YesNo should yield default, not error: %v", err)
+	}
+	if !got {
+		t.Errorf("EOF should fall through to default (true), got %v", got)
+	}
+}

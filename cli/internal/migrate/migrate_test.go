@@ -84,6 +84,73 @@ func TestBootstrap_SQLite_Idempotent(t *testing.T) {
 	}
 }
 
+// TestTablesAlreadyExist drives the idempotency check the wizard
+// uses in Step 3 (Traces). False positives skip a needed migration;
+// false negatives spam the user with a redundant "Create tables?"
+// prompt on every re-run.
+func TestTablesAlreadyExist_SQLite_FreshDB_False(t *testing.T) {
+	ctx := context.Background()
+	url := "file:" + filepath.Join(t.TempDir(), "gravel.db")
+	got, err := TablesAlreadyExist(ctx, url, DialectSQLite)
+	if err != nil {
+		t.Fatalf("TablesAlreadyExist: %v", err)
+	}
+	if got {
+		t.Errorf("got true on a fresh database, want false")
+	}
+}
+
+func TestTablesAlreadyExist_SQLite_AfterBootstrap_True(t *testing.T) {
+	ctx := context.Background()
+	url := "file:" + filepath.Join(t.TempDir(), "gravel.db")
+	db, d, err := Open(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Bootstrap(ctx, db, d); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	got, err := TablesAlreadyExist(ctx, url, DialectSQLite)
+	if err != nil {
+		t.Fatalf("TablesAlreadyExist: %v", err)
+	}
+	if !got {
+		t.Errorf("got false after Bootstrap, want true")
+	}
+}
+
+func TestTablesAlreadyExist_SQLite_PartialSchema_False(t *testing.T) {
+	// Only one of the two tables exists — TablesAlreadyExist must
+	// return false so Bootstrap re-runs and creates the missing one.
+	ctx := context.Background()
+	url := "file:" + filepath.Join(t.TempDir(), "gravel.db")
+	db, _, err := Open(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.ExecContext(ctx,
+		`CREATE TABLE gravel_samples (id TEXT)`); err != nil {
+		t.Fatal(err)
+	}
+	got, err := TablesAlreadyExist(ctx, url, DialectSQLite)
+	if err != nil {
+		t.Fatalf("TablesAlreadyExist: %v", err)
+	}
+	if got {
+		t.Errorf("got true with only 1/2 tables, want false (Bootstrap needs to add the other)")
+	}
+}
+
+func TestTablesAlreadyExist_BadURL_Errors(t *testing.T) {
+	ctx := context.Background()
+	_, err := TablesAlreadyExist(ctx, "mysql://no", DialectSQLite)
+	if err == nil {
+		t.Errorf("expected error for unsupported URL")
+	}
+}
+
 func TestSplitStatements(t *testing.T) {
 	in := "CREATE TABLE a (...);\nCREATE INDEX b ON a(...);\n\nCREATE TABLE c (...);\n"
 	got := splitStatements(in)

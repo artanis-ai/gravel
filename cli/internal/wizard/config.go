@@ -23,9 +23,24 @@ type ConfigOptions struct {
 // path. Always overwrites: the wizard is the source of truth for this
 // file; hand-edits are explicitly out of scope (re-run `gravel init`
 // to regenerate). Mirrors packages/sdk-ts/src/wizard/config-file.ts.
+//
+// Also ensures `.gravel/` exists alongside the config so the no-DB
+// stub URL the Python generator writes (file:.gravel/dev.db) has a
+// parent directory the SDK can create the sqlite file in.
 func GenerateConfig(d Detection, opts ConfigOptions) (string, error) {
 	if opts.MountPath == "" {
 		opts.MountPath = "/admin/ai"
+	}
+	gravelDir := filepath.Join(d.CWD, ".gravel")
+	if err := os.MkdirAll(gravelDir, 0o755); err != nil {
+		return "", err
+	}
+	// .gitignore in .gravel/ so dev.db, draft caches, etc. don't end
+	// up tracked. Only write it if missing; never clobber a user-edited
+	// version.
+	gitignore := filepath.Join(gravelDir, ".gitignore")
+	if !pathExists(gitignore) {
+		_ = os.WriteFile(gitignore, []byte("# Wizard-managed scratch dir. Manifest is the only tracked file.\ndev.db\ndev.db-*\n*.tmp\n"), 0o644)
 	}
 	if d.Language == stack.LanguagePython {
 		path := filepath.Join(d.CWD, "gravel_config.py")
@@ -126,14 +141,64 @@ func nextAuthHelperExists(cwd string) bool {
 }
 
 func pythonConfig(d Detection, opts ConfigOptions) string {
+	// All env var reads use `os.environ.get(name, '')` rather than
+	// `os.environ[name]` so importing this module doesn't crash with
+	// KeyError when the user starts the server without their .env
+	// loaded. The wizard's auto-loaded `.env.local` block (below)
+	// usually fills these in, but defensive `.get()` matters when
+	// uvicorn is launched in a way that bypasses our config import.
+	//
+	// The `database` key is ALWAYS emitted (Python's GravelConfig
+	// dataclass declares it required). When the user opts out of the
+	// traces pillar, we still need a URL the SDK can open without
+	// crashing — published `artanis-gravel<=0.5.2` calls
+	// `open_database(url)` unconditionally and raises ValueError on
+	// the empty string. We write a stub local SQLite URL pointing at
+	// `.gravel/dev.db`; the SDK opens it (empty file), no gravel_*
+	// tables exist, sample routes degrade to empty pages, the
+	// dashboard SPA still renders. The user can later swap in a real
+	// DATABASE_URL by re-running with `--traces`.
+	//
+	// The file also auto-loads `.env.local` / `.env` at import time
+	// so `uv run …` / `python -m uvicorn …` / `gunicorn` all pick up
+	// the wizard-generated env vars without the user remembering to
+	// source them manually. This is the lazy-but-correct alternative
+	// to taking a hard dep on python-dotenv.
 	envVar := d.DBEnvVar
 	if envVar == "" {
 		envVar = "DATABASE_URL"
 	}
+	// Stub URL for the no-traces case. Resolved relative to the
+	// config file's own directory so the path is stable regardless
+	// of where uvicorn is invoked from.
+	urlExpr := "f'file:{Path(__file__).resolve().parent}/.gravel/dev.db'"
+	if opts.WithDatabase {
+		urlExpr = fmt.Sprintf("os.environ.get('%s', '')", envVar)
+	}
+	dbBlock := fmt.Sprintf("    database={'url': %s},\n", urlExpr)
+	envLoader := `from pathlib import Path
+
+# Auto-load .env.local then .env from the project root so the config
+# resolves to real values regardless of how the host is launched
+# (uv run, gunicorn, raw uvicorn, …). os.environ.setdefault means
+# the host's existing environment always wins; we only fill gaps.
+for _env_file in (".env.local", ".env"):
+    _path = Path(__file__).resolve().parent / _env_file
+    if not _path.is_file():
+        continue
+    for _line in _path.read_text(encoding="utf-8").splitlines():
+        _line = _line.strip()
+        if not _line or _line.startswith("#") or "=" not in _line:
+            continue
+        _k, _, _v = _line.partition("=")
+        _v = _v.strip().strip("'\"")
+        os.environ.setdefault(_k.strip(), _v)
+
+`
 
 	if d.Auth == AuthDjango {
 		return fmt.Sprintf(`import os
-from artanis_gravel import GravelConfig, GravelUser
+%sfrom artanis_gravel import GravelConfig, GravelUser
 
 async def get_user(req):
     django_user = req.scope.get('user')
@@ -147,18 +212,16 @@ async def get_user(req):
 
 config = GravelConfig(
     mount_path='%s',
-    database={'url': os.environ['%s']},
-    auth={'get_user': get_user},
+%s    auth={'get_user': get_user},
 )
-`, opts.MountPath, envVar)
+`, envLoader, opts.MountPath, dbBlock)
 	}
 	return fmt.Sprintf(`import os
-from artanis_gravel import GravelConfig
+%sfrom artanis_gravel import GravelConfig
 
 config = GravelConfig(
     mount_path='%s',
-    database={'url': os.environ['%s']},
-    auth={'default_password': os.environ['GRAVEL_ADMIN_PASSWORD']},
+%s    auth={'default_password': os.environ.get('GRAVEL_ADMIN_PASSWORD', '')},
 )
-`, opts.MountPath, envVar)
+`, envLoader, opts.MountPath, dbBlock)
 }

@@ -211,15 +211,19 @@ func fillPython(d *Detection, cwd string) {
 	hasPyproject := pathExists(filepath.Join(cwd, "pyproject.toml"))
 	hasManagePy := pathExists(filepath.Join(cwd, "manage.py"))
 	hasReqs := pathExists(filepath.Join(cwd, "requirements.txt"))
-	if !hasPyproject && !hasManagePy && !hasReqs {
+	// Legacy / pre-PEP 518 projects ship a setup.py without a
+	// pyproject.toml. Skipping them entirely would tell those users
+	// they have a non-Python project, which is wrong.
+	hasSetup := pathExists(filepath.Join(cwd, "setup.py")) || pathExists(filepath.Join(cwd, "setup.cfg"))
+	if !hasPyproject && !hasManagePy && !hasReqs && !hasSetup {
 		return
 	}
 
-	// We don't parse pyproject.toml properly; substring search is the
-	// same heuristic the TS reference uses (good enough for detecting
-	// "fastapi" / "django" mentioned anywhere in the project's
-	// dependency files).
-	text := strings.ToLower(readManyOptional(cwd, "pyproject.toml", "requirements.txt", "Pipfile"))
+	// Substring search across every place dependencies typically
+	// surface in a Python project. Mirrors the TS reference's
+	// heuristic — good enough for "fastapi" / "django" mentioned in
+	// install_requires / [project.dependencies] / requirements.txt.
+	text := strings.ToLower(readManyOptional(cwd, "pyproject.toml", "requirements.txt", "Pipfile", "setup.py", "setup.cfg"))
 
 	switch {
 	case hasManagePy, strings.Contains(text, "django"):

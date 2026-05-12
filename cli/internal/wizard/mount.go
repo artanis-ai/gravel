@@ -48,10 +48,21 @@ func Mount(d Detection, mountPath string, opts MountOptions) (MountResult, error
 	case FrameworkNextPagesRouter:
 		return mountNextPagesRouter(d, mountPath, opts)
 	case FrameworkFastAPI:
-		return manual(fastapiInstructions(mountPath)), nil
+		// Auto-patches main.py / app.py / src/main.py / src/app.py /
+		// app/main.py to add `gravel_route` import + include_router.
+		// Falls back to instructions only when no FastAPI() ctor is
+		// found in any of those files.
+		return mountFastAPI(d, mountPath)
 	case FrameworkDjango:
-		return manual(djangoInstructions(mountPath)), nil
+		// Auto-patches the project's root urls.py to insert the
+		// gravel include as the FIRST entry of urlpatterns. Falls
+		// back to instructions only when no settings.py-sibling
+		// urls.py can be located.
+		return mountDjango(d, mountPath)
 	case FrameworkExpress:
+		// Express has too many idiomatic shapes to AST-patch safely
+		// (createServer, app = express(), nested routers, app.use
+		// chains, etc.). The TS reference also kept this as manual.
 		return manual(expressInstructions(mountPath)), nil
 	default:
 		return manual(genericInstructions(mountPath)), nil
@@ -164,17 +175,60 @@ export default createGravelHandler({ config })
 	return MountResult{Path: file, Mode: MountCreated}, nil
 }
 
-// safeBackup renames an existing target to `<path>.gravel.bak` so a
-// re-run never silently overwrites user content.
+// safeBackup preserves any existing user content at `path` before the
+// wizard overwrites it.
+//
+//	* If the file is inside a git working tree (we walk up looking for
+//	  a `.git` dir), git is the safety net: we skip the .bak entirely.
+//	  The user can `git diff` / `git checkout --` if they want to undo,
+//	  and there's no .gravel.bak clutter polluting the working tree.
+//	* If there's no git repo, we rename to `<path>.gravel.bak` so an
+//	  accidental overwrite is recoverable. Up to three prior versions
+//	  are kept (`.gravel.bak`, `.gravel.bak.2`, `.gravel.bak.3`); beyond
+//	  that the user is on their own.
+//
+// Callers must invoke safeBackup BEFORE writing the new content,
+// always.
 func safeBackup(path string) error {
+	if isInsideGitWorkTree(path) {
+		// Git already has the file; no .bak needed. The new write will
+		// land on top of the tracked file and `git diff` shows the
+		// change. Avoids littering working trees with .gravel.bak files
+		// that users then have to add to .gitignore or delete.
+		return nil
+	}
 	bak := path + ".gravel.bak"
-	// If the backup also exists from a previous run, append a counter
-	// so we keep all prior copies. Three is enough; beyond that the
-	// user should clean up manually.
 	for i := 2; pathExists(bak) && i <= 4; i++ {
 		bak = fmt.Sprintf("%s.gravel.bak.%d", path, i)
 	}
 	return os.Rename(path, bak)
+}
+
+// isInsideGitWorkTree walks up from path looking for a `.git`
+// directory (or `.git` file, for git worktrees). Returns true at the
+// first hit. Stops at the filesystem root.
+//
+// We don't shell out to `git` for this: a thousand-line wizard
+// shouldn't fork a subprocess just to ask a yes/no question, and
+// `git` may not be on PATH in some CI environments.
+func isInsideGitWorkTree(path string) bool {
+	dir := path
+	// Resolve to an absolute path so `..` walks terminate predictably.
+	if abs, err := filepath.Abs(dir); err == nil {
+		dir = abs
+	}
+	// Climb from the file's parent dir up to root.
+	dir = filepath.Dir(dir)
+	for {
+		if pathExists(filepath.Join(dir, ".git")) {
+			return true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return false
+		}
+		dir = parent
+	}
 }
 
 // splitPath trims a leading slash and returns non-empty segments.

@@ -30,6 +30,11 @@ type Prompter interface {
 	Select(question string, options []string, def int) (int, error)
 	Text(question, def string) (string, error)
 	Info(line string)
+	// PressEnter blocks until the user hits Enter. Used between steps
+	// so the user can verify (e.g.) that the dashboard mounted before
+	// the wizard moves on. DefaultsPrompter no-ops this so --yes /
+	// non-TTY runs don't deadlock.
+	PressEnter(prompt string) error
 }
 
 // NewTTYPrompter returns a Prompter that reads from in and writes
@@ -104,6 +109,19 @@ func (p *ttyPrompter) Select(question string, options []string, def int) (int, e
 	}
 }
 
+func (p *ttyPrompter) PressEnter(prompt string) error {
+	if prompt == "" {
+		prompt = "Press Enter to continue"
+	}
+	fmt.Fprintf(p.out, "%s%s ", Dim(prompt), Dim("…"))
+	_, err := p.in.ReadString('\n')
+	if err != nil && err != io.EOF {
+		return err
+	}
+	fmt.Fprintln(p.out)
+	return nil
+}
+
 func (p *ttyPrompter) Text(question, def string) (string, error) {
 	suffix := ": "
 	if def != "" {
@@ -121,16 +139,20 @@ func (p *ttyPrompter) Text(question, def string) (string, error) {
 	return line, nil
 }
 
-// IsTerminal reports whether fd is attached to a real terminal. Used
-// by the cobra layer to pick between a real prompter and the
-// "accept defaults" prompter — when stdin is a pipe (CI, scripts) we
-// must NOT block on ReadString or the install hangs forever.
+// IsTerminal reports whether the given *os.File is attached to a
+// real terminal. Used by the cobra layer to pick between a real
+// prompter and the "accept defaults" prompter; when stdin is a pipe
+// (CI, scripts) we must NOT block on ReadString or the install hangs
+// forever.
 //
-// Implemented via the same stat trick os/exec uses: a terminal is a
-// character device. Works on Linux, macOS, and Windows (the runtime
-// reports the appropriate file mode for ConsoleHandle).
-func IsTerminal(fd uintptr) bool {
-	f := os.NewFile(fd, "")
+// A terminal is a character device — we use the file's Stat mode for
+// the check. We take the *os.File directly rather than its fd, because
+// wrapping a raw fd back into a *os.File via os.NewFile schedules a
+// finalizer that closes the underlying fd when GC'd; that finalizer
+// fired against os.Stderr's fd in a previous version of this code and
+// silently turned every subsequent stderr write into a bad-file-
+// descriptor error.
+func IsTerminal(f *os.File) bool {
 	if f == nil {
 		return false
 	}
@@ -150,12 +172,13 @@ func (DefaultsPrompter) YesNo(_ string, def bool) (bool, error)               { 
 func (DefaultsPrompter) Select(_ string, _ []string, def int) (int, error)    { return def, nil }
 func (DefaultsPrompter) Text(_ string, def string) (string, error)            { return def, nil }
 func (DefaultsPrompter) Info(_ string)                                        {}
+func (DefaultsPrompter) PressEnter(_ string) error                            { return nil }
 
 // PrompterFromOptions returns the right Prompter for the wizard's
 // runtime mode. --yes / non-TTY  →  DefaultsPrompter (no blocking on
 // stdin). Otherwise a tty prompter reading from os.Stdin.
 func PrompterFromOptions(yesToAll bool) Prompter {
-	if yesToAll || !IsTerminal(os.Stdin.Fd()) {
+	if yesToAll || !IsTerminal(os.Stdin) {
 		return DefaultsPrompter{}
 	}
 	return NewTTYPrompter(os.Stdin, os.Stderr)
