@@ -6,12 +6,13 @@ The TypeScript SDK for [Gravel](https://gravel.artanis.ai).
 
 ```bash
 # What this will look like once v0 ships:
-curl -fsSL https://raw.githubusercontent.com/artanis-ai/gravel/main/install.sh | sh
-gravel init
 pnpm add @artanis-ai/gravel
+pnpm gravel init
 ```
 
-The `gravel` CLI ships as a single Go binary from GitHub Releases (see [`install.sh`](https://github.com/artanis-ai/gravel/blob/main/install.sh)). This npm package is the SDK library only; it does not carry the CLI.
+This package ships both the runtime SDK library AND a thin `bin/gravel.js` wrapper that lazy-downloads the matching Go binary from signed GitHub Release assets on first `gravel <cmd>` invocation. So `pnpm add` gives the user both the library their code imports AND a working CLI. The binary is NOT bundled in the npm tarball; the wrapper is ~100 lines of source-visible JS. See [`cli/DESIGN.md`](https://github.com/artanis-ai/gravel/blob/main/cli/DESIGN.md) for the rationale.
+
+For users who don't want Node in their CLI install path (Docker, CI, polyglot repos), the same binary is installable via [`install.sh`](https://raw.githubusercontent.com/artanis-ai/gravel/main/install.sh) directly.
 
 See [`/STATUS.md`](../../STATUS.md) for what's built and what's next.
 
@@ -20,6 +21,7 @@ See [`/STATUS.md`](../../STATUS.md) for what's built and what's next.
 - The TS SDK (`@artanis-ai/gravel`).
 - The bundled React dashboard (built from `packages/dashboard/` and copied here at release).
 - Framework integrations (`@artanis-ai/gravel/next`, `/next-pages`, `/node`).
+- The CLI wrapper at `bin/gravel.js`. Read it before you trust it; under 150 lines of straightforward JS.
 
 ## Layout
 

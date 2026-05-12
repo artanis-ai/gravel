@@ -15,7 +15,7 @@ Where Langfuse / LangSmith pitch dashboards to engineers, Gravel ships a dashboa
 
 <CardGroup cols={2}>
   <Card title="One-command install" icon="terminal">
-    `curl ... | sh && gravel init` detects your framework, runs OAuth, AST-edits your server entry, runs migrations, and sends a test trace before exit. Sentry-style. Single Go binary, same wizard for TypeScript and Python projects.
+    `pnpm add @artanis-ai/gravel && pnpm gravel init` (or `uv add artanis-gravel && uv run gravel init`) detects your framework, runs OAuth, AST-edits your server entry, runs migrations, and sends a test trace before exit. Sentry-style. The SDK package ships a thin CLI wrapper that lazy-fetches the same Go binary for both stacks.
   </Card>
   <Card title="Runs in your infra" icon="shield">
     Traces, prompts, feedback, and datasets all live in your own database. Apache 2.0 lib. Only paid eval calls cross to our servers.

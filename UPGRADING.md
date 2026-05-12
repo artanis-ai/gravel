@@ -1,22 +1,37 @@
 # Upgrading Gravel
 
-Two things upgrade independently:
+The SDK and CLI ship in lockstep with the same version number. Each release re-publishes:
 
-1. **The `gravel` CLI binary** (this is what `gravel doctor` checks).
-2. **The SDK library** pinned in your `package.json` / `pyproject.toml`.
+- `@artanis-ai/gravel` on npm (SDK library + `bin/gravel.js` wrapper)
+- `artanis-gravel` on PyPI (SDK library + `_cli.py` wrapper)
+- `gravel-<os>-<arch>` binaries on GitHub Releases (the wizard logic itself)
 
-They share a version number on each release (the release pipeline bumps them in lockstep), but they're installed and upgraded through different channels.
+The npm/PyPI wrappers lazy-download the matching binary the first time `gravel <cmd>` is invoked, so upgrading the SDK package is all most users need to do.
 
 ### TL;DR for any release
 
+For TypeScript projects:
+
 ```
-gravel doctor                                                       # see what's available
-curl -fsSL https://raw.githubusercontent.com/artanis-ai/gravel/main/install.sh | sh   # upgrade the CLI
-pnpm update @artanis-ai/gravel@<v>                                  # upgrade the SDK (or your stack's command)
-gravel migrate                                                      # if the release ships DB changes
+pnpm update @artanis-ai/gravel@<v>     # bumps SDK + wrapper; wrapper auto-fetches matching binary next run
+pnpm gravel migrate                    # if the release ships DB changes
 ```
 
-Python SDK: `uv pip install --upgrade artanis-gravel==<v>` (or poetry/pipenv/pip).
+For Python projects:
+
+```
+uv add artanis-gravel@<v>              # (or pip install --upgrade artanis-gravel==<v>, etc.)
+uv run gravel migrate
+```
+
+For users who installed via `install.sh`:
+
+```
+curl -fsSL https://raw.githubusercontent.com/artanis-ai/gravel/main/install.sh | sh
+gravel migrate
+```
+
+Run `gravel doctor` first to see what's available and what command applies to your install.
 
 This file is the canonical source of truth for everything that can break across an upgrade. Skim the section for your target version before bumping.
 
@@ -26,7 +41,7 @@ This file is the canonical source of truth for everything that can break across 
 
 Two surfaces, each owning one thing:
 
-1. **`gravel doctor` CLI**. Checks the binary's version against the latest GitHub Release. If behind, prints the `curl | sh` install line (stack-agnostic, the binary lives outside your project's package manager). Detects your host stack (lockfiles in cwd) for informational reporting. Exits non-zero if behind, use it in CI to fail loud when the binary pin drifts. `--json` for scripting. `GRAVEL_VERSION_CHECK_DISABLED=1` to skip the GitHub API hit.
+1. **`gravel doctor` CLI**. Checks the binary's version against the latest GitHub Release. If behind, prints the install command appropriate for how the user got the binary (most users: `pnpm update @artanis-ai/gravel` or `uv add artanis-gravel@latest`; direct-install users: re-run install.sh). Detects host stack from lockfiles in cwd. Exits non-zero if behind, use it in CI to fail loud when the pin drifts. `--json` for scripting. `GRAVEL_VERSION_CHECK_DISABLED=1` to skip the GitHub API hit.
 
 2. **Dashboard banner (admin only)**. Reads the SDK version from your `package.json` / `pyproject.toml`, polls `/api/version` once on mount. On **loopback** (the developer's dev box) you see the actionable per-stack upgrade command. On **prod** (any non-loopback hostname) the command would be misleading (the operator viewing the dashboard usually isn't the deployer), so we swap to "ask your developer to update and redeploy".
 

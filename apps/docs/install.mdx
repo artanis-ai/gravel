@@ -7,28 +7,58 @@ description: "Two commands. Wizard does the rest."
   Gravel is in pre-v0. The wizard runs locally and sets up your database + dashboard route, but the OAuth handshake against `gravel.artanis.ai` is stubbed until the control plane is provisioned. Pass `--api-key` and `--project` for now.
 </Note>
 
-## Install the CLI
+## Install the SDK + CLI
 
-The `gravel` CLI is a single binary distributed from signed GitHub Release assets. Pull it via:
+Installing the SDK package gives you both the runtime library and the `gravel` CLI in one step. The CLI is a thin Node/Python wrapper that lazy-downloads the matching Go binary on first invocation; the binary is not bundled in the SDK tarball.
+
+**TypeScript projects:**
+
+```bash
+pnpm add @artanis-ai/gravel
+pnpm gravel init
+```
+
+Works with npm / yarn / bun as well. The wrapper is the same; just swap the package manager.
+
+**Python projects:**
+
+```bash
+uv add artanis-gravel
+uv run gravel init
+```
+
+Works with pip / poetry / pipenv as well.
+
+**Docker / CI / polyglot repos** (no Node or Python required):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/artanis-ai/gravel/main/install.sh | sh
+gravel init
 ```
 
-That drops `gravel` in `$HOME/.local/bin` (override with `GRAVEL_INSTALL_DIR`). The script detects your OS + arch, downloads the matching binary, verifies its sha256, and reports the version. Re-run it anytime to upgrade.
+Windows PowerShell:
 
-Pin a specific version (e.g. for CI):
+```powershell
+irm https://raw.githubusercontent.com/artanis-ai/gravel/main/install.ps1 | iex
+gravel init
+```
+
+Pin a specific binary version (CI / reproducible builds):
 
 ```bash
-GRAVEL_VERSION=v0.3.0 curl -fsSL https://raw.githubusercontent.com/artanis-ai/gravel/main/install.sh | sh
+GRAVEL_VERSION=v0.4.0 curl -fsSL https://raw.githubusercontent.com/artanis-ai/gravel/main/install.sh | sh
 ```
 
-Windows users: download `gravel-windows-amd64.exe` from the [latest release](https://github.com/artanis-ai/gravel/releases/latest) and add it to your PATH.
+Mirror the release assets internally (locked-down networks):
+
+```bash
+GRAVEL_RELEASES_BASE_URL=https://internal.example.com/gravel-releases pnpm gravel init
+```
 
 ## Run the wizard
 
 ```bash
-gravel init
+pnpm gravel init     # or `uv run gravel init`, or just `gravel init` for direct-install users
 ```
 
 The wizard:
@@ -48,7 +78,7 @@ The wizard is stack-agnostic, the same binary serves TypeScript and Python proje
 ## Non-interactive (CI)
 
 ```bash
-gravel init --ci --api-key $GRAVEL_API_KEY --project $GRAVEL_PROJECT_ID
+pnpm gravel init --ci --api-key $GRAVEL_API_KEY --project $GRAVEL_PROJECT_ID
 ```
 
 All prompts have flags:
@@ -67,17 +97,17 @@ All prompts have flags:
 ## Upgrading
 
 ```bash
-gravel doctor
+pnpm gravel doctor     # or `gravel doctor` if installed via install.sh
 ```
 
-Prints your current binary version, the latest release tag, and the upgrade command (which is just `install.sh` again; one channel for the binary). The SDK in your project upgrades through its own package manager; the dashboard's loopback banner shows the exact line for your stack.
+Prints your current binary version, the latest release tag, and the upgrade command appropriate for how you installed (`pnpm update @artanis-ai/gravel` for npm users, `uv add artanis-gravel@latest` for Python, or re-run `install.sh` for direct-install users). The dashboard's loopback banner shows the same upgrade line for the SDK package in your `package.json` / `pyproject.toml`.
 
 See [Upgrading](https://github.com/artanis-ai/gravel/blob/main/UPGRADING.md) for the full release-by-release breakdown.
 
 ## What you'll see after install
 
 ```bash
-$ gravel init
+$ pnpm gravel init
 Detected ts, next-app-router, pkg=pnpm, db=postgres, auth=clerk
 ✓ Wrote gravel.config.ts
 ✓ Created app/admin/ai/[[...slug]]/route.ts

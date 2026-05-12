@@ -31,14 +31,13 @@ Source: `packages/sdk-ts/`. Published to npm.
 - Mounts the dashboard route (Next.js, Express, generic Node).
 - Manages `gravel_*` tables in the user's Postgres or SQLite via Drizzle.
 - Bundles the React dashboard as static assets.
-
-This package is library-only. The install wizard, manifest, migrate and doctor commands ship as a separate Go binary; see [`cli/DESIGN.md`](cli/DESIGN.md) and [`install.sh`](install.sh).
+- Ships a thin `bin/gravel.js` wrapper (~100 lines) that lazy-downloads the matching Go binary from the GitHub Release on first `pnpm gravel <cmd>` invocation. No bundled binary in the npm tarball.
 
 ### `artanis-gravel` (Python SDK)
 
 Source: `python/gravel/`. Published to PyPI.
 
-Mirror of the TS SDK. Uses SQLAlchemy + Alembic. First-class FastAPI + Django; generic ASGI/WSGI fallback. Also library-only; the CLI is the shared `gravel` binary.
+Mirror of the TS SDK. Uses SQLAlchemy + Alembic. First-class FastAPI + Django; generic ASGI/WSGI fallback. Same wrapper model: SDK library + `artanis_gravel._cli` shim that lazy-downloads the binary; one `uv add artanis-gravel` gives the user both. See [`cli/DESIGN.md`](cli/DESIGN.md) for the architecture rationale.
 
 ### Dashboard (React)
 
@@ -52,7 +51,7 @@ Source: `apps/docs/`. Hosted at `gravel.artanis.ai`.
 
 1. **Data residency.** Prompts and traces stay in the user's database. Only rows being actively judged are POSTed to Artanis.
 2. **Git is the prompt store.** Prompts live where they live in the user's repo (files or embedded strings). Edits become PRs. No hot-reload, no Gravel-served prompt CDN.
-3. **Lowest-friction install.** `curl -fsSL https://raw.githubusercontent.com/artanis-ai/gravel/main/install.sh | sh && gravel init` is the only sequence a user ever has to run. Sentry-style: framework detection, browser OAuth, AST edits, test trace before exit.
+3. **Lowest-friction install.** `pnpm add @artanis-ai/gravel && pnpm gravel init` (or `uv add artanis-gravel && uv run gravel init`) is the only sequence a user ever has to run. SDK + CLI in one install; the wrapper lazy-fetches the matching Go binary. Sentry-style: framework detection, browser OAuth, AST edits, test trace before exit.
 4. **Framework agnostic.** Both Node (Next.js, Express, generic) and Python (FastAPI, Django, generic ASGI/WSGI) first-class from day one.
 5. **No phone-home.** The library makes no outbound HTTP except: wizard OAuth (once at install), test trace (once at install), judge calls (per paid eval), Mallet analysis (per analysis), credit balance refresh.
 

@@ -59,53 +59,89 @@ What stays out of the binary:
 
 ## Distribution
 
-One canonical path. No registry tax.
+Three doors, one binary. All paths fetch the same signed binary from
+the same GitHub Release; the only difference is the door the user
+walks through.
 
-### `curl | sh`, signed GitHub Release assets
+### Door 1: npm wrapper (the primary path for TS users)
 
+```sh
+pnpm add @artanis-ai/gravel
+pnpm gravel init
 ```
+
+`@artanis-ai/gravel` ships the SDK library + a thin Node wrapper at
+`bin/gravel.js`. The wrapper:
+
+1. Reads its own version from the sibling `package.json` so the binary
+   it fetches matches the SDK semver in the user's lockfile.
+2. Maps `process.platform`/`process.arch` to the GitHub Release asset
+   filename (`gravel-linux-amd64`, etc.).
+3. Looks in `~/.cache/artanis-gravel/v<version>/` for a cached binary.
+4. On miss: downloads + sha256-verifies from the GH Release, writes to
+   the cache atomically (tmp → rename).
+5. `child_process.spawnSync`s the binary with the user's argv,
+   `stdio: 'inherit'`, propagates the exit code.
+
+No `postinstall` script. CI runs that never invoke the CLI pay zero
+cost (no download, no disk). First `gravel <cmd>` is the only thing
+that triggers the fetch.
+
+### Door 2: PyPI wrapper (the primary path for Python users)
+
+```sh
+uv add artanis-gravel
+uv run gravel init
+```
+
+Mirror of the npm wrapper: `artanis-gravel` ships the SDK library + a
+thin Python wrapper at `artanis_gravel/_cli.py`. Same five-step flow
+(version-via-`importlib.metadata`, platform mapping, cache, download
++ sha256 verify, `os.execv` on POSIX / `subprocess.call` on Windows).
+
+### Door 3: `curl | sh` install script (Docker, CI, polyglot repos)
+
+```sh
 curl -fsSL https://raw.githubusercontent.com/artanis-ai/gravel/main/install.sh | sh
+gravel init
 ```
 
-The script (committed at `gravel/install.sh`):
+POSIX shell script committed at `gravel/install.sh`. Same detect →
+download → sha256-verify → install flow, but writes the binary to
+`$HOME/.local/bin/gravel` (override: `GRAVEL_INSTALL_DIR`) so it lives
+on PATH globally. Useful when:
 
-1. Detects OS + arch (`uname -s`, `uname -m`).
-2. Resolves `latest` from the GitHub Releases API, or honours `GRAVEL_VERSION=vX.Y.Z`.
-3. Downloads `gravel-<os>-<arch>` + `gravel-<os>-<arch>.sha256`.
-4. Verifies the digest with `sha256sum` or `shasum -a 256`.
-5. Installs to `$HOME/.local/bin/gravel` (override: `GRAVEL_INSTALL_DIR`).
-6. Prints a PATH-hint if the install dir isn't on `$PATH`.
+- Docker / CI images don't want Node or Python just to install the
+  CLI.
+- Polyglot repos (Rust, Go) where neither npm nor PyPI is the natural
+  home for a build dep.
+- Power users who'd rather invoke `gravel` from a system shell than
+  `pnpm gravel`/`uv run gravel`.
 
-Supported targets:
+A sibling `install.ps1` covers native Windows shells.
 
-- `linux-amd64`, `linux-arm64`
-- `darwin-amd64`, `darwin-arm64`
-- `windows-amd64.exe` (manual download from the release page; the `.sh`
-  installer cops out on Windows shells and points at the asset URL.
-  Post-launch we'll ship a sibling `install.ps1`.)
+### What the three doors share
 
-### What we explicitly do NOT ship
+| Concern | Source of truth |
+|---|---|
+| Binary content | The Go module under `cli/`, cross-compiled in the release matrix |
+| Asset names | `gravel-<os>-<arch>` (plus `.exe` on windows). Same five targets across all wrappers; the `PLATFORMS` map is duplicated verbatim in `bin/gravel.js` and `_cli.py` |
+| Cache layout | `~/.cache/artanis-gravel/v<version>/<asset>` for both wrappers; install.sh writes to `$INSTALL_DIR/gravel` directly |
+| Version coupling | The wrapper's version (from its host package) is what gets fetched. `tools/release.sh` bumps cli + sdk-ts + python in lockstep |
+| Verification | sha256 against the published `.sha256` companion file |
+| Mirror escape hatch | `GRAVEL_RELEASES_BASE_URL` env override; both wrappers + install.sh honour it. Locked-down networks can mirror the assets internally |
 
-- **No npm CLI package**. `@artanis-ai/gravel` is the SDK only. The
-  `bin` field is removed from its `package.json`. Users who type
-  `npx @artanis-ai/gravel` get a clear "install via `curl | sh`" error.
-- **No PyPI CLI package**. `artanis-gravel` is the SDK only. The
-  `console_scripts` entry is removed from its `pyproject.toml`.
-- **No discoverability wrapper packages**. No `@artanis-ai/gravel-cli`
-  on npm, no `artanis-gravel-cli` on PyPI. Pre-launch we have one
-  install path. Post-launch we may add Homebrew if telemetry warrants
-  it; we will not add it speculatively.
+### Why wrappers and not just `curl | sh`
 
-The reasoning:
-
-- The CLI runs ~3 times in a project's lifetime (init, the occasional
-  migrate, pre-commit calls). Carrying an 8 MB native binary inside
-  every `npm install` so 99% of CI runs can ignore it is the wrong
-  shape.
-- Coupling the CLI to the SDK package on each registry was the source
-  of the 0.2.0 drift bug. Decoupling them removes the failure mode.
-- Pre-launch, every distribution channel we add is a maintenance
-  surface we have to keep green. One is right.
+The earlier version of this doc argued for `curl | sh` only and called
+the wrappers "tech debt". The trust optics changed our mind. People
+who pull from npm trust npm's signature + provenance and read the
+small JS wrapper. People who'd never pipe a remote shell script into
+sh now have a friendly door. The 0.2.0 drift bug — the actual disaster
+that started this rewrite — was caused by **two separate wizards**, not
+by having two registries. With the wizard logic in a single Go binary,
+the wrappers can be ~100-line shims that drift trivially less than
+"two thousand lines of TS+Python wizard maintained in parallel".
 
 ### Release artifacts per tag
 
@@ -128,17 +164,43 @@ All five `.sha256` files are produced by `sha256sum` on the runner so
 the format matches `sha256sum -c`. Reproducible builds: `-trimpath`
 plus `-buildvcs=false` plus `-ldflags="-s -w -X .../version.Version=X.Y.Z"`.
 
-## SDK packages are SDK only
+### Release artifacts per tag
+
+Each `vX.Y.Z` tag triggers a CI matrix that builds and uploads:
+
+```
+gravel-linux-amd64
+gravel-linux-amd64.sha256
+gravel-linux-arm64
+gravel-linux-arm64.sha256
+gravel-darwin-amd64
+gravel-darwin-amd64.sha256
+gravel-darwin-arm64
+gravel-darwin-arm64.sha256
+gravel-windows-amd64.exe
+gravel-windows-amd64.exe.sha256
+```
+
+All five `.sha256` files are produced by `sha256sum` on the runner so
+the format matches `sha256sum -c`. Reproducible builds: `-trimpath`
+plus `-buildvcs=false` plus `-ldflags="-s -w -X .../version.Version=X.Y.Z"`.
+
+## SDK packages: library + thin CLI wrapper, no bundled binary
 
 After this rewrite:
 
-- `@artanis-ai/gravel` (npm) exports the runtime library. No `bin`.
-  The version on the registry tracks the SDK schema + dashboard bundle.
-- `artanis-gravel` (PyPI) exports the runtime library. No `console_scripts`.
-- The CLI's version (`gravel --version`) follows the same `vX.Y.Z`
-  numbering, intentionally locked in step with the SDKs so `gravel
-  doctor` can tell a user "you're on CLI 0.4.0 in a project pinned to
-  SDK 0.3.2, run `pnpm update @artanis-ai/gravel@0.4.0`".
+- `@artanis-ai/gravel` (npm) exports the runtime library + a
+  `bin/gravel.js` wrapper that lazy-downloads the binary on first
+  invocation. The binary is NOT bundled in the npm tarball; the package
+  size stays at the SDK's natural size.
+- `artanis-gravel` (PyPI) is the equivalent: SDK + `_cli.py` wrapper.
+- The Go binary's version (`gravel --version`) follows the same
+  `vX.Y.Z` numbering. The wrapper fetches the binary tagged with its
+  own SDK version, so a user on SDK 0.4.0 always gets binary 0.4.0 from
+  `pnpm gravel <cmd>` — even if a newer binary exists on the GH Release.
+- A user installed via `install.sh` instead may have a newer binary on
+  PATH. `gravel doctor` reports the version they actually invoked, plus
+  the latest tag, so any drift is visible.
 
 The version-in-step invariant is enforced by `tools/release.sh`: the
 script bumps `cli/internal/version/version.go`, `packages/sdk-ts/package.json`,
@@ -148,8 +210,9 @@ and `python/gravel/pyproject.toml` in one commit, then tags.
 
 ```
 gravel/
-├── install.sh                       # curl | sh entrypoint
-├── cli/                             # Go module (single source of truth)
+├── install.sh                       # `curl | sh` entrypoint (POSIX)
+├── install.ps1                      # PowerShell sibling for native Windows
+├── cli/                             # Go module — single source of truth for the wizard
 │   ├── go.mod
 │   ├── cmd/gravel/main.go           # entrypoint
 │   ├── internal/
@@ -166,8 +229,8 @@ gravel/
 │   ├── DESIGN.md
 │   └── README.md
 ├── packages/
-│   └── sdk-ts/                      # runtime library only; CLI source deleted
-└── python/gravel/                   # runtime library only; CLI source deleted
+│   └── sdk-ts/                      # runtime library + bin/gravel.js wrapper
+└── python/gravel/                   # runtime library + _cli.py wrapper
 ```
 
 ## Schema for "one wizard, two SDKs"
