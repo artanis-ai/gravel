@@ -10,7 +10,7 @@ import (
 )
 
 // FastScan covers the pre-commit-hook path: pure file I/O, no LLM, no
-// AST walk. Spec: gravel-cloud/docs/spec/manifest.md §3.
+// AST walk.
 //
 // Catches:
 //   - Edits to known prompts (re-hash, update positions)

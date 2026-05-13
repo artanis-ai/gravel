@@ -1,6 +1,5 @@
 """Async HTTP client for POST /api/judge on the Gravel control plane.
 
-Spec: gravel-cloud/docs/spec/api-surface.md (judge endpoint).
 Server contract is snake-case JSON, validated by Zod on the server.
 """
 from __future__ import annotations

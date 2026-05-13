@@ -16,9 +16,7 @@ import (
 //
 // The contract is that cosmetic differences (line endings, trailing
 // whitespace, leading/trailing blank lines) don't churn the hash, so
-// reformatting prompt files doesn't generate spurious PRs. Spec:
-// gravel-cloud/docs/spec/manifest.md §4.
-
+// reformatting prompt files doesn't generate spurious PRs.
 var (
 	crlfOrCr        = regexp.MustCompile(`\r\n?`)
 	trailingWS      = regexp.MustCompile(`[ \t]+$`)

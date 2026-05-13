@@ -1,7 +1,6 @@
 /**
  * Auto-instrumentation for the Vercel AI SDK (`ai` package).
  *
- * Spec: gravel-cloud/docs/spec/tracing.md §2 (Vercel AI SDK section)
  *
  * Approach chosen: WRAP the four entrypoints (`generateText`, `streamText`,
  * `generateObject`, `streamObject`) by re-exporting through a Proxy on the

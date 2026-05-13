@@ -9,7 +9,7 @@ host that flips between TS and Python SDKs behaves the same way:
 
 Process-local. Sufficient for single-host default-password mode;
 distributed deployments should configure a real auth provider rather
-than rely on this. Spec: gravel-cloud/docs/spec/auth.md §2.
+than rely on this.
 """
 from __future__ import annotations
 

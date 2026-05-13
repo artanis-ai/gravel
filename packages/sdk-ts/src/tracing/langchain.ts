@@ -1,7 +1,6 @@
 /**
  * Auto-instrumentation for Langchain JS.
  *
- * Spec: gravel-cloud/docs/spec/tracing.md §2 (Langchain section)
  *
  * Approach: register a `BaseCallbackHandler` on the global Langchain
  * callback manager so every chain / LLM / tool invocation made through

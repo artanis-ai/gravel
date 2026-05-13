@@ -4,7 +4,6 @@ The control plane forwards prompts to the Mallet worker after
 verifying the customer's Gravel API key. Returns structured findings
 (contradictions, ambiguities, best-practice violations).
 
-Spec: gravel-cloud/docs/spec/analysis.md.
 """
 from __future__ import annotations
 

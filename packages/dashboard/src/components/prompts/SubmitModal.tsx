@@ -5,7 +5,6 @@
  * passed in. On submit we POST them inline in the request body — the
  * server doesn't persist drafts.
  *
- * Spec: gravel-cloud/docs/spec/prompts.md §2 (submission step 8 — list each
  * draft's path + before/after diff snippet, optional title + description).
  *
  * Owns its own form state + the POST mutation so it can be unit-tested in

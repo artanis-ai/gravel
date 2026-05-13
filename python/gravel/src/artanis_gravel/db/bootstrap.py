@@ -1,9 +1,7 @@
-"""Idempotent CREATE TABLE bootstrap. v0 substitute for proper Alembic migrations.
+"""Idempotent CREATE TABLE bootstrap. Stands in for Alembic revisions until
+the schema stabilises enough to ship version-controlled migrations.
 
 Mirrors packages/sdk-ts/src/db/bootstrap.ts. Schema-drift CI rejects mismatch.
-
-When proper migrations are wired up (BLOCKER in gravel-cloud/docs/blockers.md
-§schema), this is replaced by Alembic.
 """
 from __future__ import annotations
 

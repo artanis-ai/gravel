@@ -1,7 +1,6 @@
 /**
  * Auto-patch the `openai` Node SDK.
  *
- * Spec: gravel-cloud/docs/spec/tracing.md §2 (OpenAI section)
  *
  * Patches:
  *   - `OpenAI.Chat.Completions.prototype.create`

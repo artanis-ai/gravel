@@ -310,8 +310,9 @@ app.use('%s', gravelHandler({ config }))
 }
 
 func genericInstructions(mountPath string) string {
-	return fmt.Sprintf(`Generic Node/server: import @artanis-ai/gravel/node, pass your config,
-and mount the returned handler at %s. See https://gravel.artanis.ai/docs/integration
-for examples.
-`, mountPath)
+	return fmt.Sprintf(`Generic Node/server: import { gravelHandler } from '@artanis-ai/gravel/node',
+build it with your config, and mount the returned (req, res) handler at %s.
+Express: app.use('%s', gravelHandler({ config })).
+Hono: app.mount('%s', gravelHandler({ config })).
+`, mountPath, mountPath, mountPath)
 }

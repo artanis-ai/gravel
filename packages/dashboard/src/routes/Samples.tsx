@@ -3,7 +3,6 @@
  * Route is /samples (the SDK still calls them samples internally); the
  * tab label and UX is the domain expert's "Review" surface.
  *
- * Spec: gravel-cloud/docs/spec/dashboard.md §5.
  * Calls `GET /api/samples`, `GET /api/samples/:id`, `POST /api/samples/:id/feedback`.
  */
 import { useEffect, useMemo, useState, type FormEvent } from 'react'

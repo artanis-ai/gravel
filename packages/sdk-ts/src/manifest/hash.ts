@@ -1,6 +1,6 @@
 /**
  * Hash normalization for prompt content. Whitespace differences shouldn't
- * change a hash. Spec: gravel-cloud/docs/spec/manifest.md §4.
+ * change a hash.
  *
  * Identical to python/gravel/src/artanis_gravel/manifest/hash.py — kept in sync.
  */

@@ -5,7 +5,6 @@ Public API surface:
     from artanis_gravel import GravelConfig, GravelUser, define_config
     from artanis_gravel import judge_call, run_eval, Verdict, JudgeError
 
-Spec: gravel-cloud/docs/spec/api-surface.md
 """
 from .analyze import AnalyzeError, AnalyzeIssue, AnalyzeResponse, AnalyzeUsage, analyze_prompt
 from .evals import Result, Row, RunResult, run_eval

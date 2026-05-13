@@ -1,7 +1,7 @@
 /**
  * Public API surface for @artanis-ai/gravel.
  *
- * Stable across minor versions. Spec: gravel-cloud/docs/spec/api-surface.md
+ * Stable across minor versions.
  */
 
 export { defineConfig, resolveConfig } from './types.js'

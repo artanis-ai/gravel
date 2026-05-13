@@ -4,7 +4,6 @@
  * Boots tracing by detecting installed LLM provider clients and patching them.
  * Honours GRAVEL_TRACING_DISABLED=1.
  *
- * Spec: gravel-cloud/docs/spec/tracing.md §1, §2
  *
  * Each provider module's top-level code is responsible for try-importing the
  * third-party package and silently no-op-ing if it isn't installed. That keeps

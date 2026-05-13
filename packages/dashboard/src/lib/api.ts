@@ -2,7 +2,6 @@
  * Same-origin API client. All calls go to the user's app at the dashboard's
  * mount path (e.g. /admin/ai/api/*). Never to gravel.artanis.ai.
  *
- * Spec: gravel-cloud/docs/spec/dashboard.md §11.
  */
 import { useQuery, useMutation, type UseQueryOptions } from '@tanstack/react-query'
 

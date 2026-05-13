@@ -3,7 +3,7 @@
 // pre-commit hook diff on the file, so the bytes have to be
 // byte-compatible with what the previous TS implementation wrote.
 //
-// Wire shape per gravel-cloud/docs/spec/manifest.md §2.
+// Wire shape §2.
 package manifest
 
 // MANIFEST_VERSION + MANIFEST_PATH track the TS constants. Keep in

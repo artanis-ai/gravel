@@ -1,10 +1,6 @@
 /**
  * The handler factory. Returns a fetch-style handler that the framework
  * adapters wrap. Every framework integration lowers down to this.
- *
- * Spec:
- *   gravel-cloud/docs/spec/api-surface.md §2 — mounting
- *   gravel-cloud/docs/spec/api-surface.md §5 — internal HTTP API
  */
 import type { GravelConfig, GravelRequest, ResolvedGravelConfig } from '../types.js'
 import { resolveConfig } from '../types.js'

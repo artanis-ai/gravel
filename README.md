@@ -43,14 +43,13 @@ gravel/
 ├── packages/sdk-ts/        # @artanis-ai/gravel — SDK library + bin/gravel.js wrapper
 ├── packages/dashboard/     # React app shipped inside the SDKs
 ├── python/gravel/          # artanis-gravel — SDK library + artanis_gravel._cli wrapper
-├── apps/docs/              # Mintlify docs → gravel.artanis.ai
 ├── examples/               # Next.js, FastAPI, Django integration examples (Express / Hono / Fastify / Flask exercised via gravel-test-fixtures)
 └── .github/workflows/      # CI: lint, test, schema-drift, cross-compile + release
 ```
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md). The product spec lives in the private `gravel-cloud` repo (Artanis-internal); the architecture overview applicable to OSS contributors is in [`ARCHITECTURE.md`](ARCHITECTURE.md).
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). The architecture overview is in [`ARCHITECTURE.md`](ARCHITECTURE.md); rolling progress notes are in [`STATUS.md`](STATUS.md). The wizard is self-explanatory — run `gravel init` and it tells you what it's doing. The dashboard documents itself in its empty states and banners.
 
 ## License
 

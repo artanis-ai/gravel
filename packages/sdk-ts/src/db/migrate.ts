@@ -2,7 +2,6 @@
  * Migration runner. Applies pending drizzle-kit migrations from
  * `migrations/postgres` or `migrations/sqlite` based on the detected dialect.
  *
- * Spec: gravel-cloud/docs/spec/data-model.md §3.4
  *
  * Policy:
  *   - Dev (NODE_ENV != 'production'): auto-applies pending migrations on app

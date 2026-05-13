@@ -3,7 +3,6 @@
 Mirrors `packages/sdk-ts/src/tracing/context.ts` (TS uses `AsyncLocalStorage`,
 Python uses `contextvars`).
 
-Spec: gravel-cloud/docs/spec/tracing.md §4 + §9
 """
 from __future__ import annotations
 

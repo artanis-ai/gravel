@@ -1,7 +1,6 @@
 /**
  * Async-context propagation for tracing metadata + per-call disable.
  *
- * Spec: gravel-cloud/docs/spec/tracing.md §4 + §9
  *
  * The auto-patches consult this context when emitting traces. If the user
  * never imports any of these helpers, behaviour is identical to "no metadata,

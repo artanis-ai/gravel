@@ -6,7 +6,6 @@ session minted on one platform validates on the other:
     cookie := <base64url(payload)>.<base64url(hmac-sha256(payload))>
     payload := {"exp": <unix ms>, "nonce": "<hex>"}
 
-Spec: gravel-cloud/docs/spec/auth.md §2.
 """
 from __future__ import annotations
 

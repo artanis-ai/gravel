@@ -43,10 +43,6 @@ Mirror of the TS SDK. Uses SQLAlchemy + Alembic. First-class FastAPI + Django; g
 
 Source: `packages/dashboard/`. Vite-built; ships as static assets bundled inside both SDKs (not CDN-fetched).
 
-### Mintlify docs
-
-Source: `apps/docs/`. Hosted at `gravel.artanis.ai`.
-
 ## Cross-cutting principles
 
 1. **Data residency.** Prompts and traces stay in the user's database. Only rows being actively judged are POSTed to Artanis.
@@ -62,5 +58,5 @@ The TS and Python schemas must stay in lockstep. CI runs both migration sets aga
 ## Where to start
 
 - Code: pick a package directory and read its README.
-- Specs (full design): `artanis-ai/gravel-cloud/docs/` (private; contributor access by request).
+- Run the wizard against a throwaway repo; it self-documents.
 - Issues: open one if anything's unclear.

@@ -1,5 +1,5 @@
 /**
- * `.gravel/manifest.json` schema. See gravel-cloud/docs/spec/manifest.md §2.
+ * `.gravel/manifest.json` schema. §2.
  */
 
 export const MANIFEST_VERSION = 1

@@ -5,7 +5,6 @@
  * Drafts live in this browser's localStorage (see lib/drafts.ts). The
  * submit endpoint accepts them inline in the POST body.
  *
- * Spec: gravel-cloud/docs/spec/prompts.md §2 (edit flow), §3 (no "new
  * prompt" button + empty-state copy), §6 (GitHub OAuth gating), §9 (search).
  */
 import { useMemo, useState } from 'react'

@@ -2,8 +2,6 @@
 
 Reads DATABASE_URL from env (or alembic.ini default), points the migrator at
 the `metadata` defined in artanis_gravel.schema.
-
-Spec: gravel-cloud/docs/spec/data-model.md §3
 """
 from __future__ import annotations
 

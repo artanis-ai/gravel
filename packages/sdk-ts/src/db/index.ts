@@ -4,7 +4,6 @@
  * Both flavours present an identical `Database` interface to the rest of
  * the SDK so callers don't care which engine is in use.
  *
- * Spec: gravel-cloud/docs/spec/data-model.md §3
  */
 import type { GravelDatabaseConfig } from '../types.js'
 

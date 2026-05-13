@@ -4,7 +4,6 @@
  * multiple files per PR (Gravel batches all draft edits into one PR; Mallet
  * was single-file).
  *
- * Spec: gravel-cloud/docs/spec/prompts.md §6
  */
 import { githubAPI } from './api.js'
 

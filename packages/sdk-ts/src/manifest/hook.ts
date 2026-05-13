@@ -1,7 +1,7 @@
 /**
  * Pre-commit hook installer. Polite-blocking: blocks `git commit` when the
  * manifest is stale, with a clear "run X to fix" message and `--no-verify`
- * bypass. Spec: gravel-cloud/docs/spec/manifest.md §5.
+ * bypass.
  *
  * Detects:
  *   - Husky (.husky/pre-commit) — append our line.

@@ -8,7 +8,6 @@
  * /apps/control-plane/src/routes/judge.ts). We translate the camelCase JS
  * surface into the snake_case wire format here.
  *
- * Spec: gravel-cloud/docs/spec/api-surface.md §6 — judge.
  */
 
 export type JudgeType = 'trace' | 'live'

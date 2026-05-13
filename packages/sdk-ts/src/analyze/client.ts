@@ -6,7 +6,6 @@
  * Mallet worker. Returns structured findings (contradictions,
  * ambiguities, best-practice violations) for the supplied prompt.
  *
- * Spec: gravel-cloud/docs/spec/analysis.md.
  */
 
 export interface AnalyzeIssue {

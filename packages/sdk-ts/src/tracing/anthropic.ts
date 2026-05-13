@@ -1,7 +1,6 @@
 /**
  * Auto-patch the `@anthropic-ai/sdk` Node SDK.
  *
- * Spec: gravel-cloud/docs/spec/tracing.md §2 (Anthropic section)
  *
  * Patches:
  *   - `Anthropic.Messages.prototype.create` (sync + stream variant via stream:true)

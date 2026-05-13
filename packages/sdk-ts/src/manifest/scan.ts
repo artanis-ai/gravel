@@ -1,7 +1,6 @@
 /**
  * Fast scan: pure file-IO, no LLM. Runs in pre-commit hook.
  *
- * Spec: gravel-cloud/docs/spec/manifest.md §3.
  *
  * Catches:
  *   - Edits to known prompts (re-hash, update positions)

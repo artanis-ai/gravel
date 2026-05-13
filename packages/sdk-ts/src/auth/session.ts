@@ -4,7 +4,6 @@
  * We deliberately do NOT use a JWT library here — keeps zero deps. The cookie
  * is just `<base64url(payload)>.<base64url(hmac-sha256(payload))>`.
  *
- * Spec: gravel-cloud/docs/spec/auth.md §2.
  */
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 

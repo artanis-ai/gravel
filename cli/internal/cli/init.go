@@ -129,6 +129,6 @@ either accepts what was passed via flags or applies the defaults.`,
 // this function is intentionally tiny.
 func printSummary(_ *cobra.Command, _ wizard.RunResult) {
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintf(os.Stderr, "Docs: %s\n", wizard.Cyan("https://gravel.artanis.ai/docs"))
+	fmt.Fprintf(os.Stderr, "Code + issues: %s\n", wizard.Cyan("https://github.com/artanis-ai/gravel"))
 	fmt.Fprintln(os.Stderr)
 }

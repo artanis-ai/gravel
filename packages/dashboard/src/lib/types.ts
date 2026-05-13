@@ -3,11 +3,11 @@
  *
  * Mirrors the backend route shapes in
  * `packages/sdk-ts/src/handler/routes.ts` and the schema in
- * `gravel-cloud/docs/spec/data-model.md`.
+ * `packages/sdk-ts/src/schema/`.
  *
- * 2026-05-08 vocabulary refresh (D-Q53): traces are now "samples"
- * (one row per LLM call). A multi-step trace is samples sharing a
- * group_id. Datasets + evals + observations + per-user types removed.
+ * Vocabulary: traces are "samples" (one row per LLM call). A multi-step
+ * trace is samples sharing a group_id. Datasets + evals + observations +
+ * per-user types are not on the customer-side data plane today.
  */
 
 export type SampleStatus = 'running' | 'completed' | 'errored'

@@ -18,7 +18,7 @@
 - **v0.5.8** — Real PyPI lookup in `/api/version`; UpdateBanner stopped reporting `hasUpdate: false` unconditionally. `CURRENT_VERSION = "0.1.0"` hardcoded value retired in favour of `importlib.metadata`.
 - **v0.5.9** — Major Python SDK rewire: every route now flows through `_handler.py`. Killed `asgi.py` + `django.py` placeholders; added `/api/migrations/status`, `POST /api/prompts/submit`, `/api/github/install` + `/callback`, `POST /api/auth/view-as`; fixed form-encoded login redirect; added per-IP login rate-limiting; `/_assets/<file>` content-type map; `/api/prompts` honours `GRAVEL_REPO_ROOT` via the typed `manifest/io` helpers.
 - **v0.5.10** — Heavy cross-stack journey coverage. New `tests/test_embedded_journey.py` pins byte-exact char-offset slicing across FastAPI/ASGI/WSGI/Django/Flask and PR + manifest rewrite invariants for adding/removing lines, multi-prompt edits in one file, hash-update semantics.
-- **v0.5.11** — Closes the residual audit findings: TS auth gates on `/api/prompts`, `/api/samples`, `/api/github/status` to match Python (information disclosure fix). Unit tests for `_github_api.py` (24) and `samples_query.py` (50). Docs sweep removing stale "pre-v0 / stubbed / coming soon" claims across `apps/docs/*.mdx`, `packages/dashboard/README.md`, `packages/sdk-ts/migrations/README.md`, and this file. Bare-`except` hygiene in `auth.py` / `_github_api.py` / `judge/client.py`. Session TTL constant decoupled from the magic-number cookie Max-Age.
+- **v0.5.11** — Closes the residual audit findings: TS auth gates on `/api/prompts`, `/api/samples`, `/api/github/status` to match Python (information disclosure fix). Unit tests for `_github_api.py` (24) and `samples_query.py` (50). Bare-`except` hygiene in `auth.py` / `_github_api.py` / `judge/client.py`. Session TTL constant decoupled from the magic-number cookie Max-Age.
 - **v0.5.12** — Generic-fetch tracing port to Python (httpx sync + async, requests, aiohttp, stdlib urllib; 41 tests against an in-process `http.server` thread). TS `routes.ts` split into per-domain files (`auth.ts`, `version.ts`, `migrations.ts`, `prompts.ts`, `github.ts`, `samples.ts`, `shell.ts`, `assets.ts`) to match the Python `_handler.py` shape; cookies + shell helpers extracted. New Playwright E2E suite for the dashboard (15 tests covering auth + samples + prompts + github flows), wired into CI as a dedicated `dashboard-e2e` job.
 - **v0.5.13** — Wizard detects a dev server already listening on the framework default port and warns "restart your server" so newly-written mount code is actually picked up (real customer 404 closed). Dashboard component test coverage roughly doubled with new PayloadShape (12), CopyableCode (6), and Login (8) suites. CI caches Playwright browser binaries by version, saving ~30s per run. `gravel-test-fixtures` gains a `manifest:deep-scan` journey that runs `gravel scan --deep --yes` and asserts the manifest gains embedded entries in declared `deepScanFiles` paths.
 
@@ -76,11 +76,11 @@ curl -s https://gravel.artanis.ai/api/health
 curl -s https://gravel-judge.artanis-ai.workers.dev/health
 ```
 
-For an authed call against `/api/judge` or `/api/analyze`, see `gravel-cloud/docs/morning-brief-*.md` for the curl recipe.
+For an authed call against `/api/judge` or `/api/analyze`, run `gravel doctor` from a wizard-installed project — it prints a working curl recipe with the API key + project id resolved from your `.env.local`.
 
 ## What's next
 
-See `gravel-cloud/docs/roadmap.md` for the phased plan. Open at the time of writing:
+Open at the time of writing:
 
 1. Datasets + Evals pillars — these are scaffolded as empty dashboard routes; the backend route table is net-new product surface (new SDK helpers, new tables, new dashboard pages) and needs a design pass before code.
 2. Fixture suite end-to-end execution: the verifier-side journeys (`manifest:deep-scan`, raw-fetch tracing) are coded but the CI machine that runs `npm install` / `poetry install` across all 14 fixtures doesn't exist yet.

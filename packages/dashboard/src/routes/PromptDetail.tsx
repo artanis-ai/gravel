@@ -10,7 +10,6 @@
  * Drafts live in this browser's localStorage (see lib/drafts.ts). Save
  * is debounced — the user types, we wait ~500ms of quiet, then flush.
  *
- * Spec: gravel-cloud/docs/spec/prompts.md §2 (edit flow), §5 (inline diff).
  */
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'wouter'

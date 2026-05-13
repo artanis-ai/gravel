@@ -1,7 +1,6 @@
 /**
  * "Submit changes" — turn a DE's accumulated drafts into a single PR.
  *
- * Spec: gravel-cloud/docs/spec/prompts.md §2 (Submission), §6 (PR authoring).
  *
  * Drafts are passed in by the caller (the dashboard reads them from the
  * browser's localStorage and POSTs them inline on the submit request).

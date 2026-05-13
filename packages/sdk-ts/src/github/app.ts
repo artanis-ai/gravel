@@ -3,8 +3,6 @@
  * installation tokens. Replaces the per-user OAuth flow that lived in
  * `connect.ts` (still present, marked deprecated).
  *
- * Spec: `gravel-cloud/docs/spec/prompts.md` §6
- * Decision: `gravel-cloud/docs/decisions.md` D-Q53 (2026-05-07 entry)
  *
  * Trust boundary: the App's RS256 private key NEVER leaves the control
  * plane (Cloudflare Worker at gravel.artanis.ai). The customer-side SDK

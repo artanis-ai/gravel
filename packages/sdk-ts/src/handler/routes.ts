@@ -16,7 +16,6 @@
  * dispatcher so a host that flips between SDKs sees identical
  * behaviour.
  *
- * Spec: gravel-cloud/docs/spec/api-surface.md §5.
  */
 import { json } from './index.js'
 import type { RouteCtx, RouteTable } from './route-ctx.js'

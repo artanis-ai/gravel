@@ -36,7 +36,7 @@ both TypeScript and Python projects. Install with:
 
   curl -fsSL https://raw.githubusercontent.com/artanis-ai/gravel/main/install.sh | sh
 
-For library/runtime APIs, see the per-language SDKs:
-  https://gravel.artanis.ai/docs/sdk-ts
-  https://gravel.artanis.ai/docs/sdk-python
+For library/runtime APIs, see the per-language SDK READMEs:
+  https://github.com/artanis-ai/gravel/tree/main/packages/sdk-ts
+  https://github.com/artanis-ai/gravel/tree/main/python/gravel
 `

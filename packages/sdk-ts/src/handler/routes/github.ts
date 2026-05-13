@@ -18,7 +18,6 @@
  * `GRAVEL_GH_DEV_STUB=1` bypasses the entire CP roundtrip for local
  * dev — pairs with the same flag in `github/project-state.ts`.
  *
- * Spec: gravel-cloud/docs/spec/prompts.md §6.
  */
 import { json } from '../index.js'
 import type { RouteTable } from '../route-ctx.js'

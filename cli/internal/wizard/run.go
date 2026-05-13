@@ -87,7 +87,7 @@ func Run(ctx context.Context, opts RunOptions, _ io.Writer) (RunResult, error) {
 	Say(fmt.Sprintf("Detected %s (%s, %s, db=%s). I'll walk you through three things; you can skip any.",
 		Bold(string(d.Framework)), d.Language, d.PackageManager, dbLabel))
 	if d.NextHasBothRouters {
-		Bullet(fmt.Sprintf("Heads-up: this project has both %s/ and pages/. I'll mount under the App Router. Re-run with --framework or hand-mount per gravel.artanis.ai/docs/install if you want pages/ instead.", string(d.NextAppDir)), BulletWarn)
+		Bullet(fmt.Sprintf("Heads-up: this project has both %s/ and pages/. I'll mount under the App Router. Re-run with --framework or hand-mount inside pages/ if you want that instead.", string(d.NextAppDir)), BulletWarn)
 		Say("")
 	}
 

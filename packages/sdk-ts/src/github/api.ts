@@ -3,7 +3,6 @@
  * home-page/mallet-worker/src/routes/create-pr.ts so the gravel lib uses
  * the same battle-tested PR-creation flow Mallet ships in production.
  *
- * Spec: gravel-cloud/docs/spec/prompts.md §6
  */
 
 export interface GitHubError extends Error {

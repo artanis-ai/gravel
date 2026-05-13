@@ -1,7 +1,6 @@
 /**
  * Public type surface. Stable across minor versions; new optional fields ok.
  *
- * Spec: gravel-cloud/docs/spec/api-surface.md
  */
 
 export type GravelRole = 'user' | 'admin'
@@ -37,7 +36,6 @@ export interface GravelAuthConfig {
   /**
    * Pluggable callback. If set, this is the only auth path; default-password
    * mode is disabled. A null return means "redirect to host app login".
-   * See gravel-cloud/docs/spec/auth.md for the contract.
    */
   getUser?: (req: GravelRequest) => Promise<GravelUser | null> | GravelUser | null
   /**
@@ -137,8 +135,9 @@ export interface ResolvedGravelConfig extends Required<Omit<GravelConfig,
 export function resolveConfig(config: GravelConfig): ResolvedGravelConfig {
   if (!config.auth.getUser && !config.auth.defaultPassword) {
     throw new Error(
-      '[gravel] Auth misconfigured: provide either auth.getUser or auth.defaultPassword. ' +
-        'See https://gravel.artanis.ai/docs/auth',
+      '[gravel] Auth misconfigured: provide either auth.getUser (your existing auth callback) ' +
+        'or auth.defaultPassword (a long random string in your .env). See the auth section of ' +
+        'https://github.com/artanis-ai/gravel for examples.',
     )
   }
   if (config.auth.getUser && config.auth.defaultPassword) {

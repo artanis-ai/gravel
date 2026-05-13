@@ -1,7 +1,6 @@
 /**
  * Internal "write a trace + observations" helper used by the auto-patches.
  *
- * Spec: gravel-cloud/docs/spec/tracing.md §3, §6
  *
  * Design notes:
  *   - Provider patches do NOT block the user's call on this. We `void` the

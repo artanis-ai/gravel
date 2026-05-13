@@ -10,7 +10,6 @@ Port of `packages/sdk-ts/src/prompts/submit.ts`. Same invariants:
     is included in the same PR so a merged repo isn't left with a
     stale manifest pointing at the wrong byte ranges.
 
-Spec: gravel-cloud/docs/spec/prompts.md §2 + §6.
 """
 from __future__ import annotations
 

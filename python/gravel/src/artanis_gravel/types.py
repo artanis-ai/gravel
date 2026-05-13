@@ -1,6 +1,6 @@
 """Public type surface — Python mirror of packages/sdk-ts/src/types.ts.
 
-Stable across minor versions. Spec: gravel-cloud/docs/spec/api-surface.md
+Stable across minor versions.
 """
 from __future__ import annotations
 
@@ -110,8 +110,10 @@ def resolve_config(config: GravelConfig) -> ResolvedGravelConfig:
     # user can see a clearer error.
     if "get_user" not in auth and "default_password" not in auth:
         raise ValueError(
-            "[gravel] Auth misconfigured: provide either auth['get_user'] or "
-            "auth['default_password']. See https://gravel.artanis.ai/docs/auth"
+            "[gravel] Auth misconfigured: provide either auth['get_user'] "
+            "(your existing auth callback) or auth['default_password'] "
+            "(a long random string in your .env). See the auth section of "
+            "https://github.com/artanis-ai/gravel for examples."
         )
     if auth.get("get_user") and auth.get("default_password"):
         warnings.warn(

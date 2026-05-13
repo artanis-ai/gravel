@@ -1,5 +1,5 @@
 /**
- * Auth gate. Two mutually-exclusive modes per gravel-cloud/docs/spec/auth.md:
+ * Auth gate. Two mutually-exclusive modes
  *
  *   1. `getUser` callback — host app delegates auth. null = "not authed".
  *   2. Default password — fallback when getUser is absent. Lib hosts /login.

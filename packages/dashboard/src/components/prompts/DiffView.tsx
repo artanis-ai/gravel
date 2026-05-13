@@ -1,7 +1,6 @@
 /**
  * Token-level diff between two strings, rendered inline.
  *
- * Spec: gravel-cloud/docs/spec/prompts.md §5 (inline diff while editing).
  *
  * Algorithm: classic O(N*M) LCS over whitespace-aware tokens (words,
  * runs of whitespace, single punctuation chars), then emit
