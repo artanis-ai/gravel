@@ -1,34 +1,29 @@
 # Migrations
 
-Drizzle-kit-generated migrations for the gravel_* tables. Two parallel sets:
+Schema bootstrap for the `gravel_*` tables.
 
-- `postgres/` — for `DATABASE_URL` starting with `postgres://` / `postgresql://`.
-- `sqlite/` — for `file:` / `sqlite:` URLs.
+## Current behaviour (v0.5.x): bootstrap, not migrations
 
-Both are generated from the matching schema file in `src/schema/`. They're checked in. The lib's runtime migration runner picks the right set based on the dialect detected at boot.
+The gravel SDK's data-plane schema is small (two tables: `gravel_samples` + `gravel_feedback`) and idempotent CREATE-TABLE-IF-NOT-EXISTS via `src/db/bootstrap.ts` is the source of truth right now. Every customer install runs it on first DB open; `pendingMigrationCount` (see `src/db/migrate.ts`) returns 0 until an actual generated migration lands.
 
-## Regenerating
+For Python, the equivalent runs through `python/gravel/src/artanis_gravel/db/bootstrap.py` and Alembic is configured but ships with zero revisions for the same reason.
+
+## Why no drizzle-kit migrations yet
+
+A schema that's still settling (the May 2026 `D-Q53` simplification dropped traces/users/datasets/evals/observations down to two tables) doesn't benefit from version-controlled migrations — every change would force a rewrite. Once the surface stabilises we'll start checking in `drizzle-kit generate` output here and Alembic revisions under `python/gravel/alembic/versions/`.
+
+## Regenerating (once revisions start landing)
 
 After editing `src/schema/postgres.ts` or `sqlite.ts`:
 
 ```bash
-pnpm exec drizzle-kit generate --config=drizzle.config.postgres.ts
-pnpm exec drizzle-kit generate --config=drizzle.config.sqlite.ts
-```
-
-Commit both. Schema-drift CI verifies they describe the same logical schema as the Python SQLAlchemy side.
-
-## v0.0.1 initial migration
-
-The first generated migration files in this directory will be `0000_initial.sql` once `drizzle-kit generate` is run. Until then, the lib falls back to the idempotent `bootstrap.ts` script (also kept around for tests).
-
-**This README is a placeholder until that first generate-run lands.** During the v0 build session, the migration scaffolding was wired up but the actual generated SQL files are produced by running drizzle-kit (which needs a DATABASE_URL it can introspect, so we run it locally / in CI rather than checking the auto-generated SQL into the repo from a clean machine).
-
-To run the first generate locally:
-
-```bash
 cd packages/sdk-ts
-DATABASE_URL=postgresql://localhost/gravel_dev pnpm exec drizzle-kit generate --config=drizzle.config.postgres.ts
-DATABASE_URL=file:./gravel-tmp.db pnpm exec drizzle-kit generate --config=drizzle.config.sqlite.ts
+DATABASE_URL=postgresql://localhost/gravel_dev pnpm run migrations:generate
 git add migrations/
 ```
+
+Commit both `postgres/` and `sqlite/` outputs. Schema-drift CI (`.github/workflows/schema-drift.yml`) verifies the two dialects + the Python SQLAlchemy schema describe the same logical shape.
+
+## Dashboard hook
+
+The dashboard's `PendingMigrationsBanner` polls `GET /api/migrations/status`. Today it always reports `{ pending: 0, dialect, autoMigrate }` because no revisions are bundled; once that changes, an admin viewing the dashboard sees a banner with the count + the right upgrade command for their package manager.

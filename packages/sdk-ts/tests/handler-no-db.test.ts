@@ -124,6 +124,49 @@ describe('handler with no database (prompts-only install)', () => {
     expect(response.status).toBe(200)
     expect(response.headers.get('content-type')).toMatch(/^text\/html/)
   })
+
+  it('GET /api/samples returns 401 from a non-loopback host with no cookie', async () => {
+    // REGRESSION (v0.5.11 audit): TS routes used to accept unauthed
+    // GET /api/samples and return the data, while Python returned
+    // 401. Leaked every traced LLM call on the host to anyone with
+    // the dashboard URL. Pin the gate explicitly with a non-loopback
+    // Host so the localhost-admin shortcut doesn't paper over it.
+    const handler = buildHandler()
+    const response = await handler(
+      new Request('https://acme.example.com/admin/ai/api/samples', {
+        method: 'GET',
+        headers: { host: 'acme.example.com' },
+      }),
+    )
+    expect(response.status).toBe(401)
+  })
+
+  it('GET /api/prompts returns 401 from a non-loopback host with no cookie', async () => {
+    // Same regression as above for the prompts list. Leaked the
+    // customer's prompt manifest + 280-char preview per prompt to
+    // unauthenticated callers.
+    const handler = buildHandler()
+    const response = await handler(
+      new Request('https://acme.example.com/admin/ai/api/prompts', {
+        method: 'GET',
+        headers: { host: 'acme.example.com' },
+      }),
+    )
+    expect(response.status).toBe(401)
+  })
+
+  it('GET /api/github/status returns 401 from a non-loopback host with no cookie', async () => {
+    // Same regression: leaked repoOwner + repoName to anonymous
+    // callers. The Python handler already enforced auth here.
+    const handler = buildHandler()
+    const response = await handler(
+      new Request('https://acme.example.com/admin/ai/api/github/status', {
+        method: 'GET',
+        headers: { host: 'acme.example.com' },
+      }),
+    )
+    expect(response.status).toBe(401)
+  })
 })
 
 describe('handler with an UNREACHABLE database (bad URL in config)', () => {

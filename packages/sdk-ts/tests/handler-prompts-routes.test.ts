@@ -221,12 +221,22 @@ describe('prompt routes', () => {
   })
 
   describe('GET /api/prompts', () => {
-    it('lists manifest prompts', async () => {
+    it('lists manifest prompts when authed', async () => {
       await writeManifest([{ id: 'p_a1b2c3d4e5', type: 'file', path: 'a.md', hash: 'h' }])
-      const r = await runRoute('GET', '/api/prompts', { authed: null })
+      const r = await runRoute('GET', '/api/prompts')
       expect(r.status).toBe(200)
       const body = await r.json()
       expect(body.prompts).toHaveLength(1)
+    })
+
+    it('401 when unauthed (regression: route was previously public)', async () => {
+      // Before v0.5.11 the TS handler omitted the auth check on this
+      // route while the Python handler enforced it. Result was an
+      // information disclosure on JS-SDK customers who mounted the
+      // dashboard at a public path. Pin the gate.
+      await writeManifest([{ id: 'p_a1b2c3d4e5', type: 'file', path: 'a.md', hash: 'h' }])
+      const r = await runRoute('GET', '/api/prompts', { authed: null })
+      expect(r.status).toBe(401)
     })
   })
 
@@ -272,6 +282,19 @@ describe('prompt routes', () => {
       expect(r.status).toBe(200)
       const body = await r.json()
       expect(body).toMatchObject({ connected: false, repoOwner: null, repoName: null })
+    })
+    it('401 when unauthed (regression: route was previously public)', async () => {
+      // Same parity bug as GET /api/prompts: TS skipped auth, Python
+      // enforced it. Leaked repoOwner / repoName to anyone hitting
+      // the dashboard route on an unauthenticated host.
+      getGhStateSpy.mockResolvedValue({
+        installationId: 12345,
+        repoOwner: 'acme',
+        repoName: 'app',
+        installSecret: 'sec_test',
+      })
+      const r = await runRoute('GET', '/api/github/status', { authed: null })
+      expect(r.status).toBe(401)
     })
     it('reports connected with repo state', async () => {
       getGhStateSpy.mockResolvedValue({

@@ -11,14 +11,19 @@ Spec: gravel-cloud/docs/spec/auth.md §2.
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import hmac
 import json
+import logging
 import secrets as pysecrets
 import time
 
 SESSION_COOKIE = "gravel_session"
 SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000  # 30 days
+SESSION_TTL_S = SESSION_TTL_MS // 1000
+
+_log = logging.getLogger(__name__)
 
 
 def _derive_secret(password: str) -> bytes:
@@ -46,6 +51,15 @@ def sign_session(password: str, ttl_ms: int = SESSION_TTL_MS) -> str:
 
 
 def verify_session(cookie: str, password: str) -> bool:
+    """Return True iff `cookie` is a well-formed gravel-issued session
+    that hasn't expired. Returns False for any malformed input — every
+    failure mode collapses to the same answer so we don't leak
+    decode-error vs sig-mismatch vs expired distinctions to a probe.
+
+    Decode failures log at DEBUG (not WARNING) — anyone hitting the
+    dashboard with a random cookie shouldn't flood a customer's
+    log aggregator, but the operator can still raise the level
+    when debugging a real session issue."""
     parts = cookie.split(".")
     if len(parts) != 2:
         return False
@@ -53,13 +67,15 @@ def verify_session(cookie: str, password: str) -> bool:
     expected = hmac.new(_derive_secret(password), payload_b64.encode(), hashlib.sha256).digest()
     try:
         provided = _from_b64url(sig_b64)
-    except Exception:
+    except (binascii.Error, ValueError) as e:
+        _log.debug("session cookie: malformed signature segment (%s)", type(e).__name__)
         return False
     if not hmac.compare_digest(expected, provided):
         return False
     try:
         payload = json.loads(_from_b64url(payload_b64))
-    except Exception:
+    except (binascii.Error, ValueError, json.JSONDecodeError) as e:
+        _log.debug("session cookie: malformed payload segment (%s)", type(e).__name__)
         return False
     if not isinstance(payload, dict):
         return False
@@ -81,7 +97,7 @@ def session_cookie_value(value: str, *, https: bool) -> str:
         "Path=/",
         "HttpOnly",
         "SameSite=Lax",
-        "Max-Age=2592000",
+        f"Max-Age={SESSION_TTL_S}",
     ]
     if https:
         parts.append("Secure")

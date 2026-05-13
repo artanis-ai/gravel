@@ -43,6 +43,7 @@ from ._prompts_submit import DraftInput, SubmitArgs, SubmitError, draft_branch_f
 from ._rate_limit import attempt_login, record_success
 from .auth import (
     SESSION_COOKIE,
+    SESSION_TTL_S,
     session_cookie_clear,
     session_cookie_value,
     sign_session,
@@ -142,7 +143,7 @@ def _parse_json(body: bytes) -> Any:
 
 
 def _view_as_cookie_value(value: str, *, https: bool) -> str:
-    parts = [f"{VIEW_AS_COOKIE}={value}", "Path=/", "HttpOnly", "SameSite=Lax", "Max-Age=2592000"]
+    parts = [f"{VIEW_AS_COOKIE}={value}", "Path=/", "HttpOnly", "SameSite=Lax", f"Max-Age={SESSION_TTL_S}"]
     if https:
         parts.append("Secure")
     return "; ".join(parts)

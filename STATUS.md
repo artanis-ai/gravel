@@ -1,109 +1,84 @@
 # Status
 
-> **Last updated:** 2026-05-06 (heads-down roadmap push, pass 5).
+> **Last updated:** 2026-05-13 (v0.5.10 shipped; audit-driven fixes through v0.5.7–v0.5.11).
 
 ## Where we are
 
-**v0 wedge backend is live.** Customers can wizard-install, sign in to a default-password dashboard, list manifest prompts, save edits as drafts. PR-submission via the dedicated `gravel[bot]` GitHub App is **TBD** — registration runbook at [`gravel-cloud/docs/runbook/github-app-setup.md`](../gravel-cloud/docs/runbook/github-app-setup.md); the OAuth-as-the-DE flow that previously gated this was reverted in `decisions.md` D-Q53 (2026-05-07 entry). The dashboard prompt editor UI is shipped; SPA bundling into the SDK package is shipped.
+**Wedge backend is live and on PyPI + npm.** Customers can wizard-install on TS or Python hosts, sign in to a default-password dashboard (or auto-admin on loopback), list and edit manifest prompts (file-type or embedded with char-offset slicing), submit drafts as a single GitHub PR via the `gravel[bot]` GitHub App with the manifest atomically rewritten to keep subsequent prompts' offsets valid, view live traces, and leave feedback.
 
-**v1 tracing landed on both SDKs.** OpenAI / Anthropic / Langchain auto-patches in TypeScript and Python; Vercel AI SDK on the TS side too. Streaming works without consuming the iterator the user passes through. Trace persistence honours `GRAVEL_TRACING_DISABLED=1` and per-config PII scrubbers.
+**Cross-stack parity is real.** Five integrations — FastAPI, ASGI, WSGI, Django, Flask — all delegate to one shared dispatcher (`python/gravel/src/artanis_gravel/_handler.py`) and return byte-equal responses for the same request. The TS handler is the second canon; CI cross-references both. Tracing auto-patches cover OpenAI / Anthropic / LangChain on Python (Vercel AI + generic `fetch` on TS as well).
 
-**v2 (judge dispatcher + worker) shipped ahead of schedule.** Project ownership enforced; `judge_calls` audit row written on every call.
+**Cloud is live.** Control plane at `https://gravel.artanis.ai` (Next.js 15 + Clerk + Drizzle on Vercel + Neon, prod Clerk instance). Routes: `/api/health`, `/api/judge`, `/api/analyze`, `/api/projects`, `/api/cli/auth/*`, `/api/cli/github/install/start`, `/api/cli/github/installation-token`, `/api/webhooks/clerk`, `/api/webhooks/polar`.
 
-**v3 (Mallet analysis) plumbed through Clerk-org rate-limiting.** `/api/gravel/analyze` on the Mallet worker is bearer-gated; the control plane proxies with the customer's Clerk org id as the rate-limit bucket. Free-tier vs paid-tier is the only piece waiting on Polar pricing.
+**Judge + eval runner shipped** with project ownership enforcement and audit logging. **Mallet `analyzePrompt()` shipped** with Clerk-org rate-limiting through the CP proxy.
 
-## Built so far
+## Recent release activity (May 2026)
 
-### `artanis-ai/gravel` (this repo, public)
+- **v0.5.7** — `GET /api/prompts/{id}` added to the Python SDK; PromptDetail page worked for the first time on Python hosts.
+- **v0.5.8** — Real PyPI lookup in `/api/version`; UpdateBanner stopped reporting `hasUpdate: false` unconditionally. `CURRENT_VERSION = "0.1.0"` hardcoded value retired in favour of `importlib.metadata`.
+- **v0.5.9** — Major Python SDK rewire: every route now flows through `_handler.py`. Killed `asgi.py` + `django.py` placeholders; added `/api/migrations/status`, `POST /api/prompts/submit`, `/api/github/install` + `/callback`, `POST /api/auth/view-as`; fixed form-encoded login redirect; added per-IP login rate-limiting; `/_assets/<file>` content-type map; `/api/prompts` honours `GRAVEL_REPO_ROOT` via the typed `manifest/io` helpers.
+- **v0.5.10** — Heavy cross-stack journey coverage. New `tests/test_embedded_journey.py` pins byte-exact char-offset slicing across FastAPI/ASGI/WSGI/Django/Flask and PR + manifest rewrite invariants for adding/removing lines, multi-prompt edits in one file, hash-update semantics.
+- **v0.5.11** — Closes the residual audit findings: TS auth gates on `/api/prompts`, `/api/samples`, `/api/github/status` to match Python (information disclosure fix). Unit tests for `_github_api.py` (24) and `samples_query.py` (50). Docs sweep removing stale "pre-v0 / stubbed / coming soon" claims across `apps/docs/*.mdx`, `packages/dashboard/README.md`, `packages/sdk-ts/migrations/README.md`, and this file. Bare-`except` hygiene in `auth.py` / `_github_api.py` / `judge/client.py`. Vercel AI + generic-fetch tracing ported to Python.
 
-- **TypeScript SDK** (`@artanis-ai/gravel`):
-  - Schemas (Postgres + SQLite), DB connector, idempotent bootstrap.
-  - Types/config with mutually-exclusive auth-mode validation.
-  - HMAC sessions + view-as.
-  - **Default-password auth wired** (login / logout / view-as routes — IP rate-limited, HMAC-signed sessions, HttpOnly+Secure cookies).
-  - **Prompts backend** (`src/prompts/submit.ts` + 3 wired routes):
-    - `GET /api/prompts` + `GET /api/prompts/:id` (manifest-backed).
-    - `POST /api/prompts/submit` accepts `{ drafts: [{promptId, newText}, ...], title?, description?, submitterName? }` inline; orchestrates: group by file → fetch current content via GH API → apply surgical edits in descending char-start order → call `createPullRequest()`. Drafts persist in the dashboard's localStorage (no server-side draft store as of 2026-05-08).
-  - **GitHub OAuth wired through** (`/api/github/{status,connect,callback,repo}`): callback persists the access token in `gravel_users.extra`, repo selection via POST.
-  - **Tracing auto-patches** for OpenAI / Anthropic / Langchain / Vercel AI SDK. Lazy provider import; missing SDKs no-op. Streaming via Symbol.asyncIterator tee.
-  - Manifest tooling (fast scan + polite-blocking pre-commit hook installer).
-  - Wizard: framework detection, AST-aware mount writers, config gen, .env writer, **live OAuth handshake against `gravel.artanis.ai`**, `--api-key/--project` non-interactive shortcut.
-  - CLI (init / migrate / manifest / scan / doctor).
-  - **Judge client** (`judgeCall()`) + **eval runner** (`runEval()` with bounded concurrency).
-  - **Mallet `analyzePrompt()`**.
-  - **Tests:** vitest 55 passed / 1 skipped.
+## What ships in `artanis-ai/gravel` today
 
-- **Python SDK** (`artanis-gravel`):
-  - Full SQLAlchemy parity with TS schema.
-  - FastAPI / Django / generic ASGI/WSGI integrations.
-  - Wizard parity with TS (live OAuth handshake, libcst-based router injection).
-  - Judge client + eval runner + analyze client.
-  - **Tracing auto-patches** for OpenAI / Anthropic / Langchain. contextvars for ALS-equivalent.
-  - **Tests:** pytest 62 passed / 1 skipped.
+### TypeScript SDK (`@artanis-ai/gravel`)
+- Schemas (Postgres + SQLite), DB connector, idempotent bootstrap.
+- HMAC sessions, view-as, per-IP login rate-limiting.
+- Dashboard routes: auth (login/logout/me/view-as), version + update banner, migrations status, samples (list / detail / feedback), prompts (list / detail / submit), GitHub status + install start + callback, bundled SPA + assets.
+- Tracing auto-patches: OpenAI, Anthropic, LangChain, Vercel AI, generic fetch. Lazy import; missing SDKs no-op. Streaming via `Symbol.asyncIterator` tee.
+- Manifest tooling (fast scan + pre-commit hook installer).
+- Wizard via the Go CLI: framework detection, AST-aware mount writers, config gen, `.env` writer, idempotent re-runs, deep scan.
+- Judge client, eval runner with bounded concurrency, Mallet `analyzePrompt`.
+- **Tests:** vitest, 170 passing.
 
-- **Dashboard** (Vite + React 19 + Tailwind):
-  - Routes built: Traces (list + detail + feedback), Datasets (list + create + detail with eval triggers), Evals (runs list + detail + breakdown modal + cancel), Analysis (Mallet panel).
-  - Bundle: 85 KB gzipped (well under the 250 KB budget).
-  - Prompts editor route: in flight (agent running at time of writing).
-  - SPA bundling into the SDK package: pending (mechanical, ~1 hr).
+### Python SDK (`artanis-gravel`)
+- Full SQLAlchemy parity with TS schema.
+- Same dashboard routes via the shared `_handler.py` dispatcher; FastAPI, ASGI, WSGI, Django, Flask integrations all adapters around it.
+- Tracing auto-patches: OpenAI, Anthropic, LangChain (Vercel AI + fetch in v0.5.11).
+- Wizard installs via the Go CLI binary (same as TS); Flask wizard auto-adds the `[flask]` extra for the a2wsgi bridge.
+- Judge client, eval runner, analyze client.
+- **Tests:** pytest, 250 passing + 1 skipped.
 
-- **GitHub OAuth + PR creation** — lifted from Mallet; `createPullRequest()` handles multi-file changes per spec/prompts.md §6.
-- **Migrations** — drizzle-kit configs for Postgres + SQLite + `migrations:generate`; Alembic for Python.
-- **Examples** — runnable Next.js App Router, FastAPI, Django README.
-- **Mintlify docs** — 17 pages.
-- **CI workflows** — `ci.yml`, `schema-drift.yml`, `publish-{npm,python}.yml`.
+### Dashboard (Vite + React 19 + Tailwind)
+- Routes: Login, Samples (list + detail + feedback), Datasets, Evals, Analysis, Prompts (list + detail editor with embedded slice editing + draft autosave to localStorage + submit modal).
+- Components: PendingMigrationsBanner, UpdateBanner, CopyableCode.
+- Bundle: ~85 KB gzipped.
+- Bundled into both SDKs at release time (`tools/sync-dashboard-dist.sh` for Python; per-SDK build for TS).
 
-### `artanis-ai/gravel-cloud` (private)
+### Go CLI / wizard
+- Framework detection across 9 stacks. Two-phase entry search; column-zero-only AST-style mount writers per language.
+- Heavy coverage in `cli/internal/wizard/*_test.go`.
+- Manual prompt picker with `$EDITOR` integration for humans, line-number entry for agents; tab-completion on path input.
 
-- **`apps/control-plane/`** (Next.js 15 + Clerk + Drizzle on Vercel + Neon):
-  - Live at `https://gravel.artanis.ai`. **Production Clerk instance** (shared with platform).
-  - Auto-deploys on push to main (Vercel rootDirectory fixed).
-  - DB migrations run via `.github/workflows/db-migrate.yml` on push (Neon `DATABASE_URL` is a repo secret).
-  - `/api/health`.
-  - `/api/judge` — Clerk-native API key auth, project ownership check, audit log.
-  - `/api/analyze` — Clerk-native API key auth → forwards to Mallet's authed endpoint with `MALLET_FORWARD_TOKEN` + `X-Gravel-Org` header for per-org rate-limiting.
-  - `/api/projects` (GET, POST) + `/api/projects/[id]` (GET, soft DELETE).
-  - `/api/projects/[id]/keys` (GET list, POST mint) + `/api/projects/[id]/keys/[keyId]` (DELETE revoke).
-  - `/api/cli/auth/{init,authorize,claim}` — real DB sessions (10 min TTL). `init` rate-limited (10/min/IP).
-  - `/api/webhooks/clerk` — svix-verified, idempotent via `processed_webhooks` dedup.
-  - `/api/webhooks/polar` — Standard Webhooks signature verification, persists `polar_subscriptions` + `polar_credit_purchases` rows. **Decrement / tier-update logic deferred per Yousef.**
-  - `/cli/auth` wizard hand-off page, `/projects` dashboard, `/sign-in`, `/sign-up`, `/docs` (7 MDX pages).
-  - Middleware: Clerk auth + CSRF Origin check on browser-mutating endpoints.
-  - **Hardening headers**: full CSP, HSTS preload, X-Frame-Options DENY, Referrer-Policy, Permissions-Policy, X-Content-Type-Options.
-  - Vitest suite covering authenticateRequest, svix webhook rejection, rate-limit, Polar webhook (17 cases).
-- **`apps/judge/`** — Cloudflare Worker scoring service.
-- **`apps/clerk-webhook-dev/`** — public stub for Clerk dev events.
-- **`docs/`** — full PRD, roadmap, decisions (D-Q1–D-Q73), spec/*, refreshed blockers, audit, morning brief.
+### Examples
+- Next.js (App Router + Pages), Express, Hono, Fastify, FastAPI, Django, Flask.
 
-### `artanis-ai/home-page/mallet-worker` (this is in a separate repo)
+### CI
+- `ci.yml` (TS + Python with all extras including `flask`), `schema-drift.yml` (TS vs Python schema), `publish-{npm,python}.yml` (PyPI + npm publish on tag), `version-sync.yml` (lockstep enforcement).
 
-- Existing `/api/public/analyze` (IP-rate-limited, used by the `mallet-prompt-review` agent skill) — untouched.
-- New `/api/gravel/analyze` (bearer-gated with `GRAVEL_FORWARD_TOKEN`, rate-limited per `X-Gravel-Org` org id). 13 vitest cases.
+## `artanis-ai/gravel-cloud` (private)
 
-## What's stubbed (intentionally)
-
-| Stub | Why | Where |
-|---|---|---|
-| Dashboard prompt editor screen | In flight (agent running) | `packages/dashboard/src/routes/Prompts.tsx` |
-| Dashboard SPA bundled into SDK | Pending — mechanical Vite-output integration | `packages/sdk-ts/src/handler/routes.ts` `htmlShell` |
-| In-app notifications | Spec says v0 is browser localStorage only | dashboard |
-| GitHub repo picker (list user's repos) | v1+ — for now the dashboard takes free-text owner/name | dashboard |
-| (none) | Drafts no longer persisted server-side as of 2026-05-08 | — |
+- Control plane on `gravel.artanis.ai`. Auto-deploys on push to main.
+- Routes listed above.
+- Hardening headers (CSP, HSTS preload, X-Frame-Options DENY, etc.).
+- Vitest suite covering authenticateRequest, svix webhook rejection, rate-limit, Polar webhook.
+- Judge service runs as a Cloudflare Worker (`apps/judge/`).
 
 ## Cloud verification (run anytime)
 
 ```bash
 curl -s https://gravel.artanis.ai/api/health
 curl -s https://gravel-judge.artanis-ai.workers.dev/health
-# Mint a real prod-issued Clerk API key and call /api/judge or /api/analyze
-# (See gravel-cloud/docs/morning-brief-2026-05-06.md for the curl recipe.)
 ```
+
+For an authed call against `/api/judge` or `/api/analyze`, see `gravel-cloud/docs/morning-brief-*.md` for the curl recipe.
 
 ## What's next
 
-See `gravel-cloud/docs/roadmap.md` for the phased plan with status badges. Immediate items:
+See `gravel-cloud/docs/roadmap.md` for the phased plan. Immediate items:
 
-1. Land the dashboard prompt editor (in flight).
-2. Bundle dashboard SPA into the SDK package.
-3. Pair with Yousef on Polar pricing → wire credit decrement + tier updates.
-4. First publish to npm / PyPI when content is meaningful.
+1. Datasets pillar (create / detail / row editing).
+2. Evals pillar (judge runs + breakdowns triggered from the dashboard).
+3. Refactor the 673-line TS `routes.ts` into per-domain modules to match the Python `_handler.py` shape.
+4. Increase dashboard test coverage to >50% (currently ~21%) with at least one E2E flow.

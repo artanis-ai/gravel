@@ -3,7 +3,7 @@ title: Quickstart
 description: "From install to your first prompt PR."
 ---
 
-This walks through end-to-end. **Some steps are not fully wired yet** during pre-v0 — they're flagged inline.
+End-to-end in a few minutes. Everything below ships today on v0.5; nothing here is stubbed.
 
 ## 1. Install
 
@@ -18,28 +18,30 @@ The wizard auto-adds the SDK to your project deps and writes the config + dashbo
 
 Start your app, navigate to `/admin/ai`. You'll see the login screen if you're using default-password mode, or the dashboard immediately if you've configured `getUser`.
 
-Default password is in your `.env.local` as `GRAVEL_ADMIN_PASSWORD`.
+Default password is in your `.env.local` as `GRAVEL_ADMIN_PASSWORD`. On `localhost` you're auto-admin (no password needed) so you can iterate without logging in every time.
 
 ## 3. See your prompts
 
-The Prompts tab lists every prompt the lib found in your repo. By default that's `*.md` / `*.txt` files in conventional directories (`prompts/`, `templates/`, `assistants/`).
+The Prompts tab lists every prompt the wizard found in your repo. By default that's `*.md` / `*.txt` files in conventional directories (`prompts/`, `templates/`, `assistants/`), plus any embedded string literals (`SYSTEM_PROMPT = "..."`) the scanner picked up.
 
-To detect prompts embedded in code (`SYSTEM_PROMPT = "..."` etc.), run:
+The scan runs at `gravel init` time and on every git commit (via the installed pre-commit hook). To rerun manually or include directories the default scan skipped:
 
 ```bash
 npx gravel scan --deep    # or `uvx gravel scan --deep`
 ```
 
-<Warning>Deep scan isn't implemented yet (pre-v0). It will run locally on your machine using your own LLM key — code never leaves your device.</Warning>
+Deep scan runs locally on your machine using your own LLM key, your code never leaves your device.
 
 ## 4. Edit and submit
 
-Click a prompt → edit it inline → click **Submit changes**. Gravel creates a GitHub PR via the shared App.
+Click a prompt → edit inline → click **Submit changes**. Gravel opens a GitHub PR via the shared GitHub App.
 
-<Warning>The GitHub App PR flow lands alongside v0 build. For pre-v0 testing the dashboard works but submission is stubbed.</Warning>
+First-time setup: the dashboard prompts you to install the [Gravel GitHub App](https://github.com/apps/gravel-bot) on the relevant repo. Once installed, every subsequent submit goes through that App's installation token — your developers never see Gravel asking for their personal OAuth.
+
+For embedded prompts, the SDK applies edits in descending char-start order and rewrites your `.gravel/manifest.json` so subsequent prompts' line/char offsets stay valid through the merge. The whole PR (source files + manifest update) lands atomically.
 
 ## 5. Get a trace
 
-Once tracing auto-patches land in v1, any `openai.chat.completions.create` (or Anthropic, Langchain, Vercel AI SDK) call in your app will appear in the Traces tab.
+Any `openai.chat.completions.create` (or Anthropic, LangChain, Vercel AI SDK, or generic `fetch`) call in your app shows up in the Traces tab in real time. Tracing auto-patches at SDK import time, so there's nothing to wire by hand.
 
-For now, the Traces / Datasets / Evals tabs render placeholder empty states pointing at the relevant version.
+The Datasets and Evals tabs are the next pillars in flight, separately documented under the [evals reference](/reference/evals) when you're ready to start running judges against captured traces.

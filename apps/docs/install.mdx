@@ -4,7 +4,7 @@ description: "Two commands. Wizard does the rest."
 ---
 
 <Note>
-  Gravel is in pre-v0. The wizard runs locally and sets up your database + dashboard route, but the OAuth handshake against `gravel.artanis.ai` is stubbed until the control plane is provisioned. Pass `--api-key` and `--project` for now.
+  Gravel is in active v0.5 development. The wizard runs locally and never opens a browser handshake — pass cloud credentials via `--api-key` / `--project` or the `GRAVEL_API_KEY` / `GRAVEL_PROJECT_ID` env vars. The dashboard handles GitHub App installation interactively after first login.
 </Note>
 
 ## Install
@@ -60,11 +60,11 @@ pnpm gravel init     # or `uv run gravel init`, or just `gravel init` for direct
 
 The wizard:
 
-1. Detects your framework (Next.js, Express, FastAPI fallback, generic Node, FastAPI, Django, generic ASGI/WSGI for Python projects).
-2. Opens a browser to authenticate against Artanis. *(Currently stubbed; pass `--api-key` and `--project`.)*
-3. Installs the matching SDK with your detected package manager (`@artanis-ai/gravel` on npm or `artanis-gravel` on PyPI).
+1. Detects your framework (Next.js, Express, Hono, Fastify, generic Node for TypeScript; FastAPI, Django, Flask, generic ASGI for Python).
+2. Picks up cloud creds from `--api-key` / `--project` flags or the `GRAVEL_API_KEY` / `GRAVEL_PROJECT_ID` env vars. The wizard never opens a browser.
+3. Installs the matching SDK with your detected package manager (`@artanis-ai/gravel` on npm or `artanis-gravel` on PyPI — Flask hosts pull the `[flask]` extra automatically for the a2wsgi bridge).
 4. Writes `gravel.config.ts` (or `gravel_config.py`) with auth wiring matched to your existing provider (Clerk, NextAuth, Better Auth, etc.).
-5. Mounts the dashboard route: `app/admin/ai/[[...slug]]/route.ts` for App Router, `pages/admin/ai/[[...slug]].ts` for Pages, generic adapter for Express.
+5. Mounts the dashboard route: `app/admin/ai/[[...slug]]/route.ts` for App Router, `pages/admin/ai/[[...slug]].ts` for Pages, `app.use(...)` for Express, `app.mount(...)` for Hono, `fastify.register(...)` for Fastify, `mount_on_flask(...)` for Flask, plus an `include_router(...)` for FastAPI / Django.
 6. Runs idempotent CREATE TABLE migrations against your `DATABASE_URL`.
 7. Generates a random `GRAVEL_ADMIN_PASSWORD` and writes it to `.env.local`.
 8. Installs a pre-commit hook to keep your prompt manifest in sync.

@@ -59,11 +59,15 @@ def github_api(
     except urllib.error.HTTPError as e:
         raw = e.read() if e.fp else b""
         msg = ""
+        # GitHub returns JSON on most errors but sends HTML on
+        # cloudflare / WAF blocks. Narrowing the catch to decode/parse
+        # errors means a stray non-decode bug here would propagate
+        # cleanly instead of being swallowed as "no message".
         try:
             parsed = json.loads(raw.decode("utf-8"))
             if isinstance(parsed, dict):
                 msg = str(parsed.get("message") or "")
-        except Exception:
+        except (UnicodeDecodeError, json.JSONDecodeError):
             pass
         raise GitHubAPIError(msg or f"GitHub API error: {e.code}", e.code) from e
     except urllib.error.URLError as e:

@@ -14,6 +14,7 @@ import {
   signSession,
   verifyPassword,
   SESSION_COOKIE,
+  SESSION_TTL_MS,
   VIEW_AS_COOKIE,
 } from '../auth/session.js'
 import { attemptLogin, recordSuccess } from '../auth/rate-limit.js'
@@ -226,7 +227,8 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
 
   // Prompts (v0 surface) — list + read implemented from the manifest;
   // edit + submit-as-PR pending (depends on dashboard wiring).
-  'GET /api/prompts': async () => {
+  'GET /api/prompts': async ({ authed }) => {
+    if (!authed) return json({ error: 'unauthorized' }, 401)
     const { readManifest } = await import('../manifest/io.js')
     const { promises: fs } = await import('node:fs')
     const { join } = await import('node:path')
@@ -373,7 +375,8 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
   // below) and posts (installation_id, install_secret) to the CP for
   // token mints. install_secret is HMAC(server_key, installation_id)
   // — the install IS the credential.
-  'GET /api/github/status': async () => {
+  'GET /api/github/status': async ({ authed }) => {
+    if (!authed) return json({ error: 'unauthorized' }, 401)
     const { getGhInstallState } = await import('../github/project-state.js')
     const state = await getGhInstallState()
     return json({
@@ -454,7 +457,8 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
   },
 
   // Samples — one row per LLM call. Reads gravel_samples + feedback.
-  'GET /api/samples': async ({ request, db }) => {
+  'GET /api/samples': async ({ request, db, authed }) => {
+    if (!authed) return json({ error: 'unauthorized' }, 401)
     const url = new URL(request.url)
     // Pre-check tables. The dashboard's OnboardingCard handles the
     // empty-tracing case; bouncing here keeps the SQL layer from
@@ -487,7 +491,8 @@ const ROUTES: Record<string, (ctx: RouteCtx) => Promise<Response>> = {
     })
     return json(result)
   },
-  'GET /api/samples/:id': async ({ request, db }) => {
+  'GET /api/samples/:id': async ({ request, db, authed }) => {
+    if (!authed) return json({ error: 'unauthorized' }, 401)
     const sampleId = new URL(request.url).pathname.split('/').pop()!
     if (!db) return json({ error: 'tables-missing' }, 404)
     const { gravelTablesExist } = await import('../db/index.js')
@@ -620,7 +625,7 @@ function sessionCookieValue(value: string, requestUrl: string): string {
     'Path=/',
     'HttpOnly',
     'SameSite=Lax',
-    'Max-Age=2592000', // 30 days
+    `Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`,
   ]
   if (isHttps(requestUrl)) parts.push('Secure')
   return parts.join('; ')
@@ -644,7 +649,7 @@ function viewAsCookieValue(value: string, requestUrl: string): string {
     'Path=/',
     'HttpOnly',
     'SameSite=Lax',
-    'Max-Age=2592000',
+    `Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`,
   ]
   if (isHttps(requestUrl)) parts.push('Secure')
   return parts.join('; ')
