@@ -1,9 +1,12 @@
 import { useEffect, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 
 /**
- * Minimal modal — backdrop click + Escape close. No portal because the
- * dashboard mounts inside the user's app and we don't want to escape the
- * existing CSS scope.
+ * Centred modal — backdrop click + Escape close. Renders via a portal
+ * to `document.body` so `fixed inset-0` is anchored to the viewport
+ * regardless of any transform / filter / backdrop-blur ancestor that
+ * would otherwise turn the modal into a containing-block-scoped element
+ * (visible as a backdrop with a "margin" of page leaking around it).
  */
 export type ModalSize = 'md' | 'lg' | 'xl' | '2xl' | '3xl'
 
@@ -36,11 +39,17 @@ export function Modal({
       if (e.key === 'Escape') onClose()
     }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    // Lock body scroll while the modal is up (matches Dialog).
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prevOverflow
+    }
   }, [open, onClose])
 
   if (!open) return null
-  return (
+  const modal = (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-text-dark/40 p-4"
       role="dialog"
@@ -64,8 +73,13 @@ export function Modal({
           </button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
-        {footer && <div className="flex items-center justify-end gap-2 border-t border-warm px-5 py-3">{footer}</div>}
+        {footer && (
+          <div className="flex items-center justify-end gap-2 border-t border-warm px-5 py-3">
+            {footer}
+          </div>
+        )}
       </div>
     </div>
   )
+  return createPortal(modal, document.body)
 }
