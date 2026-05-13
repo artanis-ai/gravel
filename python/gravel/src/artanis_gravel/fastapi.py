@@ -275,7 +275,47 @@ def create_gravel_router(config: GravelConfig, *, engine: Any = None) -> APIRout
             prompts.append({**p, "preview": preview})
         return JSONResponse({"prompts": prompts, "last_scan_at": mf.get("lastFullScanAt")})
 
-    # ---------- GitHub status (stub — no python-side install support yet) ----------
+    @router.get("/api/prompts/{prompt_id}")
+    async def prompts_detail(prompt_id: str, request: Request) -> Response:
+        if not _authed_user(request, password):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+        if not prompt_id:
+            return JSONResponse({"error": "missing id"}, status_code=400)
+        manifest_path = Path(".gravel/manifest.json")
+        if not manifest_path.exists():
+            return JSONResponse({"error": "not found"}, status_code=404)
+        try:
+            mf = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception:
+            return JSONResponse({"error": "not found"}, status_code=404)
+        entry = next((p for p in mf.get("prompts", []) if p.get("id") == prompt_id), None)
+        if entry is None:
+            return JSONResponse({"error": "not found"}, status_code=404)
+        try:
+            file_text = Path(entry["path"]).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return JSONResponse({"error": "source file missing"}, status_code=410)
+        if entry.get("type") == "embedded":
+            content = file_text[entry["charStart"] : entry["charEnd"]]
+            return JSONResponse(
+                {
+                    "id": entry["id"],
+                    "type": "embedded",
+                    "path": entry["path"],
+                    "varName": entry.get("varName"),
+                    "content": content,
+                }
+            )
+        return JSONResponse(
+            {
+                "id": entry["id"],
+                "type": entry.get("type", "file"),
+                "path": entry["path"],
+                "content": file_text,
+            }
+        )
+
+    # ---------- GitHub status (stub, no python-side install support yet) ----------
 
     @router.get("/api/github/status")
     async def github_status(request: Request) -> Response:

@@ -91,6 +91,126 @@ def test_resolve_config_still_rejects_truly_empty_auth():
         ))
 
 
+def _login(client) -> str:
+    """Log in, return the auth cookie. Shared helper for the tests below."""
+    login = client.post("/admin/ai/api/auth/login", json={"password": "test-password"})
+    assert login.status_code == 200, login.text
+    cookie = login.headers.get("set-cookie", "")
+    assert cookie, "login did not set a session cookie"
+    return cookie
+
+
+def _build_client_with_manifest(tmp_path, monkeypatch, manifest_body: str | None) -> tuple:
+    """Stand up a TestClient inside a tmp cwd, optionally with a .gravel/
+    manifest.json. Returns (client, login_cookie)."""
+    monkeypatch.chdir(tmp_path)
+    if manifest_body is not None:
+        (tmp_path / ".gravel").mkdir()
+        (tmp_path / ".gravel" / "manifest.json").write_text(manifest_body, encoding="utf-8")
+    app = FastAPI()
+    app.include_router(create_gravel_router(_config_without_db()), prefix="/admin/ai")
+    client = TestClient(app)
+    return client, _login(client)
+
+
+def test_prompts_detail_embedded_returns_sliced_content(tmp_path, monkeypatch):
+    """REGRESSION: PromptDetail.tsx fetches /api/prompts/{id} and used to
+    404 on the Python SDK because only the list endpoint was implemented.
+    Embedded prompts (with charStart/charEnd) must return the slice."""
+    src = "header line\nPROMPT BODY HERE\ntrailer\n"
+    (tmp_path / "src.py").write_text(src, encoding="utf-8")
+    cs = src.index("PROMPT BODY HERE")
+    ce = cs + len("PROMPT BODY HERE")
+    import json
+    manifest = json.dumps({
+        "version": 1,
+        "prompts": [{
+            "id": "p_abc123",
+            "type": "embedded",
+            "path": "src.py",
+            "charStart": cs,
+            "charEnd": ce,
+            "lineStart": 2,
+            "lineEnd": 2,
+            "varName": "PROMPT",
+            "hash": "deadbeef",
+        }],
+    })
+    client, cookie = _build_client_with_manifest(tmp_path, monkeypatch, manifest)
+
+    res = client.get("/admin/ai/api/prompts/p_abc123", headers={"cookie": cookie})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["id"] == "p_abc123"
+    assert body["type"] == "embedded"
+    assert body["path"] == "src.py"
+    assert body["varName"] == "PROMPT"
+    assert body["content"] == "PROMPT BODY HERE", body
+
+
+def test_prompts_detail_file_returns_full_content(tmp_path, monkeypatch):
+    """Whole-file prompts return the entire file body, no slicing."""
+    text = "you are a helpful assistant\n"
+    (tmp_path / "prompts" / "sys.md").parent.mkdir()
+    (tmp_path / "prompts" / "sys.md").write_text(text, encoding="utf-8")
+    import json
+    manifest = json.dumps({
+        "version": 1,
+        "prompts": [{
+            "id": "p_file001",
+            "type": "file",
+            "path": "prompts/sys.md",
+            "hash": "0000",
+        }],
+    })
+    client, cookie = _build_client_with_manifest(tmp_path, monkeypatch, manifest)
+
+    res = client.get("/admin/ai/api/prompts/p_file001", headers={"cookie": cookie})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["type"] == "file"
+    assert body["content"] == text
+
+
+def test_prompts_detail_unknown_id_404(tmp_path, monkeypatch):
+    import json
+    manifest = json.dumps({"version": 1, "prompts": []})
+    client, cookie = _build_client_with_manifest(tmp_path, monkeypatch, manifest)
+    res = client.get("/admin/ai/api/prompts/p_doesnt_exist", headers={"cookie": cookie})
+    assert res.status_code == 404, res.text
+
+
+def test_prompts_detail_no_manifest_404(tmp_path, monkeypatch):
+    """No manifest file at all (prompts-only install pre-init): 404, not 500."""
+    client, cookie = _build_client_with_manifest(tmp_path, monkeypatch, None)
+    res = client.get("/admin/ai/api/prompts/p_anything", headers={"cookie": cookie})
+    assert res.status_code == 404, res.text
+
+
+def test_prompts_detail_missing_source_file_410(tmp_path, monkeypatch):
+    """Manifest references a file that's since been deleted: 410 Gone,
+    not a 500 ImportError or a misleading 404."""
+    import json
+    manifest = json.dumps({
+        "version": 1,
+        "prompts": [{"id": "p_gone", "type": "file", "path": "deleted.md", "hash": "0"}],
+    })
+    client, cookie = _build_client_with_manifest(tmp_path, monkeypatch, manifest)
+    res = client.get("/admin/ai/api/prompts/p_gone", headers={"cookie": cookie})
+    assert res.status_code == 410, res.text
+
+
+def test_prompts_detail_unauthenticated_401(tmp_path, monkeypatch):
+    """No cookie: 401, never 404, so callers can distinguish missing-auth
+    from missing-prompt."""
+    monkeypatch.chdir(tmp_path)
+    app = FastAPI()
+    app.include_router(create_gravel_router(_config_without_db()), prefix="/admin/ai")
+    client = TestClient(app)
+    res = client.get("/admin/ai/api/prompts/p_whatever")
+    assert res.status_code == 401, res.text
+
+
 def test_dashboard_root_no_db_does_not_500():
     """GET /admin/ai/ must not 500 when no DB is configured. The exact
     status depends on whether the dashboard SPA dist is bundled:
