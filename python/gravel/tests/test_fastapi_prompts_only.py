@@ -22,14 +22,27 @@ def _config_without_db() -> GravelConfig:
 
 
 def test_create_gravel_router_no_database_does_not_open_engine():
-    """Router builds successfully on a prompts-only install."""
-    router = create_gravel_router(_config_without_db())
-    # Routes must still be registered.
-    paths = {r.path for r in router.routes}
-    assert "/api/auth/me" in paths, paths
-    assert "/api/version" in paths, paths
-    assert "/api/samples" in paths, paths
-    assert "/" in paths, paths
+    """Router builds successfully on a prompts-only install.
+
+    Post-refactor (v0.5.9) the router exposes a `/` + catch-all
+    instead of a per-route table, because dispatch goes through
+    `_handler.dispatch_request`. Instead of asserting on registered
+    paths, we hit a few key routes through TestClient and confirm the
+    dispatcher routes them correctly.
+    """
+    app = FastAPI()
+    app.include_router(create_gravel_router(_config_without_db()), prefix="/admin/ai")
+    client = TestClient(app)
+    cookie = _login(client)
+    # /auth/me works (was the canary route in the old assertion).
+    assert client.get("/admin/ai/api/auth/me", headers={"cookie": cookie}).status_code == 200
+    # Version endpoint is now real (PyPI lookup; offline → latest=None
+    # but route still returns 200 with the right shape).
+    body = client.get("/admin/ai/api/version", headers={"cookie": cookie}).json()
+    assert "current" in body and "hasUpdate" in body, body
+    # Samples list degrades to empty page when there's no DB.
+    body = client.get("/admin/ai/api/samples", headers={"cookie": cookie}).json()
+    assert body == {"samples": [], "total": 0, "page": 1, "page_size": 20}, body
 
 
 def test_gravel_tables_exist_handles_none_engine():
