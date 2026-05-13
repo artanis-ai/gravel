@@ -25,6 +25,7 @@ from ._handler import (
 )
 from .dashboard_assets import find_dashboard_dist
 from .db import open_database
+from .tracing import install_auto_tracing
 from .types import GravelConfig, resolve_config
 
 
@@ -44,6 +45,10 @@ def create_gravel_router(config: GravelConfig, *, engine: Any = None) -> APIRout
         db_url = resolved.database.get("url", "") if resolved.database else ""
         if db_url:
             engine = open_database(db_url)
+    # Auto-tracing wiring lives here so the wizard-emitted gravel_route.py
+    # picks it up just by importing the SDK — no extra line in the host's
+    # entry. Skips cleanly on the prompts-only install (engine is None).
+    install_auto_tracing(engine)
 
     dist = find_dashboard_dist()
     shell_html = (dist / "index.html").read_text(encoding="utf-8") if dist else None

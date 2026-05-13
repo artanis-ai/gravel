@@ -7,11 +7,62 @@ Python uses `contextvars`).
 from __future__ import annotations
 
 import contextvars
+import logging
+import os
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Awaitable, Callable, Iterator, TypeVar
 
-from .persist import set_gravel_tracing_config
+from .persist import TracingRuntimeConfig, set_gravel_tracing_config
+
+_log = logging.getLogger("gravel.tracing.bootstrap")
+
+
+def install_auto_tracing(engine: Any) -> bool:
+    """One-shot bootstrap called by the framework adapters
+    (`fastapi.create_gravel_router`, `asgi._build_context`,
+    `django._build_proto_context`) right after they open the engine.
+
+    Installs the openai / anthropic / langchain / fetch patches and
+    points the persister at the same engine the dashboard reads from.
+    Before this helper landed (pre-v0.5.22) every Python host that ran
+    the wizard's traces pillar had the tables created but neither half
+    of the runtime wired up — silent zero-trace failure.
+
+    The provider patches are invoked through their explicit entrypoints
+    (not `import artanis_gravel.auto`) so this function stays idempotent
+    across test resets: a bare `import` is a no-op the second time and
+    won't re-install patches that a test seam unwound.
+
+    Skips silently when:
+      - `engine` is None (prompts-only install, no DATABASE_URL)
+      - `GRAVEL_TRACING_DISABLED=1` is set in the environment
+
+    Returns True iff auto-tracing was actually installed, so callers
+    can decide whether to emit a startup log line.
+    """
+    if engine is None:
+        return False
+    if os.environ.get("GRAVEL_TRACING_DISABLED") == "1":
+        _log.info("auto-tracing skipped: GRAVEL_TRACING_DISABLED=1")
+        return False
+    try:
+        from . import openai_patch  # noqa: F401 — module-level patch
+    except ImportError:
+        pass
+    try:
+        from . import anthropic_patch  # noqa: F401 — module-level patch
+    except ImportError:
+        pass
+    try:
+        from . import langchain_patch
+        langchain_patch.install()
+    except ImportError:
+        pass
+    from . import fetch_patch
+    fetch_patch.patch_all()
+    set_gravel_tracing_config(TracingRuntimeConfig(engine=engine))
+    return True
 
 T = TypeVar("T")
 
@@ -152,4 +203,5 @@ __all__ = [
     "with_tracing_disabled",
     "awith_tracing_disabled",
     "set_gravel_tracing_config",
+    "install_auto_tracing",
 ]

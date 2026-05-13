@@ -26,3 +26,8 @@ if (DISABLED) {
   // non-LLM fetch calls are passed through untouched.
   void import('./tracing/fetch.js')
 }
+
+// Mark this file as a module so `void import('./auto.js')` from the
+// handler factory type-checks. The runtime behaviour is purely
+// side-effect; we export nothing of value.
+export {}

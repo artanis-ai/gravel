@@ -74,6 +74,18 @@ export function createGravelHandler(opts: CreateHandlerOpts) {
     // (loaded via `import '@artanis-ai/gravel/auto'`) have a DB to write
     // their traces into. Without this they're lazily inert.
     setGravelTracingConfig(cachedConfig)
+    // Trigger the LLM-SDK auto-patches as a side-effect of mounting the
+    // handler, so wizard-emitted hosts get tracing without an extra
+    // `import '@artanis-ai/gravel/auto'` line. The wizard only installs
+    // instrumentation.ts for Next.js; before this change, Express /
+    // Fastify / Hono / generic-Node hosts had the dashboard wired but
+    // never imported auto, so the patches never installed and zero
+    // traces ever landed — silent customer-visible failure.
+    // auto.ts honours GRAVEL_TRACING_DISABLED itself; the import is
+    // idempotent via Node's module cache so re-calling is cheap.
+    if (process.env.GRAVEL_TRACING_DISABLED !== '1') {
+      void import('../auto.js')
+    }
   }
   const config = cachedConfig
 

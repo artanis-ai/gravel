@@ -43,6 +43,7 @@ from ._handler import (
 )
 from .dashboard_assets import find_dashboard_dist
 from .db import open_database
+from .tracing import install_auto_tracing
 from .types import GravelConfig, resolve_config
 
 
@@ -54,6 +55,9 @@ def _build_proto_context(config: GravelConfig) -> Context:
     db_url = resolved.database.get("url", "") if resolved.database else ""
     if db_url:
         engine = open_database(db_url)
+    # Wire LLM-SDK auto-tracing to the same engine the dashboard reads
+    # from. No-ops on the prompts-only path (engine stays None).
+    install_auto_tracing(engine)
     dist = find_dashboard_dist()
     shell_html = (dist / "index.html").read_text(encoding="utf-8") if dist else None
     assets_dir: Path | None = (dist / "assets") if dist else None
