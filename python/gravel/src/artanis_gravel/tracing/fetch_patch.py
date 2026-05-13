@@ -58,7 +58,16 @@ _ORIGINAL_URLLIB_URLOPEN: Any = None
 def _is_disabled() -> bool:
     if os.environ.get("GRAVEL_TRACING_DISABLED") == "1":
         return True
-    return gravel_context_singleton.is_tracing_disabled()
+    if gravel_context_singleton.is_tracing_disabled():
+        return True
+    # Set by the SDK patches (openai / anthropic / langchain) around
+    # their wrapped calls. The underlying httpx / aiohttp / requests
+    # call still happens, but the SDK already recorded a richer trace
+    # — record it via fetch too and the dashboard shows one row per
+    # call as two separate samples, which was the v0.5.24 customer bug.
+    if gravel_context_singleton.is_fetch_tracing_disabled():
+        return True
+    return False
 
 
 _OPENAI_CHAT_RE = re.compile(r"/chat/completions(\?|$)")

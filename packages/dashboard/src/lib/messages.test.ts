@@ -296,4 +296,38 @@ describe('extractOutput', () => {
   it('plain string falls through', () => {
     expect(extractOutput('hello')[0]!.blocks).toEqual([{ type: 'text', text: 'hello' }])
   })
+
+  // The fallback fetch patch persists responses as `{ status, body: ... }`,
+  // matching what `extractMessages` already unwraps on the input side.
+  // Before this case landed, `fetch:openai.chat.completions` samples
+  // rendered the raw HTTP envelope as a JSON dump in the output pane
+  // (the reviewer saw `body.choices[0].message.content` quoted instead
+  // of the rendered assistant message).
+  it('unwraps raw-fetch wrapper { body } for OpenAI response', () => {
+    const out = extractOutput({
+      status: 200,
+      body: {
+        id: 'chatcmpl-x',
+        object: 'chat.completion',
+        model: 'gpt-4o-mini',
+        choices: [{ index: 0, message: { role: 'assistant', content: 'urgent' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 345, completion_tokens: 1 },
+      },
+    })
+    expect(out).toHaveLength(1)
+    expect(out[0]!.blocks).toEqual([{ type: 'text', text: 'urgent' }])
+  })
+
+  it('unwraps raw-fetch wrapper { body } for Anthropic response', () => {
+    const out = extractOutput({
+      status: 200,
+      body: {
+        id: 'msg_x',
+        type: 'message',
+        role: 'assistant',
+        content: [{ type: 'text', text: 'ok' }],
+      },
+    })
+    expect(out[0]!.blocks).toEqual([{ type: 'text', text: 'ok' }])
+  })
 })

@@ -87,7 +87,17 @@ export function extractOutput(output: unknown): NormalizedMessage[] {
   if (typeof output !== 'object') {
     return [{ role: 'assistant', blocks: [{ type: 'text', text: String(output) }], raw: output }]
   }
-  const obj = output as Record<string, unknown>
+  let obj = output as Record<string, unknown>
+
+  // Raw-fetch wrapping: the fallback fetch patch stores the response
+  // as `{ status, body: <provider-response> }`. `extractMessages`
+  // already unwraps `body` on the input side; do the same here so a
+  // `fetch:openai.chat.completions` sample renders identically to one
+  // captured by the openai SDK patch (otherwise the output pane fell
+  // through to the JSON dump path).
+  if (obj.body && typeof obj.body === 'object' && !Array.isArray(obj.body)) {
+    obj = obj.body as Record<string, unknown>
+  }
 
   // OpenAI Chat Completions: { choices: [{ message: { role, content, tool_calls } }] }
   if (Array.isArray(obj.choices)) {

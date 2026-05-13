@@ -71,6 +71,12 @@ T = TypeVar("T")
 class _ContextState:
     metadata: dict[str, Any] = field(default_factory=dict)
     tracing_disabled: bool = False
+    # When set, the raw-fetch auto-patch skips the call. Used by the
+    # SDK patches (openai / anthropic / langchain) to mark "I already
+    # record this call's trace at the SDK level" so the underlying
+    # httpx/requests/aiohttp call doesn't get double-traced.
+    # Mirrors `packages/sdk-ts/src/tracing/context.ts:fetchTracingDisabled`.
+    fetch_tracing_disabled: bool = False
 
 
 _state: contextvars.ContextVar[_ContextState] = contextvars.ContextVar(
@@ -98,11 +104,32 @@ class _GravelContext:
     def is_tracing_disabled(self) -> bool:
         return _current_state().tracing_disabled
 
+    def is_fetch_tracing_disabled(self) -> bool:
+        return _current_state().fetch_tracing_disabled
+
     def run(self, metadata: dict[str, Any], fn: Callable[[], T]) -> T:
         prev = _current_state()
         new = _ContextState(
             metadata={**prev.metadata, **metadata},
             tracing_disabled=prev.tracing_disabled,
+            fetch_tracing_disabled=prev.fetch_tracing_disabled,
+        )
+        token = _state.set(new)
+        try:
+            return fn()
+        finally:
+            _state.reset(token)
+
+    def run_with_fetch_tracing_disabled(self, fn: Callable[[], T]) -> T:
+        """Internal — used by SDK patches (openai / anthropic /
+        langchain) to suppress the raw-fetch patch's recording of the
+        underlying httpx / aiohttp call. Mirrors TS
+        `gravelContext.runWithFetchTracingDisabled`."""
+        prev = _current_state()
+        new = _ContextState(
+            metadata=dict(prev.metadata),
+            tracing_disabled=prev.tracing_disabled,
+            fetch_tracing_disabled=True,
         )
         token = _state.set(new)
         try:
@@ -126,7 +153,11 @@ def gravel_context(metadata: dict[str, Any] | None = None) -> Iterator[_GravelCo
     prev = _current_state()
     merged = {**prev.metadata, **(metadata or {})}
     token = _state.set(
-        _ContextState(metadata=merged, tracing_disabled=prev.tracing_disabled)
+        _ContextState(
+            metadata=merged,
+            tracing_disabled=prev.tracing_disabled,
+            fetch_tracing_disabled=prev.fetch_tracing_disabled,
+        )
     )
     try:
         yield gravel_context_singleton
@@ -142,6 +173,7 @@ def with_gravel_metadata(metadata: dict[str, Any]) -> Iterator[None]:
         _ContextState(
             metadata={**prev.metadata, **metadata},
             tracing_disabled=prev.tracing_disabled,
+            fetch_tracing_disabled=prev.fetch_tracing_disabled,
         )
     )
     try:
@@ -179,7 +211,11 @@ def with_tracing_disabled() -> Iterator[None]:
     """
     prev = _current_state()
     token = _state.set(
-        _ContextState(metadata=dict(prev.metadata), tracing_disabled=True)
+        _ContextState(
+            metadata=dict(prev.metadata),
+            tracing_disabled=True,
+            fetch_tracing_disabled=prev.fetch_tracing_disabled,
+        )
     )
     try:
         yield

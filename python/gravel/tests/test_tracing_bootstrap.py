@@ -552,6 +552,122 @@ def test_api_samples_detail_shape_matches_dashboard_contract(tmp_path: Path) -> 
     assert "feedback_count" in related_keys
 
 
+def test_sdk_patch_does_not_double_record_via_fetch(tmp_path: Path, llm_server: str) -> None:
+    """Each LLM call must produce exactly ONE sample, not two.
+
+    Pre-v0.5.25 the openai / anthropic / langchain SDK patches AND
+    the fetch patch both recorded the same call — the SDK ultimately
+    routes through httpx which fetch_patch wraps. Result: landlord-ai
+    had 6 samples for 3 LLM calls (each row duplicated as
+    `openai.chat.completions.create` + `fetch:openai.chat.completions`).
+
+    Fix: SDK patches now wrap `original(...)` with
+    `gravel_context_singleton.run_with_fetch_tracing_disabled(...)`
+    which sets a contextvar fetch_patch reads to suppress its own
+    recording. TS canon (`packages/sdk-ts/src/tracing/context.ts`)
+    has the same mechanism — this is the Python port.
+
+    This test mimics the customer chain: simulate an SDK patch by
+    wrapping a real httpx call (which the fetch patch IS intercepting)
+    in `run_with_fetch_tracing_disabled`. Assert exactly zero samples
+    land via the fetch path. Then verify that WITHOUT the wrapper,
+    the same call DOES land — proving the patch isn't dead.
+    """
+    import httpx
+    from artanis_gravel.tracing import gravel_context_singleton
+
+    url = _sqlite_url(tmp_path)
+    _bootstrap_tables(url)
+    create_gravel_router(_config(url))
+
+    # Sanity: a bare httpx call IS captured by the fetch patch.
+    httpx.post(
+        f"{llm_server}/v1/chat/completions",
+        json={"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "x"}]},
+        timeout=5,
+    )
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        baseline = conn.execute(sa.select(sa.func.count()).select_from(gravel_samples)).scalar()
+    engine.dispose()
+    assert baseline == 1, f"baseline fetch capture broken; got {baseline} samples"
+
+    # Now simulate what the SDK patches do: suppress fetch tracing for
+    # the duration of the underlying http call. Should add ZERO new rows.
+    gravel_context_singleton.run_with_fetch_tracing_disabled(
+        lambda: httpx.post(
+            f"{llm_server}/v1/chat/completions",
+            json={"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "y"}]},
+            timeout=5,
+        )
+    )
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        after = conn.execute(sa.select(sa.func.count()).select_from(gravel_samples)).scalar()
+    engine.dispose()
+    assert after == baseline, (
+        f"SDK-suppressed httpx call must NOT add a row; baseline={baseline} after={after}. "
+        "If this fails the dedup contextvar is broken and customers will see "
+        "duplicate rows for every openai/anthropic call."
+    )
+
+    # And after exiting the context, the next httpx call IS captured
+    # again (context-var must reset cleanly).
+    httpx.post(
+        f"{llm_server}/v1/chat/completions",
+        json={"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "z"}]},
+        timeout=5,
+    )
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        final = conn.execute(sa.select(sa.func.count()).select_from(gravel_samples)).scalar()
+    engine.dispose()
+    assert final == baseline + 1, (
+        "after exiting run_with_fetch_tracing_disabled, fetch tracing must resume — "
+        "otherwise the contextvar is leaking"
+    )
+
+
+def test_openai_patch_round_trip_writes_exactly_one_sample(
+    tmp_path: Path, llm_server: str, monkeypatch
+) -> None:
+    """Plumb the wire end-to-end: hijack `openai.OpenAI.chat.completions.create`
+    to call a real fake HTTP server (so the fetch patch is in the request
+    path), then invoke it via the openai SDK and assert exactly one
+    row lands. Pins the openai_patch ↔ fetch_patch dedup contract."""
+    try:
+        import openai  # noqa: F401
+    except ImportError:
+        pytest.skip("openai SDK not installed in test env")
+
+    from openai import OpenAI
+
+    url = _sqlite_url(tmp_path)
+    _bootstrap_tables(url)
+    create_gravel_router(_config(url))
+
+    # Point the openai client at our local fake server.
+    client = OpenAI(api_key="sk-test", base_url=llm_server)
+    client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": "hi"}],
+    )
+
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        rows = list(
+            conn.execute(sa.select(gravel_samples.c.name)).all()
+        )
+    engine.dispose()
+    # Exactly one row, and it's the SDK-patch row (richer trace) —
+    # NOT the fetch-patch row (which would be the duplicate).
+    assert len(rows) == 1, (
+        f"expected exactly one sample for one openai call, got {len(rows)}: {rows}. "
+        "If this is 2, the dedup contextvar isn't being read by fetch_patch."
+    )
+    assert rows[0][0] == "openai.chat.completions.create"
+
+
 def test_api_samples_detail_404_for_unknown_id(tmp_path: Path) -> None:
     """Defensive: the handler must 404 (not 500, not return None as
     JSON null) when the requested sample doesn't exist."""

@@ -188,7 +188,14 @@ def _wrap_create(
         is_stream = bool(kwargs.get("stream"))
 
         try:
-            result = original(self, *args, **kwargs)
+            # Suppress the raw-fetch patch for the duration of the
+            # underlying SDK call: openai routes through httpx, which
+            # fetch_patch wraps, but the SDK patch already captures a
+            # richer trace. Without this we'd write two samples per
+            # call (the v0.5.24 customer-visible duplicate-rows bug).
+            result = gravel_context_singleton.run_with_fetch_tracing_disabled(
+                lambda: original(self, *args, **kwargs)
+            )
         except Exception as exc:
             completed_at = now_utc()
             record = make_record(

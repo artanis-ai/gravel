@@ -141,7 +141,12 @@ def _wrap_create(original: Callable[..., Any]) -> Callable[..., Any]:
         started_at = now_utc()
         is_stream = bool(kwargs.get("stream"))
         try:
-            result = original(self, *args, **kwargs)
+            # Suppress raw-fetch tracing for the underlying httpx call —
+            # the SDK patch already captures a richer trace. Without
+            # this each call writes two rows (SDK + fetch).
+            result = gravel_context_singleton.run_with_fetch_tracing_disabled(
+                lambda: original(self, *args, **kwargs)
+            )
         except Exception as exc:
             completed_at = now_utc()
             record = make_record(
