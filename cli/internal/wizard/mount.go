@@ -71,6 +71,13 @@ func Mount(d Detection, mountPath string, opts MountOptions) (MountResult, error
 		// the main `@artanis-ai/gravel` entry (web-standard handler)
 		// rather than `/node` because Hono natively speaks fetch.
 		return mountHono(d, mountPath)
+	case FrameworkFastify:
+		// Auto-patches the Fastify entry to register
+		// `gravelFastifyPlugin` (from @artanis-ai/gravel/fastify, a
+		// dedicated SDK adapter that handles Fastify's prefix-
+		// stripping correctly — see comments at the top of
+		// mount_fastify.go).
+		return mountFastify(d, mountPath)
 	default:
 		return manual(genericInstructions(mountPath)), nil
 	}

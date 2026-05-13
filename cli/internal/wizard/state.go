@@ -91,6 +91,11 @@ func InspectState(cwd string, d Detection) InspectedState {
 				s.MountExists = true
 				s.MountFilePath = entryRel
 			}
+		case FrameworkFastify:
+			if ok, entryRel := fastifyEntryHasGravelMount(cwd); ok {
+				s.MountExists = true
+				s.MountFilePath = entryRel
+			}
 		}
 	}
 
@@ -241,6 +246,35 @@ func entryContainsHonoGravelMount(path string) bool {
 		return false
 	}
 	return gravelHonoMountedRE.Match(body)
+}
+
+// fastifyEntryHasGravelMount mirrors expressEntryHasGravelMount for
+// Fastify. Same two-phase search as the Fastify patcher itself.
+func fastifyEntryHasGravelMount(cwd string) (bool, string) {
+	checked := map[string]bool{}
+	for _, rel := range fastifyEntryCandidates {
+		if entryContainsFastifyGravelMount(filepath.Join(cwd, rel)) {
+			return true, rel
+		}
+		checked[rel] = true
+	}
+	for _, rel := range findFastifyEntries(cwd) {
+		if checked[rel] {
+			continue
+		}
+		if entryContainsFastifyGravelMount(filepath.Join(cwd, rel)) {
+			return true, rel
+		}
+	}
+	return false, ""
+}
+
+func entryContainsFastifyGravelMount(path string) bool {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	return gravelFastifyPluginRE.Match(body)
 }
 
 // djangoURLsHasGravelInclude scans the project for a urls.py that

@@ -8,6 +8,7 @@ export default defineConfig({
     next: 'src/integrations/next.ts',
     'next-pages': 'src/integrations/next-pages.ts',
     node: 'src/integrations/node.ts',
+    fastify: 'src/integrations/fastify.ts',
     // The CLI is no longer a TS module. `gravel` ships as a Go binary
     // installed via install.sh; see /cli/DESIGN.md.
   },
