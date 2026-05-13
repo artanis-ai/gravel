@@ -266,10 +266,13 @@ func redrawPathLine(out io.Writer, question string, buf []byte) {
 }
 
 // printCandidates writes the candidate list to out, one per line.
-// Used after a double-Tab. Keeps things simple — no column packing.
+// Used after a double-Tab. Terminal is in raw mode here, so a bare
+// "\n" only moves the cursor down without returning to column 0 —
+// each candidate would land one column further right than the last
+// (visible staircase). Always emit "\r\n".
 func printCandidates(out io.Writer, candidates []string) {
 	for _, c := range candidates {
-		fmt.Fprintln(out, c)
+		fmt.Fprintf(out, "%s\r\n", c)
 	}
 }
 

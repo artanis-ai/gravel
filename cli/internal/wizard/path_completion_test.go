@@ -1,6 +1,7 @@
 package wizard
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"sort"
@@ -167,6 +168,21 @@ func TestCompletePath_NestedCompletion(t *testing.T) {
 	res := CompletePath(root, "a/b/c/le")
 	if res.Replacement != "a/b/c/leaf.md" {
 		t.Errorf("Replacement=%q want a/b/c/leaf.md", res.Replacement)
+	}
+}
+
+// --- printCandidates: raw-mode line endings ------------------------------
+
+// Terminal is in raw mode when this runs, so each line MUST end with
+// "\r\n" — a bare "\n" would only move the cursor down, leaving each
+// candidate indented at the column where the prior one ended (visible
+// as a staircase pattern). Pin the line-ending here.
+func TestPrintCandidates_UsesCRLF(t *testing.T) {
+	var buf bytes.Buffer
+	printCandidates(&buf, []string{"alpha.py", "beta.py", "gamma.py"})
+	want := "alpha.py\r\nbeta.py\r\ngamma.py\r\n"
+	if got := buf.String(); got != want {
+		t.Errorf("printCandidates output =\n%q\nwant\n%q", got, want)
 	}
 }
 
