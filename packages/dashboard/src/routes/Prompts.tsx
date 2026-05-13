@@ -10,10 +10,12 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'wouter'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
-import { api } from '../lib/api'
+import { api, ApiError } from '../lib/api'
 import { EmptyState } from '../components/EmptyState'
 import { DeveloperNote } from '../components/DeveloperNote'
 import { CopyableCode } from '../components/CopyableCode'
+import { Alert } from '../components/Alert'
+import { Spinner } from '../components/Spinner'
 import { SkeletonText } from '../components/Skeleton'
 import { PromptBadge } from '../components/prompts/PromptBadge'
 import { SubmitModal, type SubmitDraftEntry } from '../components/prompts/SubmitModal'
@@ -317,6 +319,10 @@ function GithubBanner() {
       window.location.href = data.redirectUrl
     },
   })
+  // `isPending` covers both the API call and the period AFTER success
+  // when the browser is still navigating to GitHub — keep the spinner
+  // up the whole time so a second click can't happen in the gap.
+  const busy = install.isPending || install.isSuccess
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -325,18 +331,37 @@ function GithubBanner() {
         </span>
         <button
           type="button"
-          disabled={install.isPending}
-          className="cursor-pointer rounded-lg bg-primary px-3 py-1 text-xs font-medium text-white hover:bg-primary-dark disabled:cursor-not-allowed disabled:bg-primary/60"
+          disabled={busy}
+          aria-busy={busy}
+          className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-dark disabled:cursor-not-allowed disabled:bg-text-muted disabled:hover:bg-text-muted"
           onClick={() => install.mutate()}
         >
-          {install.isPending ? 'Redirecting…' : 'Install GitHub App'}
+          {busy && <Spinner className="text-white" label="Opening GitHub" />}
+          {busy ? 'Opening GitHub…' : 'Install GitHub App'}
         </button>
       </div>
       {install.error && (
-        <div className="rounded-md border border-rose-300/60 bg-rose-50 px-3 py-2 text-xs text-rose-900">
-          Install failed: {install.error.message}
-        </div>
+        <Alert title="Install failed" details={apiErrorDetails(install.error)}>
+          {apiErrorMessage(install.error)}
+        </Alert>
       )}
     </div>
   )
+}
+
+/** Pull the most informative message off an `ApiError` (or fall back). */
+function apiErrorMessage(err: Error): string {
+  if (err instanceof ApiError) return err.serverMessage || err.message
+  return err.message || 'Please try again.'
+}
+
+function apiErrorDetails(err: Error): string | null {
+  if (!(err instanceof ApiError)) return null
+  if (err.details == null) return null
+  if (typeof err.details === 'string') return err.details
+  try {
+    return JSON.stringify(err.details, null, 2)
+  } catch {
+    return String(err.details)
+  }
 }

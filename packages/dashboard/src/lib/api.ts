@@ -17,6 +17,43 @@ function getMountPath(): string {
   return (window as any).__GRAVEL_MOUNT_PATH__ ?? ''
 }
 
+/**
+ * Structured error from any SDK route. SDK error responses look like
+ * `{ error: <code>, message?: <human>, details?: <raw> }` — we preserve
+ * all three on the thrown Error so call sites can render a proper
+ * alert (code as title, message as body, details as collapsed
+ * disclosure) instead of dropping everything but `error` like before.
+ */
+export class ApiError extends Error {
+  status: number
+  code: string
+  /** Human-readable message from the server, if any. */
+  serverMessage: string | null
+  /** Raw upstream detail (e.g. a GitHub error string). */
+  details: unknown
+
+  constructor(opts: {
+    status: number
+    code: string
+    serverMessage: string | null
+    details: unknown
+  }) {
+    // .message is what useMutation surfaces by default; pick the most
+    // useful summary we have so the legacy "just show err.message"
+    // pattern still produces something readable.
+    const summary =
+      opts.serverMessage ||
+      opts.code ||
+      `${opts.status} ${opts.code || 'error'}`
+    super(summary)
+    this.name = 'ApiError'
+    this.status = opts.status
+    this.code = opts.code
+    this.serverMessage = opts.serverMessage
+    this.details = opts.details
+  }
+}
+
 async function fetchJson(url: string, init?: RequestInit) {
   const response = await fetch(getMountPath() + url, {
     ...init,
@@ -27,18 +64,23 @@ async function fetchJson(url: string, init?: RequestInit) {
     credentials: 'include',
   })
   if (!response.ok) {
-    // Surface the server's `{ error: ... }` body if it sent one — most
-    // SDK routes do, and the message is usually actionable
-    // (e.g. "GRAVEL_PROJECT_ID not set" tells the dev exactly what's
-    // missing). Falls back to the status line otherwise.
-    let detail = ''
+    let code = ''
+    let serverMessage: string | null = null
+    let details: unknown = null
     try {
       const body = await response.clone().json()
-      if (body && typeof body.error === 'string') detail = body.error
+      if (body && typeof body.error === 'string') code = body.error
+      if (body && typeof body.message === 'string') serverMessage = body.message
+      if (body && 'details' in body) details = body.details
     } catch {
-      /* not JSON */
+      /* not JSON — leave fields blank, ApiError surfaces a status line */
     }
-    throw new Error(detail || `${response.status} ${response.statusText}`)
+    throw new ApiError({
+      status: response.status,
+      code: code || `${response.status}`,
+      serverMessage,
+      details,
+    })
   }
   return response.json()
 }

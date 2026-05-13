@@ -5,16 +5,23 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-vi.mock('../../lib/api', () => ({
-  api: {
-    get: vi.fn(),
-    post: vi.fn(),
-    put: vi.fn(),
-    delete: vi.fn(),
-  },
-}))
+vi.mock('../../lib/api', async () => {
+  // Re-export ApiError from the real module so `instanceof ApiError`
+  // checks inside SubmitModal still hit the same constructor when the
+  // test throws one.
+  const actual = await vi.importActual<typeof import('../../lib/api')>('../../lib/api')
+  return {
+    ...actual,
+    api: {
+      get: vi.fn(),
+      post: vi.fn(),
+      put: vi.fn(),
+      delete: vi.fn(),
+    },
+  }
+})
 
-import { api } from '../../lib/api'
+import { api, ApiError } from '../../lib/api'
 import { SubmitModal, type SubmitDraftEntry } from './SubmitModal'
 import { renderRoute } from '../../test/util'
 
@@ -119,5 +126,86 @@ describe('SubmitModal', () => {
       <SubmitModal open onClose={() => {}} drafts={[]} onSubmitted={() => {}} />,
     )
     expect(screen.getByRole('button', { name: /send for review/i })).toBeDisabled()
+  })
+
+  // Regression: the old error-display path only rendered err.message — for
+  // ApiError that was just the code ("github_failed") with no message or
+  // details, which is useless to a non-engineer. Verify the Alert now
+  // shows the humanised title, the server message, AND the details box.
+  it('renders a styled Alert with server message + details when submit fails', async () => {
+    mockedPost.mockRejectedValue(
+      new ApiError({
+        status: 400,
+        code: 'github_failed',
+        serverMessage: 'Could not read src/landlord_ai/persona.py from artanis-ai/landlord-ai',
+        details: 'Not Found',
+      }),
+    )
+    const user = userEvent.setup()
+    renderRoute(
+      <SubmitModal open onClose={() => {}} drafts={[makeEntry()]} onSubmitted={() => {}} />,
+    )
+    const dialog = await screen.findByRole('dialog', { name: /submit changes/i })
+    await user.clear(within(dialog).getByPlaceholderText(/^pat$/i))
+    await user.type(within(dialog).getByPlaceholderText(/^pat$/i), 'Alice')
+    await user.type(within(dialog).getByPlaceholderText(/tighten triage prompt/i), 'Tighten')
+    await user.click(within(dialog).getByRole('button', { name: /send for review/i }))
+
+    const alert = await within(dialog).findByRole('alert')
+    expect(alert).toHaveTextContent(/GitHub didn’?t accept the change|GitHub didn't accept the change/i)
+    expect(alert).toHaveTextContent(/Could not read src\/landlord_ai\/persona\.py/i)
+    expect(within(alert).getByText('Not Found')).toBeInTheDocument()
+  })
+
+  it('falls back to a generic title when the error code is unknown', async () => {
+    mockedPost.mockRejectedValue(
+      new ApiError({
+        status: 500,
+        code: 'something_we_dont_map',
+        serverMessage: 'Backend exploded',
+        details: null,
+      }),
+    )
+    const user = userEvent.setup()
+    renderRoute(
+      <SubmitModal open onClose={() => {}} drafts={[makeEntry()]} onSubmitted={() => {}} />,
+    )
+    const dialog = await screen.findByRole('dialog', { name: /submit changes/i })
+    await user.clear(within(dialog).getByPlaceholderText(/^pat$/i))
+    await user.type(within(dialog).getByPlaceholderText(/^pat$/i), 'Alice')
+    await user.type(within(dialog).getByPlaceholderText(/tighten triage prompt/i), 'X')
+    await user.click(within(dialog).getByRole('button', { name: /send for review/i }))
+
+    const alert = await within(dialog).findByRole('alert')
+    expect(alert).toHaveTextContent(/Couldn[’']t send for review/i)
+    expect(alert).toHaveTextContent('Backend exploded')
+  })
+
+  it('shows a spinner inside the submit button while the request is in flight', async () => {
+    // Resolve later so we can observe the in-flight state.
+    let resolveSubmit: (v: unknown) => void = () => {}
+    mockedPost.mockReturnValue(new Promise((r) => { resolveSubmit = r }))
+    const user = userEvent.setup()
+    renderRoute(
+      <SubmitModal open onClose={() => {}} drafts={[makeEntry()]} onSubmitted={() => {}} />,
+    )
+    const dialog = await screen.findByRole('dialog', { name: /submit changes/i })
+    await user.clear(within(dialog).getByPlaceholderText(/^pat$/i))
+    await user.type(within(dialog).getByPlaceholderText(/^pat$/i), 'Alice')
+    await user.type(within(dialog).getByPlaceholderText(/tighten triage prompt/i), 'X')
+    await user.click(within(dialog).getByRole('button', { name: /send for review/i }))
+
+    // While in flight: the button shows "Sending…", contains a spinner
+    // role=img, and is disabled.
+    const sending = await within(dialog).findByRole('button', { name: /sending/i })
+    expect(sending).toBeDisabled()
+    expect(within(sending).getByRole('img', { hidden: true })).toBeInTheDocument()
+
+    // Cleanup.
+    resolveSubmit({
+      ok: true,
+      pr: { prUrl: 'https://x', prNumber: 1, branchName: 'b' },
+    })
+    await waitFor(() => expect(mockedPost).toHaveBeenCalled())
   })
 })
