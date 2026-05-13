@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "artanis-gravel"
-version = "0.5.5"
+version = "0.5.6"
 description = "Embedded prompt management, tracing, and evals for AI engineering teams."
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -33,6 +33,12 @@ sqlite = []
 fastapi = ["fastapi>=0.100"]
 django = ["django>=4.2"]
 asgi = ["starlette>=0.30"]
+# Flask reuses the FastAPI dashboard internals via an ASGI→WSGI bridge
+# (a2wsgi — asgiref only ships the inverse direction). The extra pulls
+# in both halves so customers `pip install 'artanis-gravel[flask]'`
+# and get a working install without learning which transitive deps the
+# bridge needs.
+flask = ["a2wsgi>=1.10", "fastapi>=0.100"]
 tracing-openai = ["openai>=1.40"]
 tracing-anthropic = ["anthropic>=0.34"]
 tracing-langchain = ["langchain-core>=0.3"]

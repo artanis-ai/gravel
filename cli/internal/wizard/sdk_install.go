@@ -70,7 +70,7 @@ func gravelPackageName(lang stack.Language) string {
 // PyPI version get a broken install with no useful error.
 //
 // Update in lockstep with python/gravel/pyproject.toml `version`.
-const minSDKVersion = "0.5.5"
+const minSDKVersion = "0.5.6"
 
 // gravelInstallSpec returns the dependency spec we hand to the
 // package manager. For Python we pin `>=minSDKVersion` so `uv add`
@@ -78,12 +78,20 @@ const minSDKVersion = "0.5.5"
 // startup). The TS package isn't currently version-pinned because
 // the JS SDK hasn't shipped any wizard-breaking bumps yet; revisit
 // when it does.
-func gravelInstallSpec(lang stack.Language) string {
-	name := gravelPackageName(lang)
-	if lang == stack.LanguagePython {
-		return name + ">=" + minSDKVersion
+//
+// For Flask we request the `[flask]` extra so the asgiref bridge
+// (needed by artanis_gravel.flask.mount_on_flask) lands at install
+// time. Without the extra, the customer would hit a clear-but-
+// unnecessary ImportError on first server boot.
+func gravelInstallSpec(d Detection) string {
+	name := gravelPackageName(d.Language)
+	if d.Language != stack.LanguagePython {
+		return name
 	}
-	return name
+	if d.Framework == FrameworkFlask {
+		return name + "[flask]>=" + minSDKVersion
+	}
+	return name + ">=" + minSDKVersion
 }
 
 // EnsureSDKInstalled adds the gravel SDK to the user's project deps if
@@ -102,7 +110,7 @@ func gravelInstallSpec(lang stack.Language) string {
 //      return SDKAdded or SDKFailed.
 func EnsureSDKInstalled(ctx context.Context, d Detection) SDKInstallResult {
 	pkg := gravelPackageName(d.Language)
-	spec := gravelInstallSpec(d.Language)
+	spec := gravelInstallSpec(d)
 	command := buildAddCommand(d.PackageManager, spec)
 	result := SDKInstallResult{Package: pkg, Command: strings.Join(command, " ")}
 

@@ -10,6 +10,18 @@ resolution-markers = [
 ]
 
 [[package]]
+name = "a2wsgi"
+version = "1.10.10"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9a/cb/822c56fbea97e9eee201a2e434a80437f6750ebcb1ed307ee3a0a7505b14/a2wsgi-1.10.10.tar.gz", hash = "sha256:a5bcffb52081ba39df0d5e9a884fc6f819d92e3a42389343ba77cbf809fe1f45", size = 18799, upload-time = "2025-06-18T09:00:10.843Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/02/d5/349aba3dc421e73cbd4958c0ce0a4f1aa3a738bc0d7de75d2f40ed43a535/a2wsgi-1.10.10-py3-none-any.whl", hash = "sha256:d2b21379479718539dc15fce53b876251a0efe7615352dfe49f6ad1bc507848d", size = 17389, upload-time = "2025-06-18T09:00:09.676Z" },
+]
+
+[[package]]
 name = "alembic"
 version = "1.18.4"
 source = { registry = "https://pypi.org/simple" }
@@ -77,7 +89,7 @@ wheels = [
 
 [[package]]
 name = "artanis-gravel"
-version = "0.5.4"
+version = "0.5.6"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -105,6 +117,10 @@ django = [
 fastapi = [
     { name = "fastapi" },
 ]
+flask = [
+    { name = "a2wsgi" },
+    { name = "fastapi" },
+]
 postgres = [
     { name = "psycopg", extra = ["binary"] },
 ]
@@ -120,11 +136,13 @@ tracing-openai = [
 
 [package.metadata]
 requires-dist = [
+    { name = "a2wsgi", marker = "extra == 'flask'", specifier = ">=1.10" },
     { name = "alembic", specifier = ">=1.13" },
     { name = "anthropic", marker = "extra == 'tracing-anthropic'", specifier = ">=0.34" },
     { name = "click", specifier = ">=8.1" },
     { name = "django", marker = "extra == 'django'", specifier = ">=4.2" },
     { name = "fastapi", marker = "extra == 'fastapi'", specifier = ">=0.100" },
+    { name = "fastapi", marker = "extra == 'flask'", specifier = ">=0.100" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "langchain-core", marker = "extra == 'tracing-langchain'", specifier = ">=0.3" },
     { name = "libcst", specifier = ">=1.4" },
@@ -138,7 +156,7 @@ requires-dist = [
     { name = "sqlalchemy", specifier = ">=2.0" },
     { name = "starlette", marker = "extra == 'asgi'", specifier = ">=0.30" },
 ]
-provides-extras = ["postgres", "sqlite", "fastapi", "django", "asgi", "tracing-openai", "tracing-anthropic", "tracing-langchain", "dev"]
+provides-extras = ["postgres", "sqlite", "fastapi", "django", "asgi", "flask", "tracing-openai", "tracing-anthropic", "tracing-langchain", "dev"]
 
 [[package]]
 name = "asgiref"

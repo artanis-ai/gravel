@@ -96,6 +96,11 @@ func InspectState(cwd string, d Detection) InspectedState {
 				s.MountExists = true
 				s.MountFilePath = entryRel
 			}
+		case FrameworkFlask:
+			if ok, entryRel := flaskEntryHasGravelMount(cwd); ok {
+				s.MountExists = true
+				s.MountFilePath = entryRel
+			}
 		}
 	}
 
@@ -275,6 +280,36 @@ func entryContainsFastifyGravelMount(path string) bool {
 		return false
 	}
 	return gravelFastifyPluginRE.Match(body)
+}
+
+// flaskEntryHasGravelMount mirrors the other framework checks for
+// Flask. Two-phase search using the Flask patcher's candidate list +
+// tree walk, content-checks for the gravelFlaskMountedRE marker.
+func flaskEntryHasGravelMount(cwd string) (bool, string) {
+	checked := map[string]bool{}
+	for _, rel := range flaskEntryCandidates {
+		if entryContainsFlaskGravelMount(filepath.Join(cwd, rel)) {
+			return true, rel
+		}
+		checked[rel] = true
+	}
+	for _, rel := range findFlaskEntries(cwd) {
+		if checked[rel] {
+			continue
+		}
+		if entryContainsFlaskGravelMount(filepath.Join(cwd, rel)) {
+			return true, rel
+		}
+	}
+	return false, ""
+}
+
+func entryContainsFlaskGravelMount(path string) bool {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	return gravelFlaskMountedRE.Match(body)
 }
 
 // djangoURLsHasGravelInclude scans the project for a urls.py that

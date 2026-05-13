@@ -35,6 +35,31 @@ func TestGravelPackageName(t *testing.T) {
 	}
 }
 
+// TestGravelInstallSpec covers the dependency-spec string the wizard
+// hands to the package manager. Mostly stays at `<pkg>>=<minSDK>` but
+// Flask projects need the `[flask]` extra so asgiref lands at install
+// time. TS projects stay unpinned per the function's docstring.
+func TestGravelInstallSpec(t *testing.T) {
+	cases := []struct {
+		name string
+		d    Detection
+		want string
+	}{
+		{"TS no pin", Detection{Language: stack.LanguageTS, Framework: FrameworkNextAppRouter}, "@artanis-ai/gravel"},
+		{"Python FastAPI", Detection{Language: stack.LanguagePython, Framework: FrameworkFastAPI}, "artanis-gravel>=" + minSDKVersion},
+		{"Python Django", Detection{Language: stack.LanguagePython, Framework: FrameworkDjango}, "artanis-gravel>=" + minSDKVersion},
+		{"Python Flask", Detection{Language: stack.LanguagePython, Framework: FrameworkFlask}, "artanis-gravel[flask]>=" + minSDKVersion},
+		{"Python generic", Detection{Language: stack.LanguagePython, Framework: FrameworkGenericASGI}, "artanis-gravel>=" + minSDKVersion},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := gravelInstallSpec(tc.d); got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestBuildAddCommand(t *testing.T) {
 	cases := []struct {
 		pm   stack.PackageManager

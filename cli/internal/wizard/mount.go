@@ -78,6 +78,14 @@ func Mount(d Detection, mountPath string, opts MountOptions) (MountResult, error
 		// stripping correctly — see comments at the top of
 		// mount_fastify.go).
 		return mountFastify(d, mountPath)
+	case FrameworkFlask:
+		// Auto-patches the Flask entry with `mount_on_flask(app,
+		// config)`. The SDK module bridges the FastAPI dashboard
+		// to Flask's WSGI chain (via asgiref) so customers get the
+		// SAME dashboard as FastAPI users with zero duplicated route
+		// code. See mount_flask.go for the patcher and
+		// python/gravel/src/artanis_gravel/flask.py for the bridge.
+		return mountFlask(d, mountPath)
 	default:
 		return manual(genericInstructions(mountPath)), nil
 	}
