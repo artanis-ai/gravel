@@ -41,6 +41,7 @@ from artanis_gravel import GravelConfig
 from artanis_gravel.asgi import _build_context as build_asgi_context
 from artanis_gravel.django import _build_proto_context as build_django_context
 from artanis_gravel.fastapi import create_gravel_router
+from artanis_gravel.samples_query import list_samples
 from artanis_gravel.schema import gravel_samples, metadata
 from artanis_gravel.tracing import (
     install_auto_tracing,
@@ -270,3 +271,130 @@ def test_fastapi_router_then_real_llm_call_writes_row(
     row = rows[0]._asdict()
     assert row["model"] == "gpt-4o-mini"
     assert row["status"] == "completed"
+
+    # CRITICAL: read through the dashboard's actual read path, not raw
+    # `sa.select(gravel_samples)`. Before v0.5.23 this was the audit
+    # gap — the write path worked, the raw-select read worked, but
+    # `list_samples` (the /api/samples handler) blew up on the same
+    # data because SQLAlchemy's DateTime result-processor was applied
+    # over an INTEGER-typed column (Go bootstrap → unix ms) and
+    # `datetime.fromisoformat(int_ms)` raised TypeError. Any future
+    # divergence between persister-written rows and the dashboard
+    # read path must fail loudly here.
+    engine2 = create_engine(url)
+    result = list_samples(engine=engine2, page=1, page_size=10)
+    engine2.dispose()
+    assert result["total"] == 1
+    assert len(result["samples"]) == 1
+    api_row = result["samples"][0]
+    assert api_row["model"] == "gpt-4o-mini"
+    assert api_row["status"] == "completed"
+    # Dashboard renders started_at as an ISO string; it must NOT be an
+    # int (regression check for the unix-ms-leaking-to-API bug).
+    assert isinstance(api_row["started_at"], str)
+    assert "T" in api_row["started_at"], (
+        f"started_at should be an ISO datetime string, got {api_row['started_at']!r}"
+    )
+
+
+def test_list_samples_against_go_bootstrapped_db(tmp_path: Path) -> None:
+    """The original landlord-ai bug: the customer-side DB is bootstrapped
+    by the Go SDK (`cli/internal/migrate/sql/sqlite_bootstrap.sql`),
+    which declares timestamp / started_at / completed_at / created_at
+    as `INTEGER NOT NULL DEFAULT (unixepoch() * 1000)`. The Python SDK
+    used to declare those columns `DateTime(timezone=True)`, and on
+    read SQLAlchemy's DateTime processor blew up with
+    `fromisoformat: argument must be str` when the value was an int
+    (e.g. created_at from the server default).
+
+    This test reproduces the exact on-disk schema the Go bootstrap
+    creates, inserts the same shape of row the persister writes
+    (pre-v0.5.23: ISO text in the INTEGER column due to SQLite's
+    loose typing; post-v0.5.23: int ms), and asserts list_samples
+    works for both. The cross-stack mismatch must never bite a
+    customer again.
+    """
+    db_file = tmp_path / "go-bootstrapped.db"
+    # Recreate the Go bootstrap's DDL verbatim — the customer-on-disk shape.
+    raw = create_engine(f"sqlite:///{db_file}")
+    with raw.begin() as conn:
+        conn.execute(
+            sa.text(
+                """
+                CREATE TABLE gravel_samples (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    group_id TEXT,
+                    environment TEXT,
+                    model TEXT,
+                    status TEXT NOT NULL DEFAULT 'completed',
+                    input TEXT,
+                    output TEXT,
+                    metadata TEXT,
+                    timestamp INTEGER NOT NULL,
+                    started_at INTEGER NOT NULL,
+                    completed_at INTEGER,
+                    duration_ms INTEGER,
+                    commit_sha TEXT,
+                    prompt_id TEXT,
+                    created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+                )
+                """
+            )
+        )
+        conn.execute(
+            sa.text(
+                """
+                CREATE TABLE gravel_feedback (
+                    id TEXT PRIMARY KEY,
+                    sample_id TEXT NOT NULL REFERENCES gravel_samples(id),
+                    comment TEXT,
+                    correction TEXT,
+                    score TEXT,
+                    source TEXT NOT NULL DEFAULT 'ui',
+                    reporter_user_id TEXT,
+                    metadata TEXT,
+                    timestamp INTEGER NOT NULL,
+                    created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+                )
+                """
+            )
+        )
+        # Row 1: a *legacy* pre-v0.5.23 write — the Python persister
+        # passed a datetime, SQLAlchemy serialised to ISO text,
+        # SQLite stored the text in the INTEGER column (loose typing).
+        # This is the exact shape landlord-ai's gravel.db had.
+        conn.execute(
+            sa.text(
+                """INSERT INTO gravel_samples
+                   (id, name, environment, model, status, timestamp, started_at, completed_at, duration_ms)
+                   VALUES ('legacy', 'openai.chat.completions.create', 'prod', 'gpt-4o', 'completed',
+                           '2026-05-13 22:28:58.896860', '2026-05-13 22:28:58.896860',
+                           '2026-05-13 22:29:02.077599', 3200)"""
+            )
+        )
+        # Row 2: a *new* v0.5.23+ write — int ms, the persister's
+        # post-fix bind shape via GravelTimestamp.
+        conn.execute(
+            sa.text(
+                """INSERT INTO gravel_samples
+                   (id, name, environment, model, status, timestamp, started_at, completed_at, duration_ms)
+                   VALUES ('current', 'openai.chat.completions.create', 'prod', 'gpt-4o', 'completed',
+                           1747171738896, 1747171738896, 1747171742077, 3200)"""
+            )
+        )
+    raw.dispose()
+
+    # The actual dashboard read path.
+    engine = create_engine(f"sqlite:///{db_file}")
+    result = list_samples(engine=engine, page=1, page_size=10)
+    engine.dispose()
+
+    assert result["total"] == 2
+    by_id = {s["id"]: s for s in result["samples"]}
+    assert set(by_id) == {"legacy", "current"}
+    # Both rows must round-trip to an ISO string on the API response.
+    for sid in ("legacy", "current"):
+        s = by_id[sid]
+        assert isinstance(s["started_at"], str), f"{sid}.started_at is {type(s['started_at'])}"
+        assert "T" in s["started_at"] or "-" in s["started_at"], s["started_at"]
