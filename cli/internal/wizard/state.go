@@ -77,6 +77,15 @@ func InspectState(cwd string, d Detection) InspectedState {
 			}
 		case FrameworkDjango:
 			s.MountExists = djangoURLsHasGravelInclude(cwd)
+		case FrameworkExpress:
+			if ok, entryRel := expressEntryHasGravelMount(cwd); ok {
+				s.MountExists = true
+				// Report the patched entry file as the "mount file"
+				// — there's no separate gravel_route.* artefact for
+				// Express; the patch lives entirely inside the
+				// user's entry.
+				s.MountFilePath = entryRel
+			}
 		}
 	}
 
@@ -167,6 +176,37 @@ func entryContainsGravelImport(path string) bool {
 	src := string(body)
 	return strings.Contains(src, "from gravel_route import router as gravel_router") ||
 		strings.Contains(src, "from .gravel_route import router as gravel_router")
+}
+
+// expressEntryHasGravelMount scans the project for a JS/TS file
+// that's already been patched with the Express gravel-handler mount.
+// Returns (true, relPath) for the FIRST match; same dual-search as
+// the patcher itself (hard-coded candidates then tree walk).
+func expressEntryHasGravelMount(cwd string) (bool, string) {
+	checked := map[string]bool{}
+	for _, rel := range expressEntryCandidates {
+		if entryContainsExpressGravelMount(filepath.Join(cwd, rel)) {
+			return true, rel
+		}
+		checked[rel] = true
+	}
+	for _, rel := range findExpressEntries(cwd) {
+		if checked[rel] {
+			continue
+		}
+		if entryContainsExpressGravelMount(filepath.Join(cwd, rel)) {
+			return true, rel
+		}
+	}
+	return false, ""
+}
+
+func entryContainsExpressGravelMount(path string) bool {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	return gravelMountPatchedRE.Match(body)
 }
 
 // djangoURLsHasGravelInclude scans the project for a urls.py that

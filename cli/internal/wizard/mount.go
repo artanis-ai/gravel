@@ -60,10 +60,11 @@ func Mount(d Detection, mountPath string, opts MountOptions) (MountResult, error
 		// urls.py can be located.
 		return mountDjango(d, mountPath)
 	case FrameworkExpress:
-		// Express has too many idiomatic shapes to AST-patch safely
-		// (createServer, app = express(), nested routers, app.use
-		// chains, etc.). The TS reference also kept this as manual.
-		return manual(expressInstructions(mountPath)), nil
+		// Auto-patches index.js / server.js / app.js / src/*.{js,ts}
+		// to add `gravelHandler` import + `app.use(...)`. Falls back
+		// to instructions only when no `<name> = express()` ctor can
+		// be located OR the ctor is inside a function/class body.
+		return mountExpress(d, mountPath)
 	default:
 		return manual(genericInstructions(mountPath)), nil
 	}
@@ -278,10 +279,12 @@ urlpatterns = [
 func expressInstructions(mountPath string) string {
 	return fmt.Sprintf(`Express projects: mount the handler on your app.
 
-const { createGravelHandler } = require('@artanis-ai/gravel/node')
-const { config } = require('./gravel.config')
+import { gravelHandler } from '@artanis-ai/gravel/node'
+import { config } from './gravel.config'
 
-app.use('%s', createGravelHandler({ config }))
+app.use('%s', gravelHandler({ config }))
+
+(CommonJS: replace the imports with require() of the same modules.)
 `, mountPath)
 }
 
