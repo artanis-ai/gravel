@@ -22,7 +22,6 @@ from typing import Any, Awaitable, Callable
 
 from ._handler import (
     Context,
-    HandlerRequest,
     HandlerResponse,
     build_request_from_components,
     dispatch_request,

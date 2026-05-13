@@ -30,7 +30,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs
 
 from ._env_writer import write_env_additions
 from ._github_state import (
