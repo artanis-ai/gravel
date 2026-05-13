@@ -7,7 +7,7 @@
  * Cheaper than serving a unique bundle per mount path, and the
  * dashboard's content-hashed filenames keep cache headers honest.
  *
- * Also injects three boot-time globals the SPA reads:
+ * Also injects boot-time globals the SPA reads:
  *   - __GRAVEL_MOUNT_PATH__   — API client + login form use this to
  *     build absolute URLs without re-deriving from window.location.
  *   - __GRAVEL_PRODUCT_NAME__ — re-brands the login + nav UI so the
@@ -15,6 +15,11 @@
  *     sign-in screen.
  *   - __GRAVEL_HIDE_ARTANIS__ — paid-tier flag; suppresses the
  *     "Powered by Artanis" footer.
+ *   - __GRAVEL_RUNTIME__      — 'typescript' here, 'python' from the
+ *     Python SDK. Drives the CLI-command suggestions in dashboard
+ *     copy (`npx @artanis-ai/gravel ...` vs `uvx artanis-gravel ...`)
+ *     so users don't see commands referencing a binary they never
+ *     installed.
  */
 import type { ResolvedGravelConfig } from '../types.js'
 
@@ -24,7 +29,10 @@ export function rewriteShell(html: string, config: ResolvedGravelConfig): string
     const basename = String(file).split('/').pop() ?? file
     return `${attr}="${prefix}/_assets/${basename}"`
   })
-  const globals: string[] = [`window.__GRAVEL_MOUNT_PATH__=${JSON.stringify(prefix)}`]
+  const globals: string[] = [
+    `window.__GRAVEL_MOUNT_PATH__=${JSON.stringify(prefix)}`,
+    `window.__GRAVEL_RUNTIME__="typescript"`,
+  ]
   if (config.productName) {
     globals.push(`window.__GRAVEL_PRODUCT_NAME__=${JSON.stringify(config.productName)}`)
   }

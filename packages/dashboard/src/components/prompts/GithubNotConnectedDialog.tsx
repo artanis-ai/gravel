@@ -6,7 +6,6 @@
  * back to the developer with the exact command they need to run.
  */
 import { Modal } from '../Modal'
-import { CopyableCode } from '../CopyableCode'
 
 export function GithubNotConnectedDialog({
   open,
@@ -53,12 +52,9 @@ export function GithubNotConnectedDialog({
             <code className="font-mono text-text-dark">localhost</code>)
             and click{' '}
             <span className="font-medium text-text-dark">Install GitHub App</span>{' '}
-            in the developer notice at the top of the prompts page. Or,
-            from the project root:
+            in the developer notice at the top of the prompts page. That
+            walks you through the GitHub App install on the right repo.
           </p>
-          <div className="mt-2">
-            <CopyableCode>gravel github connect</CopyableCode>
-          </div>
         </div>
 
         <p className="text-xs text-text-muted">

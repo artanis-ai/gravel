@@ -24,6 +24,7 @@ import { SkeletonTable, SkeletonText } from '../components/Skeleton'
 import { Badge } from '../components/Badge'
 import { SampleReviewDialog } from '../components/samples/SampleReviewDialog'
 import { cx, formatDuration, formatRelative, formatTokens } from '../lib/format'
+import { gravelCommand } from '../lib/runtime'
 
 const PAGE_SIZE = 20
 
@@ -213,7 +214,7 @@ function WireTracingNote() {
   return (
     <DeveloperNote>
       No traces yet. Run{' '}
-      <CopyableCode>gravel init --traces</CopyableCode>
+      <CopyableCode>{gravelCommand('init --traces')}</CopyableCode>
       {' '}to wire them up then trigger any LLM call from your app.
     </DeveloperNote>
   )

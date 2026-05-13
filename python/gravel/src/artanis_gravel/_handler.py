@@ -205,7 +205,10 @@ def _rewrite_shell(html: str, mount_path: str, resolved: ResolvedGravelConfig) -
         return f'{attr}="{prefix}/_assets/{file.split("/")[-1]}"'
 
     rewritten = re.sub(r'(src|href)="\./assets/([^"]+)"', _replace, html)
-    globals_js = [f"window.__GRAVEL_MOUNT_PATH__={json.dumps(prefix)}"]
+    globals_js = [
+        f"window.__GRAVEL_MOUNT_PATH__={json.dumps(prefix)}",
+        'window.__GRAVEL_RUNTIME__="python"',
+    ]
     if resolved.product_name:
         globals_js.append(f"window.__GRAVEL_PRODUCT_NAME__={json.dumps(resolved.product_name)}")
     if resolved.hide_artanis_branding:

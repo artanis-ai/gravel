@@ -19,6 +19,7 @@ import { PromptBadge } from '../components/prompts/PromptBadge'
 import { SubmitModal, type SubmitDraftEntry } from '../components/prompts/SubmitModal'
 import { GithubNotConnectedDialog } from '../components/prompts/GithubNotConnectedDialog'
 import { listDrafts, type LocalDraft } from '../lib/drafts'
+import { gravelCommand } from '../lib/runtime'
 import { useCurrentUser } from '../lib/useCurrentUser'
 import type {
   GithubStatusResponse,
@@ -101,7 +102,7 @@ function PromptsList() {
       <DeveloperNote>
         <p>
           To re-scan your codebase for prompts, run{' '}
-          <CopyableCode>gravel manifest --update</CopyableCode>
+          <CopyableCode>{gravelCommand('manifest --update')}</CopyableCode>
           .
         </p>
         {ghQ.data && !ghConnected && (

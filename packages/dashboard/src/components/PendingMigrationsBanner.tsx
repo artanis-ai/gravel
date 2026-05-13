@@ -19,29 +19,20 @@
  *     auto-migrate is active so we can tailor the copy.
  *   - No dismissal: schema gaps don't get less bad with time. If you
  *     find this annoying, run the migrate command.
- *   - Per-stack upgrade command derived from the version endpoint
- *     (we re-fetch /api/version because the package-manager
- *     detection lives there; both calls are cached server-side).
+ *   - Per-stack migrate command via gravelCommand() so the copy-paste
+ *     uses `uvx artanis-gravel` on Python hosts and
+ *     `npx @artanis-ai/gravel` on TS hosts. Earlier copy assumed a
+ *     globally-installed `gravel` binary, which the wizard never sets
+ *     up for users who invoke it via uvx / npx.
  */
 import { useEffect, useState } from 'react'
 import { CopyableCode } from './CopyableCode'
+import { gravelCommand } from '../lib/runtime'
 
 interface MigrationsStatus {
   pending: number
   dialect: 'sqlite' | 'postgres' | null
   autoMigrate: boolean
-}
-
-interface VersionInfo {
-  packageManager?: string
-  language?: 'ts' | 'python'
-}
-
-function migrateCommand(_v: VersionInfo): string {
-  // The CLI binary is installed via install.sh and lives on PATH
-  // regardless of host language or package manager. Both TS and Python
-  // hosts surface the same command.
-  return 'gravel migrate'
 }
 
 export function PendingMigrationsBanner({
@@ -52,23 +43,15 @@ export function PendingMigrationsBanner({
   isAdmin: boolean
 }) {
   const [status, setStatus] = useState<MigrationsStatus | null>(null)
-  const [version, setVersion] = useState<VersionInfo | null>(null)
 
   useEffect(() => {
     if (!isAdmin) return
     let cancelled = false
-    Promise.all([
-      fetch(`${mountPath}/api/migrations/status`, { credentials: 'same-origin' }).then((r) =>
-        r.ok ? r.json() : null,
-      ),
-      fetch(`${mountPath}/api/version`, { credentials: 'same-origin' }).then((r) =>
-        r.ok ? r.json() : null,
-      ),
-    ])
-      .then(([s, v]) => {
-        if (cancelled) return
-        if (s) setStatus(s as MigrationsStatus)
-        if (v) setVersion(v as VersionInfo)
+    fetch(`${mountPath}/api/migrations/status`, { credentials: 'same-origin' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((s) => {
+        if (cancelled || !s) return
+        setStatus(s as MigrationsStatus)
       })
       .catch(() => {
         /* swallow — banner just doesn't appear */
@@ -80,7 +63,7 @@ export function PendingMigrationsBanner({
 
   if (!status || status.pending <= 0) return null
 
-  const cmd = migrateCommand(version ?? {})
+  const cmd = gravelCommand('migrate')
   const detail = status.autoMigrate
     ? 'Auto-migrate is on but did not complete. Run the command below to retry.'
     : 'Auto-migrate is off. Run the command below to apply them.'
