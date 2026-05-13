@@ -51,12 +51,17 @@ type PackageManager = 'pnpm' | 'npm' | 'yarn' | 'bun' | 'uv' | 'pip' | 'poetry' 
  * fall back to pnpm if the backend didn't report a manager — that's
  * the most common JS/TS host today and aligns with the docs.
  *
- * For `uv` we emit `uv add <pkg>@<version>` rather than
- * `uv pip install --upgrade …`. The wizard installs into a
- * project-managed uv env (pyproject.toml + uv.lock), and
- * `uv pip install` bypasses both files — the next `uv sync` would
- * revert the upgrade. `uv add pkg@version` rewrites the pin in
- * pyproject.toml, updates the lock, and installs, atomically.
+ * For `uv` we emit `uv sync --upgrade-package <pkg>`. The wizard
+ * writes `artanis-gravel>=<minSDKVersion>` in pyproject.toml, so
+ * `uv sync --upgrade-package` lifts to the newest compatible
+ * version without rewriting pyproject. Earlier alternatives were
+ * both wrong:
+ *   - `uv pip install --upgrade <pkg>==<version>` modifies the venv
+ *     but bypasses pyproject.toml + uv.lock; the next `uv sync`
+ *     reverts the upgrade.
+ *   - `uv add <pkg>@<version>` uses npm-style "@version" syntax that
+ *     uv treats as "name @ path", so it tries to resolve <version>
+ *     as a local path and errors out.
  */
 function updateCommand(info: VersionInfo): string {
   const pkg = info.language === 'python' ? 'artanis-gravel' : '@artanis-ai/gravel'
@@ -69,9 +74,9 @@ function updateCommand(info: VersionInfo): string {
     case 'bun':
       return `bun update ${pkg}@${target}`
     case 'uv':
-      return `uv add ${pkg}@${target}`
+      return `uv sync --upgrade-package ${pkg}`
     case 'poetry':
-      return `poetry add ${pkg}@${target}`
+      return `poetry update ${pkg}`
     case 'pipenv':
       return `pipenv update ${pkg}`
     case 'pip':
