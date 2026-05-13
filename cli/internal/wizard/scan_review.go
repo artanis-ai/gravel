@@ -2,6 +2,7 @@ package wizard
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -219,7 +220,25 @@ func agentMenuLabel(av AgentAvailability) (menu, label string) {
 // or the inputs failed validation; the wizard loops back to the
 // menu without writing anything.
 func addPromptInteractive(cwd string, p Prompter) *manifest.Prompt {
-	rawPath, err := p.Text("File path "+Dim("(relative to repo root)")+":", "")
+	question := "File path " + Dim("(relative to repo root, Tab to complete)") + ":"
+	var rawPath string
+	var err error
+	if canSpawnEditor(p) {
+		// Real TTY + real prompter: drive a raw-mode line editor so Tab
+		// completes filesystem paths. Ctrl-C cancels cleanly.
+		rawPath, err = readPathWithCompletion(os.Stdin, os.Stderr, cwd, question)
+		if errors.Is(err, ErrCancelled) {
+			Bullet("Cancelled.", BulletSkip)
+			return nil
+		}
+		if err != nil {
+			// Raw mode failed (rare). Fall through to the plain prompt so
+			// the user still gets a chance at the question.
+			rawPath, err = p.Text(question, "")
+		}
+	} else {
+		rawPath, err = p.Text(question, "")
+	}
 	if err != nil || strings.TrimSpace(rawPath) == "" {
 		Bullet("No path given. Cancelled.", BulletSkip)
 		return nil
