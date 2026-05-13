@@ -1,8 +1,12 @@
 package wizard
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/artanis-ai/gravel/cli/internal/manifest"
 )
 
 // agent_deep_scan_test.go covers the agent integration's parser. The
@@ -212,5 +216,94 @@ func TestAgentMenuLabel_NeitherInstalled(t *testing.T) {
 	}
 	if label != "" {
 		t.Errorf("label should be empty when no agent installed, got %q", label)
+	}
+}
+
+// --- enrichFinding ----------------------------------------------------------
+
+// Resolves anchors against the source file and produces a slice that
+// matches the original prompt body byte-for-byte. The corpus mixes
+// ASCII with multi-byte runes (em-dash, smart quote, emoji) — the same
+// chars that desynchronise byte / UTF-16 / code-point counts.
+func TestEnrichFinding_MultiByteRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	prompt := "You’re a kind assistant — guide them to the 🎯 with care and precision."
+	fileBody := "const HEADER = \"préfixe\"\n" +
+		"const SYSTEM_PROMPT = `" + prompt + "`\n"
+	relPath := "agent.ts"
+	if err := os.WriteFile(filepath.Join(dir, relPath), []byte(fileBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	f := AgentFinding{
+		Path:       relPath,
+		LineStart:  2,
+		LineEnd:    2,
+		VarName:    "SYSTEM_PROMPT",
+		StartsWith: "You’re a kind assistant",
+		EndsWith:   "with care and precision.",
+	}
+	entry, ok := enrichFinding(dir, f)
+	if !ok {
+		t.Fatal("enrichFinding returned !ok for valid multi-byte prompt")
+	}
+	slice := manifest.SliceByCodePoints(fileBody, *entry.CharStart, *entry.CharEnd)
+	if slice != prompt {
+		t.Errorf("round-trip slice mismatch:\n got: %q\nwant: %q", slice, prompt)
+	}
+}
+
+func TestEnrichFinding_MultiLine(t *testing.T) {
+	dir := t.TempDir()
+	fileBody := "const SYSTEM_PROMPT = `You are a careful assistant.\n" +
+		"Help the user step by step.\n" +
+		"Always confirm before destructive actions.`\n"
+	if err := os.WriteFile(filepath.Join(dir, "a.ts"), []byte(fileBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f := AgentFinding{
+		Path:       "a.ts",
+		LineStart:  1,
+		LineEnd:    3,
+		StartsWith: "You are a careful assistant.",
+		EndsWith:   "before destructive actions.",
+	}
+	entry, ok := enrichFinding(dir, f)
+	if !ok {
+		t.Fatal("enrichFinding failed for multi-line prompt")
+	}
+	got := manifest.SliceByCodePoints(fileBody, *entry.CharStart, *entry.CharEnd)
+	want := "You are a careful assistant.\nHelp the user step by step.\nAlways confirm before destructive actions."
+	if got != want {
+		t.Errorf("slice mismatch:\n got: %q\nwant: %q", got, want)
+	}
+}
+
+func TestEnrichFinding_OrphansMissingAnchors(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.ts"), []byte("const X = \"hello world\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// startsWith doesn't appear on line 1.
+	f := AgentFinding{
+		Path:       "a.ts",
+		LineStart:  1,
+		LineEnd:    1,
+		StartsWith: "something the agent hallucinated",
+		EndsWith:   "world",
+	}
+	if _, ok := enrichFinding(dir, f); ok {
+		t.Error("enrichFinding should return !ok when startsWith is absent")
+	}
+}
+
+func TestEnrichFinding_OrphansEmptyAnchors(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.ts"), []byte("const X = \"hi\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f := AgentFinding{Path: "a.ts", LineStart: 1, LineEnd: 1}
+	if _, ok := enrichFinding(dir, f); ok {
+		t.Error("enrichFinding should return !ok when anchors are missing")
 	}
 }

@@ -308,7 +308,7 @@ func addPromptInteractive(cwd string, p Prompter) *manifest.Prompt {
 
 	varName, _ := p.Text("Variable name "+Dim("(optional, Enter to skip)")+":", "")
 	varName = strings.TrimSpace(varName)
-	slice := text[charStart:charEnd]
+	slice := manifest.SliceByCodePoints(text, charStart, charEnd)
 	entry := manifest.Prompt{
 		ID:        manifest.GeneratePromptID(fmt.Sprintf("%s:%d:%d:%s", rel, ls, le, varName), -1),
 		Type:      manifest.PromptEmbedded,
@@ -342,8 +342,10 @@ func lineNumberFallback(text string, p Prompter) (lineStart, lineEnd, charStart,
 		return 0, 0, 0, 0
 	}
 
-	lineCharStart := manifest.LineToCharOffset(text, ls-1)
-	lineCharEnd := manifest.LineToCharOffset(text, le)
+	// Code-point offsets, not bytes; matches manifest wire format and
+	// the slicing the Python handler does.
+	lineCharStart := manifest.LineToCodePointOffset(text, ls-1)
+	lineCharEnd := manifest.LineToCodePointOffset(text, le)
 	if lineCharStart < 0 || lineCharEnd <= lineCharStart {
 		Bullet("Line range is past the end of the file", BulletFail)
 		return 0, 0, 0, 0

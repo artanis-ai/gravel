@@ -12,6 +12,7 @@
 import { json } from '../index.js'
 import { repoRoot } from '../repo-root.js'
 import type { RouteTable } from '../route-ctx.js'
+import { sliceByCodePoints } from '../../manifest/offsets.js'
 
 export const promptsRoutes: RouteTable = {
   'GET /api/prompts': async ({ authed }) => {
@@ -28,7 +29,9 @@ export const promptsRoutes: RouteTable = {
         let preview = ''
         try {
           const text = await fs.readFile(join(repoRoot(), p.path), 'utf8')
-          const slice = p.type === 'embedded' ? text.slice(p.charStart, p.charEnd) : text
+          // Manifest offsets are Unicode code points — see manifest/offsets.ts.
+          const slice =
+            p.type === 'embedded' ? sliceByCodePoints(text, p.charStart, p.charEnd) : text
           preview = slice.trim().slice(0, 280)
         } catch {
           /* file gone since manifest scan; return blank preview */
@@ -53,8 +56,8 @@ export const promptsRoutes: RouteTable = {
     if (entry.type === 'file') {
       return json({ id: entry.id, type: entry.type, path: entry.path, content: fullText })
     }
-    // Embedded: slice by char range.
-    const content = fullText.slice(entry.charStart, entry.charEnd)
+    // Embedded: slice by code-point range (manifest offset unit).
+    const content = sliceByCodePoints(fullText, entry.charStart, entry.charEnd)
     return json({
       id: entry.id,
       type: entry.type,

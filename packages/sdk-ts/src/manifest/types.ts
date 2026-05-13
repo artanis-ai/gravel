@@ -11,7 +11,13 @@ export interface PromptSegment {
   /** 1-indexed, inclusive */
   lineStart: number
   lineEnd: number
-  /** 0-indexed byte offsets, half-open [charStart, charEnd) into the file */
+  /**
+   * Unicode code-point offsets, half-open `[charStart, charEnd)` into
+   * the file content. NOT UTF-16 code units (JS native) and NOT UTF-8
+   * bytes (Go native). Use `sliceByCodePoints` from
+   * `manifest/offsets.ts` to read/write; plain `.slice()` will chop
+   * surrogate pairs on emoji and astral characters.
+   */
   charStart: number
   charEnd: number
   /** Variable / constant name (best-effort) */

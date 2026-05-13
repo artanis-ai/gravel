@@ -135,10 +135,13 @@ func FastScan(repoRoot string, current Manifest) (FastScanResult, error) {
 				result.Changed++
 			}
 		case PromptEmbedded:
-			// Re-hash the byte slice the manifest currently points at.
-			// Position tracking when the body moves is a deep-scan job;
-			// fast scan only updates the hash when the slice's content
-			// drifts. Matches the TS reference behaviour + caveat.
+			// Re-hash the code-point slice the manifest currently
+			// points at. Position tracking when the body moves is the
+			// deep-scan's job; fast scan only updates the hash when
+			// the slice's content drifts. Matches the TS reference
+			// behaviour + caveat. Offsets are CODE POINTS (matches
+			// Python str slicing), never bytes — see offsets.go for
+			// the cross-stack contract.
 			cs, ce := 0, 0
 			if p.CharStart != nil {
 				cs = *p.CharStart
@@ -146,16 +149,18 @@ func FastScan(repoRoot string, current Manifest) (FastScanResult, error) {
 			if p.CharEnd != nil {
 				ce = *p.CharEnd
 			}
+			text := string(content)
+			cpLen := CodePointLen(text)
 			if cs < 0 {
 				cs = 0
 			}
-			if ce > len(content) {
-				ce = len(content)
+			if ce > cpLen {
+				ce = cpLen
 			}
 			if ce < cs {
 				ce = cs
 			}
-			slice := string(content[cs:ce])
+			slice := SliceByCodePoints(text, cs, ce)
 			newHash := HashPrompt(slice)
 			if newHash == p.Hash {
 				result.Manifest.Prompts = append(result.Manifest.Prompts, p)

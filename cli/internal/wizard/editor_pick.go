@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/artanis-ai/gravel/cli/internal/manifest"
 )
 
 // editor_pick.go: interactive-selection helper for the wizard's
@@ -33,8 +35,10 @@ const EditorEnv = "EDITOR"
 const defaultEditor = "vi"
 
 // EditorPickResult captures what the user selected, expressed as
-// offsets into the original (un-edited) source. Empty when the user
-// declined / didn't select anything actionable.
+// offsets into the original (un-edited) source. CharStart / CharEnd
+// are Unicode code-point indices (NOT bytes), matching the manifest
+// wire format. Empty when the user declined / didn't select anything
+// actionable.
 type EditorPickResult struct {
 	CharStart int
 	CharEnd   int
@@ -156,14 +160,18 @@ func findSelectionOffsets(original, selection string) (EditorPickResult, bool) {
 		// fall back to the whole-file path).
 		return EditorPickResult{}, false
 	}
-	idx := strings.Index(original, trimmed)
-	if idx < 0 {
+	byteIdx := strings.Index(original, trimmed)
+	if byteIdx < 0 {
 		// User edited the content (didn't just delete around it).
 		return EditorPickResult{}, false
 	}
-	charStart := idx
-	charEnd := idx + len(trimmed)
-	lineStart := 1 + strings.Count(original[:charStart], "\n")
+	// Convert byte offsets (Go-native) to code-point offsets (manifest
+	// wire format). Same characters either way for pure ASCII; differ
+	// the moment the surrounding source contains an em-dash, smart
+	// quote, accented letter, or emoji.
+	charStart := manifest.ByteOffsetToCodePoint(original, byteIdx)
+	charEnd := charStart + manifest.CodePointLen(trimmed)
+	lineStart := 1 + strings.Count(original[:byteIdx], "\n")
 	lineEnd := lineStart + strings.Count(trimmed, "\n")
 	return EditorPickResult{
 		CharStart: charStart,

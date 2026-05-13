@@ -1,6 +1,6 @@
 # Status
 
-> **Last updated:** 2026-05-13 (v0.5.13 shipped; audit-driven fixes through v0.5.7–v0.5.13).
+> **Last updated:** 2026-05-13 (v0.5.14 shipped; audit-driven fixes through v0.5.7–v0.5.14).
 
 ## Where we are
 
@@ -21,6 +21,7 @@
 - **v0.5.11** — Closes the residual audit findings: TS auth gates on `/api/prompts`, `/api/samples`, `/api/github/status` to match Python (information disclosure fix). Unit tests for `_github_api.py` (24) and `samples_query.py` (50). Bare-`except` hygiene in `auth.py` / `_github_api.py` / `judge/client.py`. Session TTL constant decoupled from the magic-number cookie Max-Age.
 - **v0.5.12** — Generic-fetch tracing port to Python (httpx sync + async, requests, aiohttp, stdlib urllib; 41 tests against an in-process `http.server` thread). TS `routes.ts` split into per-domain files (`auth.ts`, `version.ts`, `migrations.ts`, `prompts.ts`, `github.ts`, `samples.ts`, `shell.ts`, `assets.ts`) to match the Python `_handler.py` shape; cookies + shell helpers extracted. New Playwright E2E suite for the dashboard (15 tests covering auth + samples + prompts + github flows), wired into CI as a dedicated `dashboard-e2e` job.
 - **v0.5.13** — Wizard detects a dev server already listening on the framework default port and warns "restart your server" so newly-written mount code is actually picked up (real customer 404 closed). Dashboard component test coverage roughly doubled with new PayloadShape (12), CopyableCode (6), and Login (8) suites. CI caches Playwright browser binaries by version, saving ~30s per run. `gravel-test-fixtures` gains a `manifest:deep-scan` journey that runs `gravel scan --deep --yes` and asserts the manifest gains embedded entries in declared `deepScanFiles` paths.
+- **v0.5.14** — Deep-scan rewrite. (1) Killed the dead OpenAI file-by-file scan path (`packages/sdk-ts/src/manifest/deep-scan.ts`) — only its test imported it, never wired into the wizard. One deep-scan now: the agent-delegated one. (2) Agent contract switched from line-only + `snippet` to `startsWith` / `endsWith` anchors — short substrings of the prompt content as they literally appear on `lineStart` / `lineEnd`. The SDK resolves the anchors to precise offsets itself (str.find on the bounded line); no more "the slice includes the surrounding `const X = "..."` syntax." (3) Manifest `charStart` / `charEnd` are now Unicode code points everywhere. Previously: Go wrote UTF-8 byte offsets, TS wrote UTF-16 code units, Python sliced as code points — any non-ASCII content (em-dash, smart quote, accented letter, emoji) desynced the three counts and the handler cut the wrong characters. New helpers in `manifest/offsets.{go,ts}` (`SliceByCodePoints`, `CodePointLen`, `LineContentCodePoints`); all readers/writers go through them. Round-trip multi-byte tests added in Go, TS, Python.
 
 ## What ships in `artanis-ai/gravel` today
 

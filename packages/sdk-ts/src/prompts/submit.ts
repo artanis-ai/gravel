@@ -31,6 +31,7 @@ import {
   type ManifestPromptEmbedded,
 } from '../manifest/index.js'
 import { hashPrompt } from '../manifest/hash.js'
+import { codePointLength, sliceByCodePoints } from '../manifest/offsets.js'
 import { githubAPI } from '../github/api.js'
 import { createPullRequest, type PromptChange, type CreatePullRequestResult } from '../github/create-pr.js'
 
@@ -162,7 +163,12 @@ export async function submitDrafts(args: SubmitArgs): Promise<CreatePullRequestR
 
     let next = current
     for (const { entry, draft } of sorted) {
-      next = next.slice(0, entry.charStart) + draft.newText + next.slice(entry.charEnd)
+      // Splice in code-point space (the manifest offset unit), not
+      // UTF-16. Same characters either way for pure ASCII; surrogate
+      // pairs (any emoji, astral char) split mid-pair otherwise.
+      const before = sliceByCodePoints(next, 0, entry.charStart)
+      const after = sliceByCodePoints(next, entry.charEnd, codePointLength(next))
+      next = before + draft.newText + after
     }
     changes.push({ path, content: next })
     newContentByPath.set(path, next)
@@ -204,7 +210,9 @@ export async function submitDrafts(args: SubmitArgs): Promise<CreatePullRequestR
     for (const e of sameFileEmbedded) {
       if (e.charStart < entry.charStart && edits.has(e.charStart)) {
         const newText = edits.get(e.charStart)!
-        delta += newText.length - (e.charEnd - e.charStart)
+        // Measure in code points to match the offset unit; `.length`
+        // on a JS string is UTF-16 code units.
+        delta += codePointLength(newText) - (e.charEnd - e.charStart)
       }
     }
     const newCharStart = entry.charStart + delta
@@ -212,7 +220,7 @@ export async function submitDrafts(args: SubmitArgs): Promise<CreatePullRequestR
     let newHash: string
     if (editedIds.has(entry.id)) {
       const newText = edits.get(entry.charStart)!
-      newCharEnd = newCharStart + newText.length
+      newCharEnd = newCharStart + codePointLength(newText)
       newHash = hashPrompt(newText)
     } else {
       newCharEnd = entry.charEnd + delta
@@ -246,12 +254,18 @@ export async function submitDrafts(args: SubmitArgs): Promise<CreatePullRequestR
   }
 }
 
-/** 1-indexed line number for the line containing char at `offset`. */
-function charOffsetToLine(text: string, offset: number): number {
+/**
+ * 1-indexed line number for the line containing the code-point at
+ * `cpOffset`. Walks the string by code point so a surrogate-pair
+ * astral character before the offset doesn't undercount or overcount.
+ */
+function charOffsetToLine(text: string, cpOffset: number): number {
   let line = 1
-  const limit = Math.min(offset, text.length)
-  for (let i = 0; i < limit; i++) {
-    if (text[i] === '\n') line++
+  let cp = 0
+  for (const ch of text) {
+    if (cp >= cpOffset) break
+    if (ch === '\n') line++
+    cp++
   }
   return line
 }

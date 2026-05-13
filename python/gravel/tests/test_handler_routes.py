@@ -356,6 +356,76 @@ def test_github_install_callback_missing_params_redirects_anyway(monkeypatch, tm
 # --- /api/prompts (uses GRAVEL_REPO_ROOT) -------------------------------
 
 
+def test_prompts_detail_multibyte_roundtrip(monkeypatch, tmp_path):
+    """End-to-end: write a manifest entry whose slice contains em-dash,
+    smart quote, and an emoji (every char type that desyncs UTF-8 bytes
+    from UTF-16 code units from Unicode code points). The handler's
+    slice must return the prompt content byte-for-byte.
+
+    This is the round-trip Yousef hit a bug on (with byte offsets,
+    the slice over-cut surrounding chars). Manifest offsets are now
+    Unicode code points everywhere — see manifest/offsets.go +
+    manifest/offsets.ts.
+    """
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    prompt = "You’re a kind assistant — guide them to the \U0001f3af with care."
+    file_body = (
+        "// HEADER: préfixe\n" + "const SYSTEM_PROMPT = `" + prompt + "`\n"
+    )
+    (repo_root / "agent.ts").write_text(file_body, encoding="utf-8")
+
+    # Code-point offsets of the prompt body inside file_body.
+    line2_start = file_body.index("const SYSTEM_PROMPT")
+    # Walk to the backtick + 1 (the prompt content starts there in code points).
+    # The file_body up to the opening backtick contains "préfixe" (1 multibyte
+    # char) — count code points by walking the prefix.
+    opening_backtick_byte = file_body.index("`")
+    cp_start = len(file_body[:opening_backtick_byte]) + 1  # str slice IS code points
+    cp_end = cp_start + len(prompt)
+    assert file_body[cp_start:cp_end] == prompt, (
+        "offset arithmetic broken in test setup"
+    )
+
+    manifest = {
+        "version": 1,
+        "prompts": [
+            {
+                "id": "p_mb",
+                "type": "embedded",
+                "path": "agent.ts",
+                "charStart": cp_start,
+                "charEnd": cp_end,
+                "lineStart": 2,
+                "lineEnd": 2,
+                "varName": "SYSTEM_PROMPT",
+                "hash": "0",
+            }
+        ],
+    }
+    (repo_root / ".gravel").mkdir()
+    (repo_root / ".gravel" / "manifest.json").write_text(json.dumps(manifest))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GRAVEL_REPO_ROOT", str(repo_root))
+
+    client, cookie = _mk_app()
+    # 1. Detail endpoint returns exact slice.
+    res = client.get("/admin/ai/api/prompts/p_mb", headers={"cookie": cookie})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["content"] == prompt, (
+        f"detail slice diverged:\n  got: {body['content']!r}\n want: {prompt!r}"
+    )
+    # 2. List preview also slices in code points.
+    res = client.get("/admin/ai/api/prompts", headers={"cookie": cookie})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    preview = next(p for p in body["prompts"] if p["id"] == "p_mb")["preview"]
+    assert preview == prompt.strip()[:280]
+    # The 🎯 must survive intact (not be a half-surrogate \ud83c).
+    assert "\U0001f3af" in preview
+
+
 def test_prompts_list_uses_gravel_repo_root(monkeypatch, tmp_path):
     """Set GRAVEL_REPO_ROOT and ensure the handler reads the manifest
     from that path, not from os.getcwd()."""

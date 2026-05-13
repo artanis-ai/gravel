@@ -12,6 +12,7 @@
 import { promises as fs } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import { hashPrompt, generatePromptId } from './hash.js'
+import { sliceByCodePoints } from './offsets.js'
 import {
   type Manifest,
   type ManifestPrompt,
@@ -65,7 +66,10 @@ export async function fastScan(repoRoot: string, current: Manifest): Promise<Fas
       // changed, we update hash but keep positions where they were. A real
       // implementation needs an AST walk; for v0 fast scan, we just re-hash
       // by reading the same span.
-      const slice = content.slice(prompt.charStart, prompt.charEnd)
+      // Code-point slicing — manifest offsets are Unicode code points,
+      // not UTF-16 code units. plain `content.slice` would chop on
+      // surrogate-pair boundaries (any emoji, astral char).
+      const slice = sliceByCodePoints(content, prompt.charStart, prompt.charEnd)
       const newHash = hashPrompt(slice)
       if (newHash === prompt.hash) {
         result.manifest.prompts.push(prompt)

@@ -52,12 +52,25 @@ type AgentDeepScanResult struct {
 
 // AgentFinding is the raw shape the agent emits per finding (one
 // JSON line on stdout).
+//
+// `StartsWith` and `EndsWith` are short anchored substrings of the
+// prompt content itself (NOT including surrounding quote characters or
+// `const X =` syntax). They're how we resolve precise code-point
+// offsets without trusting the agent to count characters:
+//
+//   - `StartsWith` must appear on `LineStart`; we take its FIRST
+//     occurrence on that line.
+//   - `EndsWith` must appear on `LineEnd`; we take its LAST occurrence
+//     on that line.
+//
+// Either field missing or unmatched on its line → orphan.
 type AgentFinding struct {
-	Path      string `json:"path"`
-	LineStart int    `json:"lineStart"`
-	LineEnd   int    `json:"lineEnd"`
-	VarName   string `json:"varName,omitempty"`
-	Snippet   string `json:"snippet,omitempty"`
+	Path       string `json:"path"`
+	LineStart  int    `json:"lineStart"`
+	LineEnd    int    `json:"lineEnd"`
+	VarName    string `json:"varName,omitempty"`
+	StartsWith string `json:"startsWith,omitempty"`
+	EndsWith   string `json:"endsWith,omitempty"`
 }
 
 // DetectAgents probes the user's PATH for `claude` and `codex`. On
@@ -209,6 +222,12 @@ func agentArgs(agent AgentName) []string {
 // renderTaskMessage is the prompt we pipe to the agent. Identical
 // in spirit to the TS reference — JSONL findings + ###DONE### sentinel,
 // rigid format because we need parseable output, not chatter.
+//
+// The agent reports `startsWith` + `endsWith` instead of numeric char
+// offsets: short anchors of the prompt content's first/last few words.
+// We resolve them to code-point offsets ourselves (str.find + rfind
+// bounded to the reported line) so the agent never has to count chars
+// — character counting is what they're worst at.
 func renderTaskMessage(known map[string]struct{}) string {
 	skip := "None."
 	if len(known) > 0 {
@@ -251,21 +270,39 @@ func renderTaskMessage(known map[string]struct{}) string {
 		"3. For each prompt you find, output ONE line of JSON to stdout (no",
 		"   prefix or explanation around it):",
 		"",
-		`   {"path":"src/agents/triage.ts","lineStart":12,"lineEnd":28,"varName":"SYSTEM_PROMPT","snippet":"You are a careful..."}`,
+		`   {"path":"src/agents/triage.ts","lineStart":12,"lineEnd":28,"varName":"SYSTEM_PROMPT","startsWith":"You are a careful triage","endsWith":"end of conversation."}`,
 		"",
 		"4. After ALL findings, output exactly this on its own line:",
 		"   ###DONE###",
 		"",
-		"## Constraints",
+		"## Field rules",
 		"",
-		"- Paths must be relative to the repo root, forward slashes.",
-		"- \"lineStart\" is 1-indexed, inclusive. \"lineEnd\" is the last line of the",
-		"  prompt, inclusive.",
-		"- \"varName\" is best-effort; null is fine if there's no obvious name.",
-		"- \"snippet\" is the first ~80 characters of the prompt content (escape",
-		"  control chars; one line).",
+		"- `path`: relative to the repo root, forward slashes.",
+		"- `lineStart` / `lineEnd`: 1-indexed, inclusive. `lineEnd` is the last",
+		"  line containing prompt content.",
+		"- `varName`: best-effort identifier (constant / variable / dict key the",
+		"  prompt is assigned to). Omit if there isn't one.",
+		"- `startsWith`: the FIRST ~20-40 characters of the prompt content as it",
+		"  literally appears on `lineStart`. EXCLUDE the surrounding quote char,",
+		"  variable assignment, dict key — just the prompt text. Must occur on",
+		"  `lineStart` in the source. We use it as an anchor to find the start",
+		"  offset.",
+		"- `endsWith`: the LAST ~20-40 characters of the prompt content as it",
+		"  literally appears on `lineEnd`. Same rules as `startsWith`. Must occur",
+		"  on `lineEnd` in the source.",
+		"- For single-line prompts (lineStart == lineEnd) `startsWith` and",
+		"  `endsWith` may overlap — that's fine, we handle it.",
+		"",
+		"## What counts and what doesn't",
+		"",
 		"- Skip prompts shorter than ~30 characters (those are probably labels,",
 		"  not prompts).",
+		"- Anchors must be the prompt CONTENT, not the syntax that wraps it.",
+		"  `const X = \"You are helpful\"` → startsWith `\"You are helpful\"` is WRONG",
+		"  (includes the quote). Correct: `You are helpful`.",
+		"- If a prompt is built from f-string / template-literal interpolation",
+		"  (`Translate ${language}: ...`), use the static substring that appears",
+		"  literally in the source for the anchor.",
 		"- Do NOT emit anything other than JSONL findings + the final ###DONE###",
 		"  line. No commentary, no headers.",
 		"",
@@ -318,29 +355,71 @@ func parseFindings(stdout string, errs *[]string) []AgentFinding {
 	return out
 }
 
-// enrichFinding turns an agent-reported line range into a fully-baked
-// manifest.Prompt: reads the file, computes char offsets via
-// LineToCharOffset, hashes the slice, mints a stable id. Returns
-// (entry, false) when the file is missing or the line range falls
-// past EOF — the caller surfaces those as orphans.
+// enrichFinding turns an agent-reported finding into a fully-baked
+// manifest.Prompt. Resolves startsWith / endsWith anchors against the
+// reported lineStart / lineEnd to compute precise code-point offsets;
+// hashes the slice; mints a stable id. Returns (entry, false) when:
+//   - the file is missing,
+//   - lineStart / lineEnd fall past EOF,
+//   - startsWith is missing or doesn't occur on lineStart, or
+//   - endsWith is missing or doesn't occur on lineEnd (after startsWith
+//     when single-line).
+// Orphans get surfaced to the user — they're usually the agent emitting
+// a snippet that doesn't literally appear in the source (paraphrased,
+// or off by a line).
 func enrichFinding(repoRoot string, f AgentFinding) (manifest.Prompt, bool) {
+	if f.StartsWith == "" || f.EndsWith == "" {
+		return manifest.Prompt{}, false
+	}
 	abs := filepath.Join(repoRoot, filepath.FromSlash(f.Path))
 	body, err := readFile(abs)
 	if err != nil {
 		return manifest.Prompt{}, false
 	}
 	text := body
-	cs := manifest.LineToCharOffset(text, f.LineStart-1)
-	if cs < 0 {
+
+	// Bound the start anchor search to lineStart's content.
+	lineStartBegin, lineStartEnd := manifest.LineContentCodePoints(text, f.LineStart)
+	if lineStartBegin < 0 {
 		return manifest.Prompt{}, false
 	}
-	ce := manifest.LineToCharOffset(text, f.LineEnd)
-	if ce <= cs {
+	lineStartText := manifest.SliceByCodePoints(text, lineStartBegin, lineStartEnd)
+	relStart := strings.Index(lineStartText, f.StartsWith)
+	if relStart < 0 {
 		return manifest.Prompt{}, false
 	}
-	slice := text[cs:ce]
+	// Convert the byte offset inside lineStartText to a code-point
+	// offset, then add the line's code-point base.
+	charStart := lineStartBegin + manifest.ByteOffsetToCodePoint(lineStartText, relStart)
+
+	// Bound the end anchor search to lineEnd's content. When single-
+	// line, constrain the search to the slice AFTER charStart so a
+	// short endsWith that also appears before the prompt doesn't win.
+	lineEndBegin, lineEndEnd := manifest.LineContentCodePoints(text, f.LineEnd)
+	if lineEndBegin < 0 {
+		return manifest.Prompt{}, false
+	}
+	searchBeginCP := lineEndBegin
+	if f.LineStart == f.LineEnd && charStart > searchBeginCP {
+		searchBeginCP = charStart
+	}
+	lineEndText := manifest.SliceByCodePoints(text, searchBeginCP, lineEndEnd)
+	relEnd := strings.LastIndex(lineEndText, f.EndsWith)
+	if relEnd < 0 {
+		return manifest.Prompt{}, false
+	}
+	// LastIndex returns byte offset of the START of EndsWith inside
+	// lineEndText. The slice's END is that offset + len(EndsWith) — in
+	// code points.
+	endsWithStartCP := searchBeginCP + manifest.ByteOffsetToCodePoint(lineEndText, relEnd)
+	charEnd := endsWithStartCP + manifest.CodePointLen(f.EndsWith)
+	if charEnd <= charStart {
+		return manifest.Prompt{}, false
+	}
+
+	slice := manifest.SliceByCodePoints(text, charStart, charEnd)
 	ls, le := f.LineStart, f.LineEnd
-	charStart, charEnd := cs, ce
+	csOut, ceOut := charStart, charEnd
 	entry := manifest.Prompt{
 		ID:        manifest.GeneratePromptID(fmt.Sprintf("%s:%d:%d:%s", f.Path, f.LineStart, f.LineEnd, f.VarName), -1),
 		Type:      manifest.PromptEmbedded,
@@ -348,8 +427,8 @@ func enrichFinding(repoRoot string, f AgentFinding) (manifest.Prompt, bool) {
 		Hash:      manifest.HashPrompt(slice),
 		LineStart: &ls,
 		LineEnd:   &le,
-		CharStart: &charStart,
-		CharEnd:   &charEnd,
+		CharStart: &csOut,
+		CharEnd:   &ceOut,
 	}
 	if f.VarName != "" {
 		v := f.VarName
