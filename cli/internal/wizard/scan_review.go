@@ -244,34 +244,46 @@ func addPromptInteractive(cwd string, p Prompter) *manifest.Prompt {
 		return &entry
 	}
 
-	Say("OK, embedded prompt. Tell me where in the file it lives.")
-	startStr, _ := p.Text("Start line (1-indexed):", "")
-	endStr, _ := p.Text("End line (inclusive):", "")
-	ls, errA := strconv.Atoi(strings.TrimSpace(startStr))
-	le, errB := strconv.Atoi(strings.TrimSpace(endStr))
-	if errA != nil || errB != nil || ls < 1 || le < ls {
-		Bullet(fmt.Sprintf("Invalid line range: %s-%s", startStr, endStr), BulletFail)
-		return nil
-	}
-
-	lineCharStart := manifest.LineToCharOffset(text, ls-1)
-	lineCharEnd := manifest.LineToCharOffset(text, le)
-	if lineCharStart < 0 || lineCharEnd <= lineCharStart {
-		Bullet("Line range is past the end of the file", BulletFail)
-		return nil
-	}
-	charStart, charEnd := lineCharStart, lineCharEnd
-
-	override, _ := p.YesNo("Want to narrow it to a specific char range within those lines? "+Dim("(default: full lines)"), false)
-	if override {
-		csStr, _ := p.Text(fmt.Sprintf("Char start (offset into the file, >= %d):", lineCharStart), "")
-		ceStr, _ := p.Text(fmt.Sprintf("Char end (<= %d):", lineCharEnd), "")
-		cs, errCS := strconv.Atoi(strings.TrimSpace(csStr))
-		ce, errCE := strconv.Atoi(strings.TrimSpace(ceStr))
-		if errCS == nil && errCE == nil && cs >= lineCharStart && ce <= lineCharEnd && ce > cs {
-			charStart, charEnd = cs, ce
+	// Pick between the two range-entry UXes based on prompter type:
+	//   * Humans (ttyPrompter on a real TTY): spawn $EDITOR, let them
+	//     "delete around" the prompt for interactive selection.
+	//   * Everyone else (DefaultsPrompter, scripted test prompters,
+	//     pipes): the old line/char number prompts. Scriptable and
+	//     predictable for agent deep-scans and tests.
+	//
+	// Humans can still fall through to the line-number path by
+	// cancelling out of the editor (the editor flow returns ok=false
+	// on no-selection / no-change / non-substring edits).
+	var ls, le, charStart, charEnd int
+	if canSpawnEditor(p) {
+		Say("OK, embedded prompt. Going to open it in your editor: " +
+			"delete everything " + Bold("outside") + " the prompt you want to capture, " +
+			"then save and exit.")
+		_ = p.PressEnter("Press Enter to open the editor")
+		picked, ok, err := editorPickSelection(text, rel)
+		if err != nil {
+			Bullet("Editor couldn't start: "+err.Error(), BulletFail)
+			return nil
+		}
+		if ok {
+			ls, le = picked.LineStart, picked.LineEnd
+			charStart, charEnd = picked.CharStart, picked.CharEnd
+			preview := text[charStart:charEnd]
+			if len(preview) > 80 {
+				preview = preview[:80] + "…"
+			}
+			Bullet(fmt.Sprintf("Captured L%d-%d %s", ls, le, Dim("("+strings.ReplaceAll(preview, "\n", " ")+")")), BulletOK)
 		} else {
-			Bullet("Invalid char range; falling back to full lines", BulletWarn)
+			Bullet("No actionable selection. Falling back to line-number entry.", BulletWarn)
+			ls, le, charStart, charEnd = lineNumberFallback(text, p)
+			if ls == 0 {
+				return nil // line-number path also rejected
+			}
+		}
+	} else {
+		ls, le, charStart, charEnd = lineNumberFallback(text, p)
+		if ls == 0 {
+			return nil
 		}
 	}
 
@@ -292,6 +304,46 @@ func addPromptInteractive(cwd string, p Prompter) *manifest.Prompt {
 		entry.VarName = &varName
 	}
 	return &entry
+}
+
+// lineNumberFallback is the original "type your line range" entry
+// path. Used unconditionally for non-TTY callers (agents, --yes
+// runs), and as a fallback for humans when the editor-pick flow
+// declines.
+//
+// Returns (0, 0, 0, 0) on any validation failure — caller should
+// treat that as "user cancelled, drop this entry".
+func lineNumberFallback(text string, p Prompter) (lineStart, lineEnd, charStart, charEnd int) {
+	startStr, _ := p.Text("Start line (1-indexed):", "")
+	endStr, _ := p.Text("End line (inclusive):", "")
+	ls, errA := strconv.Atoi(strings.TrimSpace(startStr))
+	le, errB := strconv.Atoi(strings.TrimSpace(endStr))
+	if errA != nil || errB != nil || ls < 1 || le < ls {
+		Bullet(fmt.Sprintf("Invalid line range: %s-%s", startStr, endStr), BulletFail)
+		return 0, 0, 0, 0
+	}
+
+	lineCharStart := manifest.LineToCharOffset(text, ls-1)
+	lineCharEnd := manifest.LineToCharOffset(text, le)
+	if lineCharStart < 0 || lineCharEnd <= lineCharStart {
+		Bullet("Line range is past the end of the file", BulletFail)
+		return 0, 0, 0, 0
+	}
+	cs, ce := lineCharStart, lineCharEnd
+
+	override, _ := p.YesNo("Want to narrow it to a specific char range within those lines? "+Dim("(default: full lines)"), false)
+	if override {
+		csStr, _ := p.Text(fmt.Sprintf("Char start (offset into the file, >= %d):", lineCharStart), "")
+		ceStr, _ := p.Text(fmt.Sprintf("Char end (<= %d):", lineCharEnd), "")
+		csN, errCS := strconv.Atoi(strings.TrimSpace(csStr))
+		ceN, errCE := strconv.Atoi(strings.TrimSpace(ceStr))
+		if errCS == nil && errCE == nil && csN >= lineCharStart && ceN <= lineCharEnd && ceN > csN {
+			cs, ce = csN, ceN
+		} else {
+			Bullet("Invalid char range; falling back to full lines", BulletWarn)
+		}
+	}
+	return ls, le, cs, ce
 }
 
 // toRepoRelative converts an arbitrary user-typed path into one
