@@ -32,8 +32,8 @@ import threading
 from pathlib import Path
 from typing import Any, Iterator
 
+import httpx
 import pytest
-import requests
 import sqlalchemy as sa
 from sqlalchemy import create_engine
 
@@ -235,9 +235,10 @@ def test_fastapi_router_then_real_llm_call_writes_row(
     persister, so step 3's captured trace had nowhere to land. This
     test asserts the full round-trip writes a row to gravel_samples.
 
-    We use `requests` (a transport the fetch patch covers) and point
-    it at a stub HTTP server whose path matches the LLM classifier
-    so the patch records it as a real call.
+    We use `httpx` (a transport the fetch patch covers — and a real
+    project dep, unlike `requests`) and point it at a stub HTTP server
+    whose path matches the LLM classifier so the patch records it as
+    a real call.
     """
     url = _sqlite_url(tmp_path)
     _bootstrap_tables(url)
@@ -245,7 +246,7 @@ def test_fastapi_router_then_real_llm_call_writes_row(
 
     # OpenAI-shape URL on our local stub. The classifier matches
     # `/v1/chat/completions` regardless of host.
-    response = requests.post(
+    response = httpx.post(
         f"{llm_server}/v1/chat/completions",
         json={
             "model": "gpt-4o-mini",
