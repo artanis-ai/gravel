@@ -84,6 +84,11 @@ export interface MintedInstallationToken {
 /**
  * Ask the CP to mint a 1-hour repo-scoped GitHub installation token.
  * Auth = the install_secret in our env (HMAC-verified server-side).
+ *
+ * `repo_full_name` (from .env.local) is passed so the CP can verify
+ * that the install actually covers this repo — required when the
+ * install covers multiple repos (the install_secret unlocks the whole
+ * install; the repo name picks which one to bind the token to).
  */
 export async function mintInstallationTokenViaCp(
   state: GhInstallState,
@@ -95,6 +100,7 @@ export async function mintInstallationTokenViaCp(
     body: JSON.stringify({
       installation_id: state.installationId,
       install_secret: state.installSecret,
+      repo_full_name: `${state.repoOwner}/${state.repoName}`,
     }),
   })
   if (!res.ok) {

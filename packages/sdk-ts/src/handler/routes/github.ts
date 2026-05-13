@@ -51,10 +51,19 @@ export const githubRoutes: RouteTable = {
     }
     // Bounce to the CP's install/start so it can sign the state JWT
     // GitHub's install URL needs. No project_id — the CP is anonymous
-    // for this flow.
+    // for this flow. We also pass `expected_repo` (best-effort, from
+    // `git remote get-url origin`) so the callback can pick the right
+    // repo if the user's install covers multiple — without it, the
+    // callback falls back to the first repo and the SDK surfaces a
+    // mismatch prompt to the user.
     const cpUrl = process.env.GRAVEL_CONTROL_PLANE_URL ?? 'https://gravel.artanis.ai'
     const start = new URL('/api/cli/github/install/start', cpUrl)
     start.searchParams.set('return_to', callback)
+    const { detectLocalGithubRepo } = await import('../../github/repo-detect.js')
+    const localRepo = detectLocalGithubRepo()
+    if (localRepo) {
+      start.searchParams.set('expected_repo', `${localRepo.owner}/${localRepo.name}`)
+    }
     return json({ redirectUrl: start.toString() })
   },
   'GET /api/github/install/callback': async ({ request, config }) => {

@@ -101,10 +101,15 @@ def mint_installation_token_via_cp(state: GhInstallState) -> MintedInstallationT
     import urllib.request
 
     url = _control_plane_url().rstrip("/") + "/api/cli/github/installation-token"
+    # repo_full_name is required when the install covers multiple repos
+    # (the install_secret unlocks the whole install; the repo name
+    # picks which one). Single-repo installs ignore it server-side but
+    # we always send it for parity with the TS SDK.
     payload = json.dumps(
         {
             "installation_id": state.installation_id,
             "install_secret": state.install_secret,
+            "repo_full_name": f"{state.repo_owner}/{state.repo_name}",
         }
     ).encode("utf-8")
     req = urllib.request.Request(

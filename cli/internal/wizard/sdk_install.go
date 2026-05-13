@@ -70,7 +70,7 @@ func gravelPackageName(lang stack.Language) string {
 // PyPI version get a broken install with no useful error.
 //
 // Update in lockstep with python/gravel/pyproject.toml `version`.
-const minSDKVersion = "0.5.16"
+const minSDKVersion = "0.5.17"
 
 // gravelInstallSpec returns the dependency spec we hand to the
 // package manager. For Python we pin `>=minSDKVersion` so `uv add`

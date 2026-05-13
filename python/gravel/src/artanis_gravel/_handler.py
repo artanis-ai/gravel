@@ -564,7 +564,17 @@ def _github_install(ctx: Context) -> HandlerResponse:
     start = cp.rstrip("/") + "/api/cli/github/install/start"
     from urllib.parse import quote
 
-    return _json_response({"redirectUrl": f"{start}?return_to={quote(callback, safe='')}"})
+    from ._repo_detect import detect_local_github_repo
+
+    url = f"{start}?return_to={quote(callback, safe='')}"
+    # Best-effort: pass `expected_repo` so the CP picks the right repo
+    # if the install covers multiple. Detection from git remote; falls
+    # back to "no hint" if anything goes wrong (CP picks first repo).
+    local = detect_local_github_repo()
+    if local:
+        owner, name = local
+        url += f"&expected_repo={quote(f'{owner}/{name}', safe='')}"
+    return _json_response({"redirectUrl": url})
 
 
 def _github_install_callback(ctx: Context) -> HandlerResponse:
