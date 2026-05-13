@@ -70,6 +70,7 @@ export class SubmitError extends Error {
       | 'no_drafts'
       | 'manifest_missing'
       | 'unknown_prompt'
+      | 'prompt_not_pushed'
       | 'github_failed',
     message: string,
     public details?: unknown,
@@ -106,6 +107,24 @@ export async function submitDrafts(args: SubmitArgs): Promise<CreatePullRequestR
   }
   if (missing.length > 0) {
     throw new SubmitError('unknown_prompt', 'One or more drafts refer to unknown prompts', { missing })
+  }
+
+  // Pre-flight: if any drafts reference files that aren't yet on the
+  // upstream branch, fail fast with a clear code rather than letting
+  // GitHub return a generic 404. The dashboard's pre-submit check
+  // should have caught this — this branch is the server-side defence-
+  // in-depth so we don't burn a GitHub roundtrip on a missing file.
+  const { unpushedPaths } = await import('../manifest/push-status.js')
+  const draftPaths = Array.from(new Set(resolved.map((r) => r.entry.path))).sort()
+  const notPushed = unpushedPaths(args.repoRoot, draftPaths)
+  if (notPushed.size > 0) {
+    const unpushedList = [...notPushed].sort()
+    const filesWord = unpushedList.length === 1 ? 'file' : 'files'
+    throw new SubmitError(
+      'prompt_not_pushed',
+      `The following ${filesWord} haven't been pushed to the upstream branch yet: ${unpushedList.join(', ')}. Push your branch first, then retry.`,
+      { unpushed: unpushedList },
+    )
   }
 
   const byPath = new Map<string, Resolved[]>()

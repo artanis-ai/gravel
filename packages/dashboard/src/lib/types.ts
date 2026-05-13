@@ -72,6 +72,15 @@ export interface ManifestPromptListItem {
   hash: string
   /** First ~280 chars of the prompt body, trimmed. Used by the grid card preview. */
   preview: string
+  /**
+   * True if the file at `path` exists on the upstream git branch.
+   * False means the file is local-only (uncommitted or committed but
+   * not pushed) — the dashboard surfaces this as an "Unpushed" badge
+   * and the SubmitModal blocks send-for-review for such drafts.
+   * Absent when the SDK couldn't determine (no git, no upstream, etc);
+   * treated as "pushed" in that case.
+   */
+  pushed?: boolean
   // embedded only
   lineStart?: number
   lineEnd?: number

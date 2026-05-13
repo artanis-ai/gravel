@@ -1,6 +1,6 @@
 {
   "name": "@artanis-ai/gravel",
-  "version": "0.5.20",
+  "version": "0.5.21",
   "description": "Embedded prompt management, tracing, and evals for AI engineering teams.",
   "license": "Apache-2.0",
   "homepage": "https://gravel.artanis.ai",

@@ -226,6 +226,15 @@ function PromptCard({
           )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {prompt.pushed === false && (
+            <span
+              title="This file hasn't been pushed to your team's codebase yet"
+              aria-label="Not pushed"
+              className="inline-flex items-center rounded-md border border-amber-300/60 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-900"
+            >
+              Unpushed
+            </span>
+          )}
           {hasDraft && (
             <span
               title="Unsubmitted draft"

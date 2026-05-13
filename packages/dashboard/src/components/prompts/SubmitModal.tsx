@@ -174,8 +174,29 @@ export function SubmitModal({
     },
   })
 
+  // Pre-flight: drafts whose underlying file isn't on the upstream
+  // branch can't be sent for review yet (GitHub returns 404 when we
+  // try to read the file). Surface this as a blocking warning at the
+  // top of the modal + disable the submit button.
+  const unpushedDrafts = drafts.filter((d) => d.prompt.pushed === false)
+
   function onFormSubmit(e: FormEvent) {
     e.preventDefault()
+    if (unpushedDrafts.length > 0) {
+      // Defence-in-depth: the submit button is already disabled in
+      // this state, but in case it's clicked anyway, surface the
+      // same Alert the warning block uses.
+      setError({
+        title:
+          unpushedDrafts.length === 1
+            ? "One of your prompts hasn't been pushed"
+            : `${unpushedDrafts.length} of your prompts haven't been pushed`,
+        body:
+          'Push your team\'s codebase first, then come back and send for review.',
+        details: unpushedDrafts.map((d) => d.prompt.path).join('\n'),
+      })
+      return
+    }
     if (!title.trim()) {
       setError({ title: 'Title is required', body: 'Add a short title so reviewers know what changed.' })
       return
@@ -209,10 +230,10 @@ export function SubmitModal({
           <button
             type="submit"
             form="submit-prompts-form"
-            disabled={submit.isPending || drafts.length === 0}
+            disabled={submit.isPending || drafts.length === 0 || unpushedDrafts.length > 0}
             className={cx(
               'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-white',
-              submit.isPending || drafts.length === 0
+              submit.isPending || drafts.length === 0 || unpushedDrafts.length > 0
                 ? 'cursor-not-allowed bg-primary/60'
                 : 'cursor-pointer bg-primary hover:bg-primary-dark',
             )}

@@ -23,6 +23,7 @@
  */
 import { useEffect, useMemo, useRef } from 'react'
 import { useEditor, EditorContent, type Editor } from '@tiptap/react'
+import { Editor as CoreEditor, type Extensions } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
 import Placeholder from '@tiptap/extension-placeholder'
@@ -60,13 +61,35 @@ function getMarkdown(editor: Editor): string {
 }
 
 /**
+ * Normalise a markdown string into the same plain-text shape that
+ * `editor.state.doc.textBetween(...)` produces for the live document.
+ *
+ * Why a transient editor rather than regex stripping: tiptap-markdown
+ * uses markdown-it, which is CommonMark-compliant on tricky cases the
+ * regex can't replicate (e.g. underscores inside identifiers — `_a_b_`
+ * keeps the middle underscore; fenced code preserves whitespace; lists
+ * vs. paragraphs use distinct block boundaries). The regex `_X_` rule
+ * was over-eager and showed phantom diffs on unedited prompts.
+ *
+ * We spin a headless editor with the same extension set, parse the
+ * markdown once, read textBetween, and destroy. tiptap-markdown's
+ * parser is hooked into the editor lifecycle, so this is the
+ * canonical path to a roundtrip-stable baseline.
+ */
+function markdownToDocText(md: string, extensions: Extensions): string {
+  const ed = new CoreEditor({ extensions, content: md })
+  const text = ed.state.doc.textBetween(0, ed.state.doc.content.size, '\n', '\n')
+  ed.destroy()
+  return text
+}
+
+/**
  * Strip the most common markdown syntax markers so the result roughly
- * matches what Tiptap emits as the doc's `textBetween`. We don't
- * round-trip through the full markdown parser here (that would mean
- * standing up a second editor instance just to read its text), so this
- * is "good enough" for diff alignment on prose-heavy prompts. Edge
- * cases (e.g. nested formatting, reference links) won't align
- * perfectly but the inline diff degrades gracefully when they don't.
+ * matches what Tiptap emits as the doc's `textBetween`. Kept as a
+ * fallback / for tests; the live diff uses {@link markdownToDocText}
+ * which goes through tiptap-markdown's real parser. Edge cases here
+ * (intraword underscores, fenced code with backticks in body) misalign,
+ * which is why production uses the parser path.
  */
 export function markdownToPlainText(md: string): string {
   return md
@@ -224,13 +247,18 @@ export function SuggestionEditor({
 
   // Re-emit diff stats AND push the new original-text into the
   // SuggestionDiff plugin whenever the original itself changes (or
-  // the editor finishes mounting).
+  // the editor finishes mounting). We parse the original markdown
+  // through a transient editor (same extensions) so its
+  // `textBetween` shape exactly matches what the live editor will
+  // emit — otherwise the inline diff shows phantom changes for
+  // tokens like `needs_human` where markdown-it and the regex
+  // approximation disagree.
   useEffect(() => {
     if (!editor) return
     const current: string = getMarkdown(editor)
     onDiffStatsRef.current?.(computeDiffStats(original, current))
-    setSuggestionDiffOriginal(editor.view, markdownToPlainText(original))
-  }, [editor, original])
+    setSuggestionDiffOriginal(editor.view, markdownToDocText(original, extensions))
+  }, [editor, original, extensions])
 
   return (
     <div

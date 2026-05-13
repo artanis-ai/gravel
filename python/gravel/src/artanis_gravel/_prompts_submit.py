@@ -149,6 +149,26 @@ def submit_drafts(args: SubmitArgs) -> CreatePullRequestResult:
             {"missing": missing},
         )
 
+    # Pre-flight: if any drafts reference files that aren't yet on the
+    # upstream branch, fail fast with a clear code rather than letting
+    # GitHub return a generic 404. The dashboard's pre-submit check
+    # should have caught this — this branch is the server-side
+    # defence-in-depth so we don't burn a GitHub roundtrip on a
+    # missing file.
+    from ._push_status import unpushed_paths
+
+    draft_paths = sorted({r.entry.path for r in resolved})
+    not_pushed = unpushed_paths(args.repo_root, draft_paths)
+    if not_pushed:
+        unpushed_list = sorted(not_pushed)
+        files_word = "file" if len(unpushed_list) == 1 else "files"
+        raise SubmitError(
+            "prompt_not_pushed",
+            f"The following {files_word} haven't been pushed to the upstream branch yet: "
+            f"{', '.join(unpushed_list)}. Push your branch first, then retry.",
+            {"unpushed": unpushed_list},
+        )
+
     by_path = _group_by_path(resolved)
     changes: list[PromptChange] = []
     new_content_by_path: dict[str, str] = {}

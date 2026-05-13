@@ -403,6 +403,14 @@ def _prompts_list(ctx: Context) -> HandlerResponse:
     except Exception:
         return _json_response({"prompts": [], "last_scan_at": None})
 
+    # Ask git once which of the manifest's paths haven't reached the
+    # upstream branch yet. Empty set on any git failure → all prompts
+    # appear "pushed" and the dashboard surface is unchanged.
+    from ._push_status import unpushed_paths
+
+    paths = [p.path for p in manifest.prompts]
+    unpushed = unpushed_paths(_repo_root(), paths)
+
     out: list[dict] = []
     for p in manifest.prompts:
         preview = ""
@@ -414,7 +422,11 @@ def _prompts_list(ctx: Context) -> HandlerResponse:
                 preview = full.strip()[:280]
         except Exception:
             pass
-        out.append({**_prompt_to_dict(p), "preview": preview})
+        out.append({
+            **_prompt_to_dict(p),
+            "preview": preview,
+            "pushed": p.path not in unpushed,
+        })
     return _json_response({"prompts": out, "last_scan_at": manifest.last_full_scan_at})
 
 

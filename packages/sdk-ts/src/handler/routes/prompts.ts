@@ -20,7 +20,15 @@ export const promptsRoutes: RouteTable = {
     const { readManifest } = await import('../../manifest/io.js')
     const { promises: fs } = await import('node:fs')
     const { join } = await import('node:path')
+    const { unpushedPaths } = await import('../../manifest/push-status.js')
     const manifest = await readManifest(repoRoot())
+    // Ask git once which of the manifest's paths haven't reached the
+    // upstream branch yet. Empty set on any git failure → all prompts
+    // appear "pushed" and the dashboard surface is unchanged.
+    const unpushed = unpushedPaths(
+      repoRoot(),
+      manifest.prompts.map((p) => p.path),
+    )
     // Inline a short preview per prompt so the dashboard's grid can
     // render content without an N+1 fetch. Read failures degrade to
     // an empty preview rather than failing the whole list.
@@ -36,7 +44,7 @@ export const promptsRoutes: RouteTable = {
         } catch {
           /* file gone since manifest scan; return blank preview */
         }
-        return { ...p, preview }
+        return { ...p, preview, pushed: !unpushed.has(p.path) }
       }),
     )
     return json({ prompts, last_scan_at: manifest.lastFullScanAt })
