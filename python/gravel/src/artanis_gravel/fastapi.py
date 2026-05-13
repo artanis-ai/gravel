@@ -35,8 +35,6 @@ from .samples_query import (
 )
 from .types import GravelConfig, resolve_config
 
-CURRENT_VERSION = "0.1.0"
-
 
 def _client_host(request: Request) -> str:
     fwd = request.headers.get("x-forwarded-host") or request.headers.get("host", "")
@@ -173,11 +171,14 @@ def create_gravel_router(config: GravelConfig, *, engine: Any = None) -> APIRout
 
     @router.get("/api/version")
     async def version_info(request: Request) -> Response:
-        if not _authed_user(request, password):
+        user = _authed_user(request, password)
+        if not user:
             return JSONResponse({"error": "unauthorized"}, status_code=401)
-        return JSONResponse(
-            {"current": CURRENT_VERSION, "latest": CURRENT_VERSION, "hasUpdate": False}
-        )
+        if user.get("role") != "admin":
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+        from .version_check import get_version_info
+
+        return JSONResponse(get_version_info())
 
     # ---------- Samples ----------
 
