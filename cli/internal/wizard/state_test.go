@@ -100,6 +100,125 @@ dependencies = ["fastapi"]
 	}
 }
 
+// REGRESSION: MountExists must recognise an entry file that's
+// already been patched with the gravel router import, regardless of
+// where gravel_route.py itself sits.
+//
+// The bug Yousef hit: after a successful wizard run on landlord-ai,
+// gravel_route.py lives at src/landlord_ai/gravel_route.py (adjacent
+// to the entry, per the src-layout patcher). InspectState's old check
+// looked at <cwd>/gravel_route.py, which never existed for src-layout
+// projects. MountExists was always false, the "Already wired up.
+// Skipping." path never fired, and every re-run printed "Mounting
+// dashboard…" as if it were the first install.
+func TestInspectState_FastAPI_SrcLayout_DetectsMountedEntry(t *testing.T) {
+	dir := newFixture(t, map[string]string{
+		"pyproject.toml": `[project]
+name = "myapp"
+dependencies = ["fastapi"]
+`,
+		"uv.lock":                  "",
+		"src/myapp/__init__.py":    "",
+		"src/myapp/server.py": `from fastapi import FastAPI
+from .gravel_route import router as gravel_router
+
+app = FastAPI()
+app.include_router(gravel_router, prefix='/admin/ai')
+`,
+		"src/myapp/gravel_route.py": "router = None  # placeholder",
+	})
+	d := Detect(dir)
+	s := InspectState(dir, d)
+	if !s.MountExists {
+		t.Errorf("MountExists false despite src-layout entry being patched")
+	}
+}
+
+// Flat-layout FastAPI: gravel_route.py at project root, entry at root
+// with the absolute import. Should also report MountExists=true.
+func TestInspectState_FastAPI_FlatLayout_DetectsMountedEntry(t *testing.T) {
+	dir := newFixture(t, map[string]string{
+		"pyproject.toml": `[project]
+name = "app"
+dependencies = ["fastapi"]
+`,
+		"main.py": `from fastapi import FastAPI
+from gravel_route import router as gravel_router
+
+app = FastAPI()
+app.include_router(gravel_router, prefix='/admin/ai')
+`,
+		"gravel_route.py": "router = None",
+	})
+	d := Detect(dir)
+	s := InspectState(dir, d)
+	if !s.MountExists {
+		t.Errorf("MountExists false despite flat-layout entry being patched")
+	}
+}
+
+// Pre-wizard FastAPI project: entry exists, no gravel imports.
+// MountExists must be false so the wizard actually mounts.
+func TestInspectState_FastAPI_PristineEntry_NotMounted(t *testing.T) {
+	dir := newFixture(t, map[string]string{
+		"pyproject.toml": `[project]
+name = "app"
+dependencies = ["fastapi"]
+`,
+		"main.py": `from fastapi import FastAPI
+app = FastAPI()
+`,
+	})
+	d := Detect(dir)
+	s := InspectState(dir, d)
+	if s.MountExists {
+		t.Errorf("MountExists true on a pristine FastAPI project")
+	}
+}
+
+// Django equivalent: urls.py patched with the gravel include.
+func TestInspectState_Django_PatchedURLs_DetectsMount(t *testing.T) {
+	dir := newFixture(t, map[string]string{
+		"pyproject.toml": `[project]
+name = "myproject"
+dependencies = ["django"]
+`,
+		"manage.py":             "",
+		"myproject/settings.py": "DEBUG = True\n",
+		"myproject/urls.py": `from django.urls import path, include
+from artanis_gravel.django import gravel_urls
+
+urlpatterns = [
+    path('admin/ai/', include(gravel_urls)),
+]
+`,
+	})
+	d := Detect(dir)
+	s := InspectState(dir, d)
+	if !s.MountExists {
+		t.Errorf("MountExists false despite urls.py containing gravel_urls include")
+	}
+}
+
+func TestInspectState_Django_PristineURLs_NotMounted(t *testing.T) {
+	dir := newFixture(t, map[string]string{
+		"pyproject.toml": `[project]
+name = "myproject"
+dependencies = ["django"]
+`,
+		"manage.py":             "",
+		"myproject/settings.py": "DEBUG = True\n",
+		"myproject/urls.py": `from django.urls import path
+urlpatterns = []
+`,
+	})
+	d := Detect(dir)
+	s := InspectState(dir, d)
+	if s.MountExists {
+		t.Errorf("MountExists true on a pristine Django project")
+	}
+}
+
 func TestInspectState_EnvFile_DotEnvLocal(t *testing.T) {
 	dir := newFixture(t, map[string]string{
 		"package.json": `{"dependencies":{"next":"15.0.0"}}`,

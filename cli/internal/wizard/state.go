@@ -48,6 +48,37 @@ func InspectState(cwd string, d Detection) InspectedState {
 	if s.MountFilePath != "" {
 		s.MountExists = pathExists(filepath.Join(cwd, s.MountFilePath))
 	}
+	// For FastAPI/Django the mounter doesn't write its file to a
+	// fixed location — it walks for the entry file and writes
+	// adjacent to it (src/<pkg>/gravel_route.py, etc.). The hard-coded
+	// `mountFilePathFor` check (project-root gravel_route.py) is
+	// always false for src-layout projects, so the "Already wired up.
+	// Skipping." message never fires on re-run.
+	//
+	// For these frameworks "mount exists" really means "the host's
+	// entry file imports our router" — that's the source of truth the
+	// patcher itself uses to decide whether a re-run is idempotent.
+	// Mirror that signal here.
+	if !s.MountExists {
+		switch d.Framework {
+		case FrameworkFastAPI:
+			if ok, entryRel := fastAPIEntryHasGravelImport(cwd); ok {
+				s.MountExists = true
+				// Replace the hard-coded "gravel_route.py" with the
+				// actual adjacent location, so the "Re-run with X
+				// removed" hint points the user at the file that
+				// genuinely exists.
+				dir := filepath.Dir(entryRel)
+				if dir == "" || dir == "." {
+					s.MountFilePath = "gravel_route.py"
+				} else {
+					s.MountFilePath = filepath.ToSlash(filepath.Join(dir, "gravel_route.py"))
+				}
+			}
+		case FrameworkDjango:
+			s.MountExists = djangoURLsHasGravelInclude(cwd)
+		}
+	}
 
 	for _, name := range []string{".env.local", ".env"} {
 		body, err := os.ReadFile(filepath.Join(cwd, name))
@@ -93,6 +124,65 @@ func mountFilePathFor(d Detection) string {
 		return "gravel_route.py"
 	}
 	return ""
+}
+
+// fastAPIEntryHasGravelImport scans the project for a Python file
+// that contains the gravel_router import line the FastAPI patcher
+// writes into the entry file. Returns (true, relPath-of-the-entry)
+// on first match — caller stores the entry rel-path so the "Already
+// wired up" message can reference the actual gravel_route.py
+// location (which lives adjacent to the entry, not at project root
+// for src-layout projects).
+//
+// Walks the same candidate list + tree search the patcher uses
+// (see mount_python.go §mountFastAPI), so "already mounted" here
+// agrees with what tryPatchFastAPIEntry treats as idempotent.
+func fastAPIEntryHasGravelImport(cwd string) (bool, string) {
+	checked := map[string]bool{}
+	for _, rel := range fastAPIEntryCandidates {
+		if entryContainsGravelImport(filepath.Join(cwd, rel)) {
+			return true, rel
+		}
+		checked[rel] = true
+	}
+	for _, rel := range findFastAPIEntries(cwd) {
+		if checked[rel] {
+			continue
+		}
+		if entryContainsGravelImport(filepath.Join(cwd, rel)) {
+			return true, rel
+		}
+	}
+	return false, ""
+}
+
+// entryContainsGravelImport returns true if path contains either
+// import form the patcher writes (absolute `gravel_route` for
+// flat-layout, relative `.gravel_route` for src-layout packages).
+func entryContainsGravelImport(path string) bool {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	src := string(body)
+	return strings.Contains(src, "from gravel_route import router as gravel_router") ||
+		strings.Contains(src, "from .gravel_route import router as gravel_router")
+}
+
+// djangoURLsHasGravelInclude scans the project for a urls.py that
+// includes the gravel router. Mirrors what mountDjango treats as
+// idempotent (`from artanis_gravel.django import gravel_urls`).
+func djangoURLsHasGravelInclude(cwd string) bool {
+	for _, file := range findDjangoRootURLs(cwd) {
+		body, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+		if strings.Contains(string(body), "from artanis_gravel.django import gravel_urls") {
+			return true
+		}
+	}
+	return false
 }
 
 // hookAlreadyInstalled looks for the marker substring the hook
