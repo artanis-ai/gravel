@@ -1,25 +1,31 @@
 # Architecture
 
-> Public-safe overview of how Gravel is built. The full internal spec is in the private `artanis-ai/gravel-cloud` repo.
+> Public-safe overview of how Gravel is built.
 
 ## Two trust zones
 
-Gravel splits cleanly into two zones:
+Gravel splits cleanly into two zones. The control plane is **optional** — every default feature works offline against the data plane alone.
 
 ```
-┌──────────────────────────────────────────┐    ┌──────────────────────────┐
-│ DATA PLANE — your infrastructure         │    │ CONTROL PLANE — Artanis  │
-│                                          │    │                          │
-│ Your app + Gravel SDK                    │◄──►│ gravel.artanis.ai    │
-│ Your database (gravel_* tables)          │    │ gravel-judge.artanis-ai.workers.dev  │
-│ Embedded React dashboard at /admin/ai    │    │                          │
-│                                          │    │ - project mgmt           │
-│ Holds: traces, prompts, feedback,        │    │ - judge dispatch         │
-│        datasets, eval runs               │    │ - billing                │
-└──────────────────────────────────────────┘    └──────────────────────────┘
+┌──────────────────────────────────────────────────┐    ┌──────────────────────────────────────────────────┐
+│ DATA PLANE — your infrastructure                 │    │ CONTROL PLANE — Artanis (optional)               │
+│                                                  │    │                                                  │
+│ - Your app + Gravel SDK                          │    │ - gravel.artanis.ai (Next.js + Clerk + Neon)     │
+│ - Your database: gravel_samples, gravel_feedback │    │ - gravel-judge.artanis-ai.workers.dev            │
+│ - .gravel/manifest.json (in your repo)           │    │                                                  │
+│ - Embedded React dashboard at /admin/ai          │    │ Touched only when you opt into:                  │
+│                                                  │◄──►│   - paid eval judging (runEval → judge worker)   │
+│ Holds: samples (one per LLM call),               │    │   - Mallet prompt analysis (analyzePrompt)       │
+│        feedback (score + correction),            │    │   - GitHub App token mints for PR submission     │
+│        prompts (text + manifest entries).        │    │                                                  │
+│                                                  │    │ Disable entirely: don't call runEval /           │
+│ Self-contained: every default feature            │    │ analyzePrompt, skip the GH App install. Set      │
+│ works without ever touching the right box.       │    │ GRAVEL_TRACING_DISABLED=1 if you also want to    │
+│                                                  │    │ suppress the npm/PyPI version-check ping.        │
+└──────────────────────────────────────────────────┘    └──────────────────────────────────────────────────┘
 ```
 
-The trust boundary is hard. Trace data and prompts stay in your DB. Only rows being judged in a paid eval ever cross to Artanis.
+The trust boundary is hard. Sample data, feedback, and prompts stay in your database. Only the input + stored output of rows being judged in a paid eval ever cross to Artanis, and only when your code (or your domain expert clicking "Run eval" in the dashboard, once that pillar ships) explicitly triggers it.
 
 ## Components in this repo
 
