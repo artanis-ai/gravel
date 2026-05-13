@@ -21,6 +21,12 @@ _TYPE_MAP = {
     "BIGINTEGER": "integer",
     "DATETIME": "timestamp",
     "TIMESTAMP": "timestamp",
+    # GravelTimestamp is the custom TypeDecorator declared in
+    # schema.py: BIGINT on SQLite, TIMESTAMPTZ on Postgres. The drift
+    # CI compares at the logical level (what kind of value lives in
+    # this column?), not per-dialect storage, so we collapse it to
+    # the same "timestamp" label the TS Drizzle postgres schema dumps.
+    "GRAVELTIMESTAMP": "timestamp",
     "BOOLEAN": "boolean",
 }
 
@@ -44,7 +50,13 @@ def dump() -> str:
             flags = []
             if not col.nullable and not col.primary_key:
                 flags.append("NOT NULL")
-            if col.server_default is not None:
+            # Drift compare: treat any default as equivalent. TS
+            # Drizzle's `.default(now)` and Python SQLAlchemy's
+            # Python-side `default=<callable>` both mean "user
+            # doesn't have to supply this on insert"; the dump
+            # shouldn't distinguish the SQL-side vs Python-side
+            # variant, only the presence of a default.
+            if col.server_default is not None or col.default is not None:
                 flags.append("DEFAULT")
             target = _fk_target(col)
             if target:
