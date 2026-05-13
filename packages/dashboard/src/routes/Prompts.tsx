@@ -134,7 +134,7 @@ function PromptsList() {
 
       {submittedPrUrl && (
         <div className="rounded-2xl border border-forest/30 bg-forest/5 p-3 text-sm text-forest">
-          PR opened —{' '}
+          Your changes are in for review —{' '}
           <a
             href={submittedPrUrl}
             target="_blank"

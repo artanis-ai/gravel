@@ -50,6 +50,13 @@ type PackageManager = 'pnpm' | 'npm' | 'yarn' | 'bun' | 'uv' | 'pip' | 'poetry' 
  * Render the package-name + bump command for the detected stack. We
  * fall back to pnpm if the backend didn't report a manager — that's
  * the most common JS/TS host today and aligns with the docs.
+ *
+ * For `uv` we emit `uv add <pkg>@<version>` rather than
+ * `uv pip install --upgrade …`. The wizard installs into a
+ * project-managed uv env (pyproject.toml + uv.lock), and
+ * `uv pip install` bypasses both files — the next `uv sync` would
+ * revert the upgrade. `uv add pkg@version` rewrites the pin in
+ * pyproject.toml, updates the lock, and installs, atomically.
  */
 function updateCommand(info: VersionInfo): string {
   const pkg = info.language === 'python' ? 'artanis-gravel' : '@artanis-ai/gravel'
@@ -62,7 +69,7 @@ function updateCommand(info: VersionInfo): string {
     case 'bun':
       return `bun update ${pkg}@${target}`
     case 'uv':
-      return `uv pip install --upgrade ${pkg}==${target}`
+      return `uv add ${pkg}@${target}`
     case 'poetry':
       return `poetry add ${pkg}@${target}`
     case 'pipenv':
@@ -155,8 +162,9 @@ export function UpdateBanner({
           {info.current} → {info.latest}
         </span>
         {onLoopback ? (
-          <span className="ml-auto">
+          <span className="ml-auto flex items-center gap-2">
             <CopyableCode>{updateCommand(info)}</CopyableCode>
+            <span className="text-text-muted">then restart your server</span>
           </span>
         ) : (
           <span className="ml-auto text-text-mid">

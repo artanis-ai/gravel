@@ -32,15 +32,15 @@ export function GithubNotConnectedDialog({
     >
       <div className="space-y-4 text-sm text-text-mid">
         <p>
-          Your changes are saved as drafts in this browser, but the Gravel
-          GitHub App isn&rsquo;t installed on the repo yet, so there&rsquo;s
-          nowhere to open the pull request.
+          Your changes are saved as drafts in this browser, but Gravel
+          isn&rsquo;t connected to your team&rsquo;s codebase yet, so there&rsquo;s
+          nowhere to send them for review.
         </p>
 
         <p>
-          Ask the developer who set up Gravel for this app to install the
-          GitHub App on your repo. Once that&rsquo;s done, your drafts
-          will become real PRs from this dashboard.
+          Ask the developer who set up Gravel for this app to connect it to
+          your team&rsquo;s codebase. Once that&rsquo;s done, you can send your
+          drafts off for review straight from this dashboard.
         </p>
 
         <div className="rounded-xl border border-warm bg-white p-3">

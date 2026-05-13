@@ -116,7 +116,7 @@ export function SubmitModal({
       return
     }
     if (!name.trim()) {
-      setError('Your name is required so the PR can credit it.')
+      setError('Your name is required so we can credit the change to you.')
       return
     }
     submit.mutate()
@@ -148,15 +148,15 @@ export function SubmitModal({
                 : 'cursor-pointer bg-primary hover:bg-primary-dark',
             )}
           >
-            {submit.isPending ? 'Opening PR…' : 'Open PR'}
+            {submit.isPending ? 'Sending…' : 'Send for review'}
           </button>
         </>
       }
     >
       <form id="submit-prompts-form" onSubmit={onFormSubmit} className="space-y-4">
         <p className="text-xs text-text-mid">
-          {drafts.length} draft{drafts.length === 1 ? '' : 's'} will be submitted as one PR
-          to your connected repo.
+          {drafts.length} draft{drafts.length === 1 ? '' : 's'} will be sent to your team
+          together for review.
         </p>
 
         <ul className="space-y-3">
@@ -177,7 +177,7 @@ export function SubmitModal({
         </label>
 
         <label className="flex flex-col gap-1 text-xs font-medium text-text-mid">
-          PR title
+          Title
           <input
             type="text"
             value={title}

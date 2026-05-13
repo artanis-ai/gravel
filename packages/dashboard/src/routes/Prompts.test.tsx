@@ -182,14 +182,14 @@ describe('Prompts list', () => {
     expect(dialog).toBeInTheDocument()
 
     const titleInput = await screen.findByPlaceholderText(/tighten triage prompt/i)
-    await user.type(titleInput, 'PR title')
-    await user.click(screen.getByRole('button', { name: /open pr/i }))
+    await user.type(titleInput, 'Tighten triage')
+    await user.click(screen.getByRole('button', { name: /send for review/i }))
 
     await waitFor(() =>
       expect(mockedPost).toHaveBeenCalledWith(
         '/api/prompts/submit',
         expect.objectContaining({
-          title: 'PR title',
+          title: 'Tighten triage',
           drafts: [{ promptId: 'p_a', newText: 'changed' }],
         }),
       ),

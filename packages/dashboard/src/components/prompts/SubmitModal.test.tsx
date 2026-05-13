@@ -60,7 +60,7 @@ describe('SubmitModal', () => {
     renderRoute(
       <SubmitModal open onClose={() => {}} drafts={[makeEntry()]} onSubmitted={() => {}} />,
     )
-    await user.click(screen.getByRole('button', { name: /open pr/i }))
+    await user.click(screen.getByRole('button', { name: /send for review/i }))
     expect(await screen.findByText(/title is required/i)).toBeInTheDocument()
     expect(mockedPost).not.toHaveBeenCalled()
   })
@@ -86,14 +86,14 @@ describe('SubmitModal', () => {
     )
     await user.clear(within(dialog).getByPlaceholderText(/^pat$/i))
     await user.type(within(dialog).getByPlaceholderText(/^pat$/i), 'Alice')
-    await user.type(within(dialog).getByPlaceholderText(/tighten triage prompt/i), 'My PR title')
-    await user.click(within(dialog).getByRole('button', { name: /open pr/i }))
+    await user.type(within(dialog).getByPlaceholderText(/tighten triage prompt/i), 'Tighten triage')
+    await user.click(within(dialog).getByRole('button', { name: /send for review/i }))
 
     await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(1))
     expect(mockedPost.mock.calls[0]).toEqual([
       '/api/prompts/submit',
       {
-        title: 'My PR title',
+        title: 'Tighten triage',
         description: undefined,
         submitterName: 'Alice',
         drafts: [{ promptId: 'p_abc', newText: 'You are a careful assistant.' }],
@@ -114,10 +114,10 @@ describe('SubmitModal', () => {
     )
   })
 
-  it('disables Open PR when there are no drafts', () => {
+  it('disables the submit button when there are no drafts', () => {
     renderRoute(
       <SubmitModal open onClose={() => {}} drafts={[]} onSubmitted={() => {}} />,
     )
-    expect(screen.getByRole('button', { name: /open pr/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /send for review/i })).toBeDisabled()
   })
 })

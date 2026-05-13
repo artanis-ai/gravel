@@ -89,7 +89,7 @@ describe('UpdateBanner', () => {
     })
     render(<UpdateBanner mountPath="/admin/ai" isAdmin={true} loopback={true} />)
     expect(
-      await screen.findByText('uv pip install --upgrade artanis-gravel==0.2.0'),
+      await screen.findByText('uv add artanis-gravel@0.2.0'),
     ).toBeInTheDocument()
   })
 
