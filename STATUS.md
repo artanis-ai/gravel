@@ -1,6 +1,6 @@
 # Status
 
-> **Last updated:** 2026-05-13 (v0.5.10 shipped; audit-driven fixes through v0.5.7–v0.5.11).
+> **Last updated:** 2026-05-13 (v0.5.13 shipped; audit-driven fixes through v0.5.7–v0.5.13).
 
 ## Where we are
 
@@ -18,33 +18,37 @@
 - **v0.5.8** — Real PyPI lookup in `/api/version`; UpdateBanner stopped reporting `hasUpdate: false` unconditionally. `CURRENT_VERSION = "0.1.0"` hardcoded value retired in favour of `importlib.metadata`.
 - **v0.5.9** — Major Python SDK rewire: every route now flows through `_handler.py`. Killed `asgi.py` + `django.py` placeholders; added `/api/migrations/status`, `POST /api/prompts/submit`, `/api/github/install` + `/callback`, `POST /api/auth/view-as`; fixed form-encoded login redirect; added per-IP login rate-limiting; `/_assets/<file>` content-type map; `/api/prompts` honours `GRAVEL_REPO_ROOT` via the typed `manifest/io` helpers.
 - **v0.5.10** — Heavy cross-stack journey coverage. New `tests/test_embedded_journey.py` pins byte-exact char-offset slicing across FastAPI/ASGI/WSGI/Django/Flask and PR + manifest rewrite invariants for adding/removing lines, multi-prompt edits in one file, hash-update semantics.
-- **v0.5.11** — Closes the residual audit findings: TS auth gates on `/api/prompts`, `/api/samples`, `/api/github/status` to match Python (information disclosure fix). Unit tests for `_github_api.py` (24) and `samples_query.py` (50). Docs sweep removing stale "pre-v0 / stubbed / coming soon" claims across `apps/docs/*.mdx`, `packages/dashboard/README.md`, `packages/sdk-ts/migrations/README.md`, and this file. Bare-`except` hygiene in `auth.py` / `_github_api.py` / `judge/client.py`. Vercel AI + generic-fetch tracing ported to Python.
+- **v0.5.11** — Closes the residual audit findings: TS auth gates on `/api/prompts`, `/api/samples`, `/api/github/status` to match Python (information disclosure fix). Unit tests for `_github_api.py` (24) and `samples_query.py` (50). Docs sweep removing stale "pre-v0 / stubbed / coming soon" claims across `apps/docs/*.mdx`, `packages/dashboard/README.md`, `packages/sdk-ts/migrations/README.md`, and this file. Bare-`except` hygiene in `auth.py` / `_github_api.py` / `judge/client.py`. Session TTL constant decoupled from the magic-number cookie Max-Age.
+- **v0.5.12** — Generic-fetch tracing port to Python (httpx sync + async, requests, aiohttp, stdlib urllib; 41 tests against an in-process `http.server` thread). TS `routes.ts` split into per-domain files (`auth.ts`, `version.ts`, `migrations.ts`, `prompts.ts`, `github.ts`, `samples.ts`, `shell.ts`, `assets.ts`) to match the Python `_handler.py` shape; cookies + shell helpers extracted. New Playwright E2E suite for the dashboard (15 tests covering auth + samples + prompts + github flows), wired into CI as a dedicated `dashboard-e2e` job.
+- **v0.5.13** — Wizard detects a dev server already listening on the framework default port and warns "restart your server" so newly-written mount code is actually picked up (real customer 404 closed). Dashboard component test coverage roughly doubled with new PayloadShape (12), CopyableCode (6), and Login (8) suites. CI caches Playwright browser binaries by version, saving ~30s per run. `gravel-test-fixtures` gains a `manifest:deep-scan` journey that runs `gravel scan --deep --yes` and asserts the manifest gains embedded entries in declared `deepScanFiles` paths.
 
 ## What ships in `artanis-ai/gravel` today
 
 ### TypeScript SDK (`@artanis-ai/gravel`)
 - Schemas (Postgres + SQLite), DB connector, idempotent bootstrap.
 - HMAC sessions, view-as, per-IP login rate-limiting.
-- Dashboard routes: auth (login/logout/me/view-as), version + update banner, migrations status, samples (list / detail / feedback), prompts (list / detail / submit), GitHub status + install start + callback, bundled SPA + assets.
-- Tracing auto-patches: OpenAI, Anthropic, LangChain, Vercel AI, generic fetch. Lazy import; missing SDKs no-op. Streaming via `Symbol.asyncIterator` tee.
+- Dashboard routes (per-domain modules under `src/handler/routes/`): auth (login/logout/me/view-as), version + update banner, migrations status, samples (list / detail / feedback), prompts (list / detail / submit), GitHub status + install start + callback, bundled SPA + assets.
+- Tracing auto-patches: OpenAI, Anthropic, LangChain, Vercel AI, generic `globalThis.fetch`. Lazy import; missing SDKs no-op. Streaming via `Symbol.asyncIterator` tee.
 - Manifest tooling (fast scan + pre-commit hook installer).
-- Wizard via the Go CLI: framework detection, AST-aware mount writers, config gen, `.env` writer, idempotent re-runs, deep scan.
+- Wizard via the Go CLI: framework detection, AST-aware mount writers, config gen, `.env` writer, idempotent re-runs, deep scan, running-server detection + restart warning.
 - Judge client, eval runner with bounded concurrency, Mallet `analyzePrompt`.
-- **Tests:** vitest, 170 passing.
+- **Tests:** vitest, 170 passing + 1 skipped.
 
 ### Python SDK (`artanis-gravel`)
 - Full SQLAlchemy parity with TS schema.
-- Same dashboard routes via the shared `_handler.py` dispatcher; FastAPI, ASGI, WSGI, Django, Flask integrations all adapters around it.
-- Tracing auto-patches: OpenAI, Anthropic, LangChain (Vercel AI + fetch in v0.5.11).
+- Same dashboard routes via the shared `_handler.py` dispatcher; FastAPI, raw ASGI, raw WSGI, Django, Flask integrations are all adapters around it.
+- Tracing auto-patches: OpenAI, Anthropic, LangChain. Generic-fetch patches for httpx (sync + async), requests, aiohttp, and stdlib urllib (v0.5.12+; lazy per-transport, missing library no-ops).
 - Wizard installs via the Go CLI binary (same as TS); Flask wizard auto-adds the `[flask]` extra for the a2wsgi bridge.
 - Judge client, eval runner, analyze client.
-- **Tests:** pytest, 250 passing + 1 skipped.
+- **Tests:** pytest, 291 passing + 1 skipped.
 
 ### Dashboard (Vite + React 19 + Tailwind)
-- Routes: Login, Samples (list + detail + feedback), Datasets, Evals, Analysis, Prompts (list + detail editor with embedded slice editing + draft autosave to localStorage + submit modal).
-- Components: PendingMigrationsBanner, UpdateBanner, CopyableCode.
+- Routes shipped: Login, Samples (list + detail + feedback), Prompts (list + detail editor with embedded slice editing + draft autosave to localStorage + submit modal).
+- Routes scaffolded (placeholder empty states; not in product scope yet): Datasets, Evals, Analysis. Adding a backend route table for either pillar is net-new product work and explicitly out of scope through v0.5.x.
+- Components: PendingMigrationsBanner, UpdateBanner, CopyableCode, PayloadShape (provider-aware payload renderer), SubmitModal, SuggestionEditor, DiffView, GithubNotConnectedDialog.
 - Bundle: ~85 KB gzipped.
 - Bundled into both SDKs at release time (`tools/sync-dashboard-dist.sh` for Python; per-SDK build for TS).
+- **Tests:** vitest 85 passing across 12 files; Playwright E2E 15 passing across 4 specs (auth / samples / prompts / github), driven against the live Vite dev server which mounts the real SDK handler in-process.
 
 ### Go CLI / wizard
 - Framework detection across 9 stacks. Two-phase entry search; column-zero-only AST-style mount writers per language.
@@ -76,9 +80,7 @@ For an authed call against `/api/judge` or `/api/analyze`, see `gravel-cloud/doc
 
 ## What's next
 
-See `gravel-cloud/docs/roadmap.md` for the phased plan. Immediate items:
+See `gravel-cloud/docs/roadmap.md` for the phased plan. Open at the time of writing:
 
-1. Datasets pillar (create / detail / row editing).
-2. Evals pillar (judge runs + breakdowns triggered from the dashboard).
-3. Refactor the 673-line TS `routes.ts` into per-domain modules to match the Python `_handler.py` shape.
-4. Increase dashboard test coverage to >50% (currently ~21%) with at least one E2E flow.
+1. Datasets + Evals pillars — these are scaffolded as empty dashboard routes; the backend route table is net-new product surface (new SDK helpers, new tables, new dashboard pages) and needs a design pass before code.
+2. Fixture suite end-to-end execution: the verifier-side journeys (`manifest:deep-scan`, raw-fetch tracing) are coded but the CI machine that runs `npm install` / `poetry install` across all 14 fixtures doesn't exist yet.

@@ -1,11 +1,7 @@
 ---
 title: Tracing
-description: "Auto-patches for OpenAI, Anthropic, Langchain, Vercel AI SDK."
+description: "Auto-patches for OpenAI, Anthropic, LangChain, Vercel AI, and raw fetch."
 ---
-
-<Note>
-  Pre-v1. Auto-patches are scaffolded but not yet emitting traces. Tracking in [STATUS.md](https://github.com/artanis-ai/gravel/blob/main/STATUS.md).
-</Note>
 
 ## Activation
 
@@ -19,16 +15,27 @@ import '@artanis-ai/gravel/auto'
 import artanis_gravel.auto  # noqa: F401
 ```
 
-The wizard places this. Default = enabled. Disable with `GRAVEL_TRACING_DISABLED=1` if you want a black box.
+The wizard places this. Default = enabled. Disable with
+`GRAVEL_TRACING_DISABLED=1` if you want a black box.
 
-## Coverage (planned for v1)
+## Coverage
 
-| Provider              | TS package                   | Py package      |
-| --------------------- | ---------------------------- | --------------- |
-| OpenAI                | `openai`                     | `openai`        |
-| Anthropic             | `@anthropic-ai/sdk`          | `anthropic`     |
-| Langchain             | `langchain` / `@langchain/*` | `langchain`     |
-| Vercel AI SDK         | `ai`                         | (TS only)       |
+| Provider              | TS package                   | Python package          |
+| --------------------- | ---------------------------- | ----------------------- |
+| OpenAI                | `openai`                     | `openai`                |
+| Anthropic             | `@anthropic-ai/sdk`          | `anthropic`             |
+| LangChain             | `langchain` / `@langchain/*` | `langchain`             |
+| Vercel AI SDK         | `ai`                         | (TS only — no Py port)  |
+| Raw fetch / HTTP      | `globalThis.fetch`           | `httpx`, `requests`, `aiohttp`, stdlib `urllib` |
+
+Each patch is lazy: missing client library no-ops at import. Streaming
+responses are traced without consuming the user's iterator (TS uses
+`Symbol.asyncIterator` tee; Python wraps `__iter__` / `__aiter__`
+similarly). Raw-`fetch` / `httpx` / `requests` / `aiohttp` / `urllib`
+detection is path-based against OpenAI- and Anthropic-shaped URLs
+(`/chat/completions`, `/responses`, `/embeddings`, `/v1/messages`), so
+OpenAI-compatible proxies (Azure, vLLM, mock servers) are picked up
+without configuration.
 
 ## Custom metadata
 
@@ -41,7 +48,9 @@ await withGravelMetadata(
 )
 ```
 
-Metadata lands on `gravel_traces.metadata` and shows up as filterable columns in the dashboard.
+Metadata lands on the captured sample's `metadata` jsonb column
+(`gravel_samples.metadata`) and shows up as filterable columns in the
+dashboard.
 
 ## Async-context propagation
 
@@ -56,9 +65,11 @@ app.use((req, res, next) => {
 
 ```py
 # FastAPI
+from artanis_gravel.tracing import with_gravel_metadata
+
 @app.middleware('http')
 async def gravel_metadata(request, call_next):
-    with gravel_context({'user_id': request.state.user.id}):
+    with with_gravel_metadata({'user_id': request.state.user.id}):
         return await call_next(request)
 ```
 

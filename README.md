@@ -2,7 +2,7 @@
 
 > Open-source library that mounts an admin dashboard inside your AI app. Domain experts review output, manage prompts, and run evals — without ever touching your codebase.
 
-**Status: v0 wedge ~95% done.** Wizard installs cleanly against the live `gravel.artanis.ai` control plane; default-password auth, manifest-backed prompt list / draft / submit-as-PR backend, and dashboard prompt editor all landed. The dashboard SPA is being bundled into the SDK package as the last v0 step. v1 tracing auto-patches (OpenAI / Anthropic / Langchain / Vercel AI SDK) are live on both SDKs. v2 judge dispatcher + eval runner shipped ahead of schedule. v3 Mallet analysis plumbed through Clerk-org rate-limiting. Polar billing scaffolded; pricing wiring awaits validation. See [`STATUS.md`](STATUS.md).
+**Status: v0.5.x, live on npm + PyPI.** Wizard installs against the production `gravel.artanis.ai` control plane. Default-password auth, manifest-backed prompts (list + detail + submit-as-PR via the `gravel[bot]` GitHub App with atomic manifest rewrite), tracing auto-patches (OpenAI / Anthropic / LangChain / Vercel AI / generic `fetch`), the judge + eval runner, and the bundled React dashboard all ship. Six TypeScript framework integrations (Next.js App + Pages routers, Express, Hono, Fastify, generic Node) and five Python integrations (FastAPI, Django, Flask, raw ASGI, raw WSGI), all delegating to one shared dispatcher for byte-equal cross-stack behaviour. Polar billing is scaffolded; pricing wiring awaits validation. Datasets + Evals dashboard pillars are scaffolded as placeholder routes only; backend wiring is the next design pass. See [`STATUS.md`](STATUS.md).
 
 ```bash
 # TypeScript:
@@ -44,7 +44,7 @@ gravel/
 ├── packages/dashboard/     # React app shipped inside the SDKs
 ├── python/gravel/          # artanis-gravel — SDK library + artanis_gravel._cli wrapper
 ├── apps/docs/              # Mintlify docs → gravel.artanis.ai
-├── examples/               # Next.js, FastAPI, Django integration examples
+├── examples/               # Next.js, FastAPI, Django integration examples (Express / Hono / Fastify / Flask exercised via gravel-test-fixtures)
 └── .github/workflows/      # CI: lint, test, schema-drift, cross-compile + release
 ```
 

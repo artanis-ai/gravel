@@ -1,22 +1,27 @@
 # Example: Django + Gravel
 
-Stub Django project showing where Gravel mounts. Full implementation will
-include a working `manage.py runserver` flow once the SDK lands its full
-route table.
+Minimal Django project showing where Gravel mounts. The actual `manage.py
+runserver` flow ships with v0.5.x; this directory documents the wiring
+without bundling a full demo app.
 
-## Status
-
-Skeleton only. Add to your project's `urls.py`:
+Add to your project's `urls.py`:
 
 ```python
 from django.urls import path, include
 from artanis_gravel.django import gravel_urls
+from gravel_config import config
 
 urlpatterns = [
     # ... your routes ...
-    path('admin/ai/', include(gravel_urls)),
+    path('admin/ai/', include(gravel_urls(config))),
 ]
 ```
+
+`gravel_urls` returns a list of URL patterns (root + catch-all) that
+delegate to the shared `_handler.py` dispatcher, so every dashboard route
+(`/admin/ai/api/auth/me`, `/admin/ai/api/prompts`, `/admin/ai/api/samples`,
+GitHub install flow, etc.) reaches the same code path as FastAPI / Flask /
+raw ASGI hosts.
 
 The `gravel_config.py` shape:
 
@@ -31,4 +36,6 @@ config = GravelConfig(
 )
 ```
 
-A runnable Django project lands alongside the v0 build.
+For a runnable end-to-end Django host see the
+[`py-django-pipenv-pg`](https://github.com/artanis-ai/gravel-test-fixtures/tree/main/py-django-pipenv-pg)
+fixture in the public test-fixtures repo.

@@ -3,10 +3,6 @@ title: SDK API
 description: "Public API surface."
 ---
 
-<Note>
-  Pre-v0. The shape is locked; the implementations are landing piece by piece. See [STATUS.md](https://github.com/artanis-ai/gravel/blob/main/STATUS.md).
-</Note>
-
 ## TypeScript
 
 ```ts
@@ -14,16 +10,24 @@ description: "Public API surface."
 import { defineConfig } from '@artanis-ai/gravel'
 export const config = defineConfig({ /* ... */ })
 
-// Boot tracing
+// Boot tracing (OpenAI / Anthropic / LangChain / Vercel AI / globalThis.fetch)
 import '@artanis-ai/gravel/auto'
 
 // Mount the dashboard handler (Next App Router)
 import { createGravelHandler } from '@artanis-ai/gravel/next'
 const handler = createGravelHandler({ config })
 
-// Generic Node (Express, etc.)
+// Next Pages Router
+import { createGravelHandler } from '@artanis-ai/gravel/next-pages'
+
+// Fastify (typed plugin)
+import { gravelFastifyPlugin } from '@artanis-ai/gravel/fastify'
+await fastify.register(gravelFastifyPlugin(config), { prefix: config.mountPath })
+
+// Express / Hono / generic Node — all use the (req, res) bridge
 import { gravelHandler } from '@artanis-ai/gravel/node'
 app.use(config.mountPath, gravelHandler({ config }))
+// Hono uses `app.mount(...)` against the same handler
 
 // Tracing context
 import { withGravelMetadata, withTracingDisabled, gravelContext } from '@artanis-ai/gravel'
@@ -32,7 +36,7 @@ import { withGravelMetadata, withTracingDisabled, gravelContext } from '@artanis
 ## Python
 
 ```py
-import artanis_gravel.auto  # boot tracing
+import artanis_gravel.auto  # boot tracing (OpenAI / Anthropic / LangChain + fetch)
 
 # FastAPI
 from artanis_gravel.fastapi import create_gravel_router
@@ -41,37 +45,54 @@ app.include_router(router, prefix=config.mount_path)
 
 # Django
 from artanis_gravel.django import gravel_urls
-urlpatterns = [ path('admin/ai/', include(gravel_urls)) ]
+urlpatterns = [path('admin/ai/', include(gravel_urls(config)))]
+
+# Flask (requires the `[flask]` extra for the a2wsgi bridge)
+from artanis_gravel.flask import mount_on_flask
+mount_on_flask(app, config)
 
 # Generic ASGI
 from artanis_gravel.asgi import GravelAsgiApp
 gravel_app = GravelAsgiApp(config=config)
+
+# Generic WSGI
+from artanis_gravel.asgi import gravel_wsgi_app
+wsgi = gravel_wsgi_app(config)
 ```
+
+Every Python integration delegates to the same `_handler.py` dispatcher,
+so the routes below behave identically across FastAPI / Django / Flask /
+raw ASGI / raw WSGI. The TS handler runs the same route table in
+TypeScript (`packages/sdk-ts/src/handler/routes/`), one file per domain.
 
 ## Internal HTTP API
 
 The dashboard talks to the lib via these routes (mounted under `mountPath`):
 
-| Method | Path                              | Purpose                                    |
-| ------ | --------------------------------- | ------------------------------------------ |
-| GET    | `/api/auth/me`                    | Current user                               |
-| POST   | `/api/auth/login`                 | Default-password login                     |
-| POST   | `/api/auth/view-as`               | Toggle view-as for admins                  |
-| GET    | `/api/prompts`                    | List prompts                               |
-| GET    | `/api/prompts/:id`                | Single prompt                              |
-| PUT    | `/api/prompts/:id`                | Save edit to draft                         |
-| POST   | `/api/prompts/submit`             | Create PR from draft branch               |
-| GET    | `/api/traces`                     | Paginated trace list                       |
-| GET    | `/api/traces/:id`                 | Trace + observations + feedback            |
-| POST   | `/api/traces/:id/feedback`        | Leave feedback                             |
-| GET    | `/api/datasets`                   | List datasets                              |
-| POST   | `/api/datasets`                   | Create dataset                             |
-| POST   | `/api/datasets/:id/traces`        | Add trace                                  |
-| GET    | `/api/evals/runs`                 | Eval run list                              |
-| POST   | `/api/evals/runs`                 | Trigger an eval                            |
-| GET    | `/api/evals/runs/:id`             | Run state                                  |
-| POST   | `/api/evals/runs/:id/cancel`      | Cancel run                                 |
-| GET    | `/api/github/status`              | Is GH App connected?                       |
-| GET    | `/api/github/connect`             | Start OAuth                                |
+| Method | Path                                  | Purpose                                                  |
+| ------ | ------------------------------------- | -------------------------------------------------------- |
+| GET    | `/api/auth/me`                        | Current user (role, firstName, productName, mountPath)   |
+| POST   | `/api/auth/login`                     | Default-password login. Accepts JSON or form-encoded.    |
+| POST   | `/api/auth/logout`                    | Clears the session cookie, 303 to `/login`               |
+| POST   | `/api/auth/view-as`                   | Admin-only: toggle a view-as-user cookie                 |
+| GET    | `/api/version`                        | Admin-only: current SDK + npm/PyPI `latest` + `hasUpdate`|
+| GET    | `/api/migrations/status`              | Admin-only: pending migration count + dialect            |
+| GET    | `/api/prompts`                        | List manifest prompts with 280-char previews             |
+| GET    | `/api/prompts/:id`                    | Single prompt (file content or sliced embedded range)    |
+| POST   | `/api/prompts/submit`                 | Submit drafts as a single PR via the Gravel GitHub App   |
+| GET    | `/api/samples`                        | List traced LLM calls (paginated + filterable)           |
+| GET    | `/api/samples/:id`                    | One sample with full input/output/metadata + feedback    |
+| POST   | `/api/samples/:id/feedback`           | Leave score / comment / correction                       |
+| GET    | `/api/github/status`                  | Is the Gravel GitHub App installed for this project?     |
+| GET    | `/api/github/install`                 | Returns a redirect URL to start the GH App install flow  |
+| GET    | `/api/github/install/callback`        | Callback the CP redirects to; writes `.env.local`        |
+| GET    | `/`, `/login`, `/<spa-route>`         | Serves the bundled React dashboard SPA shell             |
+| GET    | `/_assets/:id`                        | Bundled Vite assets (content-type per extension)         |
 
-This API is **not** stable across versions — the dashboard ships in lockstep with the SDK.
+The Datasets and Evals dashboard tabs are scaffolded as placeholder
+routes; their backend tables and HTTP surface are explicitly out of scope
+through v0.5.x.
+
+This API ships in lockstep with the dashboard; the only stability
+guarantee is within a single SDK release. Both SDK packages are at
+`v0.5.x` today.

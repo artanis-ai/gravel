@@ -2,11 +2,11 @@
 
 The TypeScript SDK for [Gravel](https://gravel.artanis.ai).
 
-**Status:** pre-v0. Not on npm yet.
+**Status:** v0.5.x, live on npm.
 
 ```bash
-# What this will look like once v0 ships:
 npx @artanis-ai/gravel init
+# or pnpm dlx / yarn dlx / bunx — anything that resolves the bin script
 ```
 
 This package ships both the runtime SDK library AND a thin `bin/gravel.js` wrapper that lazy-downloads the matching Go binary from signed GitHub Release assets on first invocation. `npx @artanis-ai/gravel init` runs the wizard; the wizard auto-adds `@artanis-ai/gravel` to your `package.json` deps so the generated `gravel.config.ts` resolves at runtime. The binary is NOT bundled in the npm tarball; the wrapper is ~150 lines of source-visible JS. See [`cli/DESIGN.md`](https://github.com/artanis-ai/gravel/blob/main/cli/DESIGN.md) for the rationale.
@@ -19,7 +19,7 @@ See [`/STATUS.md`](../../STATUS.md) for what's built and what's next.
 
 - The TS SDK (`@artanis-ai/gravel`).
 - The bundled React dashboard (built from `packages/dashboard/` and copied here at release).
-- Framework integrations (`@artanis-ai/gravel/next`, `/next-pages`, `/node`).
+- Framework integrations: `@artanis-ai/gravel/next` (App Router), `/next-pages` (Pages Router), `/fastify` (typed plugin), and `/node` — the generic Node bridge that Express, Hono, and any other `(req, res)` framework uses via `gravelHandler({ config })`.
 - The CLI wrapper at `bin/gravel.js`. Read it before you trust it; under 150 lines of straightforward JS.
 
 ## Layout

@@ -1,6 +1,6 @@
 # Contributing
 
-This repo is pre-v0. Code is in heavy flux. PRs are welcome but please open an issue first to discuss anything non-trivial — we're shaping the API surface as we go.
+Gravel is in active v0.5.x development. Both SDKs are on npm + PyPI; the API surface is settled for the dashboard routes and tracing patches but still evolving for the next pillars (Datasets, Evals). PRs welcome — please open an issue first for anything non-trivial so we don't both build the same thing.
 
 ## Dev setup
 
