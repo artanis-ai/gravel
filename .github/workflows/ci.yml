@@ -43,9 +43,30 @@ jobs:
       # shell (E2E tests then fail decoding JSON).
       - name: Build SDK (so dev server can import it)
         run: pnpm --filter @artanis-ai/gravel build
+      # Cache Playwright's browser binaries (~150MB) keyed by the
+      # @playwright/test version in the dashboard's package.json. Cold
+      # runs install ~30s of binaries; cached runs skip that. The
+      # `playwright-version` step reads the resolved version out of
+      # the lockfile so a bump in package.json automatically misses
+      # the cache and refetches.
+      - name: Resolve Playwright version
+        id: pw-version
+        working-directory: packages/dashboard
+        run: |
+          set -e
+          version=$(pnpm exec playwright --version | awk '{print $NF}')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw-version.outputs.version }}
       - name: Install Playwright browsers
         working-directory: packages/dashboard
-        # --with-deps installs OS libs Chromium needs on the GH runner.
+        # On a cache hit the browsers are already on disk so we only
+        # need the OS libs (--with-deps installs both, but the browser
+        # install is a no-op when binaries are present).
         run: pnpm exec playwright install --with-deps chromium
       - name: Run E2E suite
         working-directory: packages/dashboard

@@ -228,6 +228,20 @@ func Run(ctx context.Context, opts RunOptions, _ io.Writer) (RunResult, error) {
 		} else {
 			Say("When your dev server's running, open " + Bold(dashboardURL) + " on whatever host:port your app uses, and log in with the password from " + Bold(envFile) + ".")
 		}
+		// Common footgun: user already had `uvicorn --reload` /
+		// `next dev` running when they invoked `gravel init`. We just
+		// wrote new mount code into files the running process won't
+		// see until it restarts; the dashboard 404s and the user
+		// thinks the install is broken. Warn loudly when we can
+		// see something already listening on the framework port.
+		if port > 0 && ServerListeningOnPort(port) {
+			Say("")
+			Bullet(
+				Bold("Heads up:")+" something's already listening on port "+Cyan(fmt.Sprintf("%d", port))+
+					". If that's your dev server, restart it before opening the dashboard, otherwise the routes I just wrote won't be loaded and the dashboard will 404.",
+				BulletWarn,
+			)
+		}
 		_ = opts.Prompter.PressEnter("Press Enter once you can see the dashboard (or Enter to skip ahead)")
 	}
 
