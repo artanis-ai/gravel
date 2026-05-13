@@ -52,6 +52,19 @@ def _install_langchain() -> bool:
     return langchain_patch.install()
 
 
+def _install_fetch() -> bool:
+    """Patch raw HTTP transports (httpx, requests, aiohttp, urllib).
+
+    Each individual library is patched only when importable, so a host
+    with just `requests` doesn't pay any cost for `aiohttp`. Catches
+    customers who POST to OpenAI / Anthropic directly without going
+    through their official SDKs."""
+    from .tracing import fetch_patch
+
+    fetch_patch.patch_all()
+    return True
+
+
 def _run() -> None:
     if DISABLED:
         log.info("[gravel] tracing disabled via GRAVEL_TRACING_DISABLED=1")
@@ -64,6 +77,8 @@ def _run() -> None:
         installed.append("anthropic")
     if _install_langchain():
         installed.append("langchain")
+    if _install_fetch():
+        installed.append("fetch")
 
     if installed:
         log.info("[gravel] tracing patched for: %s", ", ".join(installed))

@@ -1,0 +1,8 @@
+# Vite + Vitest
+dist/
+node_modules/
+
+# Playwright E2E
+test-results/
+playwright-report/
+.playwright/

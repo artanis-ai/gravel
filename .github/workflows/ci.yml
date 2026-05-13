@@ -24,6 +24,29 @@ jobs:
       - run: pnpm --filter "./packages/*" -r build
       - run: pnpm --filter "./packages/*" -r test --if-present
 
+  dashboard-e2e:
+    name: Dashboard E2E
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Playwright browsers
+        working-directory: packages/dashboard
+        # --with-deps installs OS libs Chromium needs on the GH runner.
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Run E2E suite
+        working-directory: packages/dashboard
+        env:
+          # Playwright's webServer block boots `pnpm dev` automatically;
+          # CI flag turns on retries + the GitHub reporter.
+          CI: 'true'
+        run: pnpm test:e2e
+
   python:
     name: Python
     runs-on: ubuntu-latest

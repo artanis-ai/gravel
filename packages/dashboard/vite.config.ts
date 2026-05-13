@@ -189,5 +189,11 @@ export default defineConfig(({ command }) => ({
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     css: false,
+    // Vitest defaults pick up every `*.test.ts(x)` in the tree; the
+    // Playwright suite under `e2e/` uses the same filename convention
+    // (`*.spec.ts`) but with Playwright's `test` not vitest's, so
+    // collection fails. Scope vitest to src/ only.
+    include: ['src/**/*.test.{ts,tsx}'],
+    exclude: ['node_modules/**', 'dist/**', 'e2e/**', 'test-results/**'],
   },
 }))
