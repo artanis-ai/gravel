@@ -10,7 +10,7 @@ Gravel splits cleanly into two zones. The control plane is **optional** — ever
 ┌──────────────────────────────────────────────────┐    ┌──────────────────────────────────────────────────┐
 │ DATA PLANE — your infrastructure                 │    │ CONTROL PLANE — Artanis (optional)               │
 │                                                  │    │                                                  │
-│ - Your app + Gravel SDK                          │    │ - gravel.artanis.ai (Next.js + Clerk + Neon)     │
+│ - Your app + Gravel SDK                          │    │ - gravel.artanis.ai                              │
 │ - Your database: gravel_samples, gravel_feedback │    │ - gravel-judge.artanis-ai.workers.dev            │
 │ - .gravel/manifest.json (in your repo)           │    │                                                  │
 │ - Embedded React dashboard at /admin/ai          │    │ Touched only when you opt into:                  │
@@ -53,9 +53,14 @@ Source: `packages/dashboard/`. Vite-built; ships as static assets bundled inside
 
 1. **Data residency.** Prompts and traces stay in the user's database. Only rows being actively judged are POSTed to Artanis.
 2. **Git is the prompt store.** Prompts live where they live in the user's repo (files or embedded strings). Edits become PRs. No hot-reload, no Gravel-served prompt CDN.
-3. **Lowest-friction install.** `pnpm add @artanis-ai/gravel && pnpm gravel init` (or `uv add artanis-gravel && uv run gravel init`) is the only sequence a user ever has to run. SDK + CLI in one install; the wrapper lazy-fetches the matching Go binary. Sentry-style: framework detection, browser OAuth, AST edits, test trace before exit.
-4. **Framework agnostic.** Both Node (Next.js, Express, generic) and Python (FastAPI, Django, generic ASGI/WSGI) first-class from day one.
-5. **No phone-home.** The library makes no outbound HTTP except: wizard OAuth (once at install), test trace (once at install), judge calls (per paid eval), Mallet analysis (per analysis), credit balance refresh.
+3. **Lowest-friction install.** `pnpm add @artanis-ai/gravel && pnpm gravel init` (or `uv add artanis-gravel && uv run gravel init`) is the only sequence a user ever has to run. SDK + CLI in one install; the wrapper lazy-fetches the matching Go binary. The wizard detects framework + package manager + DB + auth provider from the user's lockfiles, AST-edits the entry file to mount the dashboard, writes a `gravel.config.ts` / `gravel_config.py` with a `getUser` stub matched to the detected auth, and writes a random admin password into `.env.local`. No browser handshake, no test HTTP call to gravel.artanis.ai — the wizard runs fully offline.
+4. **Framework agnostic.** Both Node (Next.js App + Pages, Express, Hono, Fastify, generic) and Python (FastAPI, Django, Flask, generic ASGI / WSGI) first-class from day one.
+5. **No phone-home by default.** The SDK only makes outbound HTTP when the host opts in:
+   - Judge calls (only when the host calls `runEval` / `run_eval`).
+   - Mallet `analyzePrompt` (only when the host calls it).
+   - GitHub App installation-token mints to `gravel.artanis.ai/api/cli/github/installation-token` (only when the dashboard's "Submit changes" button fires).
+   - npm / PyPI version-check ping for the dashboard's "update available" banner (admin-only, throttled, suppress with `GRAVEL_VERSION_CHECK_DISABLED=1`).
+   The auto-tracing patches DO NOT phone home — captured samples land in the host's own database via the SDK's persist path.
 
 ## Schema parity
 
