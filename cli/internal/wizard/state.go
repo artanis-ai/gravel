@@ -86,6 +86,11 @@ func InspectState(cwd string, d Detection) InspectedState {
 				// user's entry.
 				s.MountFilePath = entryRel
 			}
+		case FrameworkHono:
+			if ok, entryRel := honoEntryHasGravelMount(cwd); ok {
+				s.MountExists = true
+				s.MountFilePath = entryRel
+			}
 		}
 	}
 
@@ -207,6 +212,35 @@ func entryContainsExpressGravelMount(path string) bool {
 		return false
 	}
 	return gravelMountPatchedRE.Match(body)
+}
+
+// honoEntryHasGravelMount mirrors expressEntryHasGravelMount for
+// Hono. Same two-phase search as the Hono patcher itself.
+func honoEntryHasGravelMount(cwd string) (bool, string) {
+	checked := map[string]bool{}
+	for _, rel := range honoEntryCandidates {
+		if entryContainsHonoGravelMount(filepath.Join(cwd, rel)) {
+			return true, rel
+		}
+		checked[rel] = true
+	}
+	for _, rel := range findHonoEntries(cwd) {
+		if checked[rel] {
+			continue
+		}
+		if entryContainsHonoGravelMount(filepath.Join(cwd, rel)) {
+			return true, rel
+		}
+	}
+	return false, ""
+}
+
+func entryContainsHonoGravelMount(path string) bool {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	return gravelHonoMountedRE.Match(body)
 }
 
 // djangoURLsHasGravelInclude scans the project for a urls.py that

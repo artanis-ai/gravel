@@ -65,6 +65,12 @@ func Mount(d Detection, mountPath string, opts MountOptions) (MountResult, error
 		// to instructions only when no `<name> = express()` ctor can
 		// be located OR the ctor is inside a function/class body.
 		return mountExpress(d, mountPath)
+	case FrameworkHono:
+		// Auto-patches index.ts / src/index.ts / worker.ts / etc. to
+		// add `createGravelHandler` import + `app.mount(...)`. Uses
+		// the main `@artanis-ai/gravel` entry (web-standard handler)
+		// rather than `/node` because Hono natively speaks fetch.
+		return mountHono(d, mountPath)
 	default:
 		return manual(genericInstructions(mountPath)), nil
 	}
