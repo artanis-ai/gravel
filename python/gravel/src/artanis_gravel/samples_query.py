@@ -154,19 +154,15 @@ def list_samples(
     return {"samples": samples, "total": total, "page": page, "page_size": pz}
 
 
-def get_sample_detail(engine: Engine, sample_id: str) -> dict | None:
-    with engine.connect() as conn:
-        row = conn.execute(
-            select(gravel_samples).where(gravel_samples.c.id == sample_id)
-        ).mappings().first()
-        if not row:
-            return None
-        fb = conn.execute(
-            select(gravel_feedback).where(gravel_feedback.c.sample_id == sample_id).order_by(
-                desc(gravel_feedback.c.timestamp)
-            )
-        ).mappings().all()
+def _summarize_row(row: Any, scores: list[Any]) -> dict:
+    """Build a SampleListItem-shaped object from a row + its feedback
+    scores. Matches `packages/sdk-ts/src/samples/query.ts` summary.
 
+    Centralised so list_samples and get_sample_detail emit identical
+    summary fields. Pre-v0.5.24 the detail handler had its own ad-hoc
+    shape that diverged from the list shape, which is what crashed
+    `SampleReviewDialog`'s `const { sample } = data` destructure."""
+    ti, to_ = _tokens_from(row["metadata"])
     return {
         "id": row["id"],
         "name": row["name"],
@@ -177,24 +173,88 @@ def get_sample_detail(engine: Engine, sample_id: str) -> dict | None:
         "started_at": _iso(row["started_at"]),
         "completed_at": _iso(row["completed_at"]),
         "duration_ms": row["duration_ms"],
+        "tokens_in": ti,
+        "tokens_out": to_,
+        "feedback_count": len(scores),
+        "feedback_score": _roll_up_feedback(scores),
+    }
+
+
+def get_sample_detail(engine: Engine, sample_id: str) -> dict | None:
+    """Returns the SampleDetailResponse shape exactly:
+
+        { "sample": SampleListItem & { commit_sha, input, output, metadata },
+          "feedback": [FeedbackItem...],
+          "related": [SampleListItem...] }
+
+    Mirrors `packages/sdk-ts/src/samples/query.ts:getSampleDetail`. The
+    dashboard's `SampleReviewDialog` destructures `const { sample,
+    feedback } = data` and reads `sample.input`; any drift here is a
+    customer-visible crash.
+    """
+    with engine.connect() as conn:
+        row = conn.execute(
+            select(gravel_samples).where(gravel_samples.c.id == sample_id)
+        ).mappings().first()
+        if not row:
+            return None
+        # Same sample's feedback for the rollup + the FeedbackItem[] return.
+        fb_rows = conn.execute(
+            select(gravel_feedback).where(gravel_feedback.c.sample_id == sample_id).order_by(
+                desc(gravel_feedback.c.created_at)
+            )
+        ).mappings().all()
+        # Related: every other sample sharing this one's group_id. The
+        # dashboard's trace pane lists them so the reviewer can hop
+        # between steps of a multi-step trace.
+        related_rows: list[Any] = []
+        gid = row["group_id"]
+        if gid:
+            related_rows = list(
+                conn.execute(
+                    select(gravel_samples)
+                    .where(
+                        and_(
+                            gravel_samples.c.group_id == gid,
+                            gravel_samples.c.id != sample_id,
+                        )
+                    )
+                    .order_by(desc(gravel_samples.c.timestamp))
+                ).mappings()
+            )
+        # Feedback rollup for the related samples (one query, IN clause).
+        related_scores: dict[str, list[Any]] = {r["id"]: [] for r in related_rows}
+        if related_scores:
+            for sid, score in conn.execute(
+                select(gravel_feedback.c.sample_id, gravel_feedback.c.score).where(
+                    gravel_feedback.c.sample_id.in_(list(related_scores))
+                )
+            ).all():
+                related_scores.setdefault(sid, []).append(score)
+
+    self_scores = [f["score"] for f in fb_rows]
+    sample_summary = _summarize_row(row, self_scores)
+    sample_full = {
+        **sample_summary,
+        "commit_sha": row["commit_sha"],
         "input": row["input"],
         "output": row["output"],
         "metadata": _coerce_metadata(row["metadata"]),
-        "commit_sha": row["commit_sha"],
-        "prompt_id": row["prompt_id"],
-        "feedback": [
-            {
-                "id": f["id"],
-                "score": f["score"],
-                "comment": f["comment"],
-                "correction": f["correction"],
-                "source": f["source"],
-                "reporter_user_id": f["reporter_user_id"],
-                "timestamp": _iso(f["timestamp"]),
-            }
-            for f in fb
-        ],
     }
+    feedback = [
+        {
+            "id": f["id"],
+            "sample_id": f["sample_id"],
+            "comment": f["comment"],
+            "correction": f["correction"],
+            "score": f["score"],
+            "reporter_user_id": f["reporter_user_id"],
+            "created_at": _iso(f["created_at"]),
+        }
+        for f in fb_rows
+    ]
+    related = [_summarize_row(r, related_scores.get(r["id"], [])) for r in related_rows]
+    return {"sample": sample_full, "feedback": feedback, "related": related}
 
 
 def record_sample_feedback(

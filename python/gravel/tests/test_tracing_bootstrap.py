@@ -37,12 +37,15 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy import create_engine
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
 from artanis_gravel import GravelConfig
 from artanis_gravel.asgi import _build_context as build_asgi_context
 from artanis_gravel.django import _build_proto_context as build_django_context
 from artanis_gravel.fastapi import create_gravel_router
 from artanis_gravel.samples_query import list_samples
-from artanis_gravel.schema import gravel_samples, metadata
+from artanis_gravel.schema import gravel_feedback, gravel_samples, metadata
 from artanis_gravel.tracing import (
     install_auto_tracing,
     set_gravel_tracing_config,
@@ -398,3 +401,172 @@ def test_list_samples_against_go_bootstrapped_db(tmp_path: Path) -> None:
         s = by_id[sid]
         assert isinstance(s["started_at"], str), f"{sid}.started_at is {type(s['started_at'])}"
         assert "T" in s["started_at"] or "-" in s["started_at"], s["started_at"]
+
+
+# -------------------- 4. /api/samples/:id response shape parity --------------------
+
+
+def test_api_samples_detail_shape_matches_dashboard_contract(tmp_path: Path) -> None:
+    """The dashboard's SampleReviewDialog destructures
+    `const { sample, feedback } = data` from the /api/samples/:id
+    response and reads `sample.input`. Pre-v0.5.24 the Python handler
+    returned a flat object — destructure produced `sample === undefined`
+    and the dialog crashed with `Cannot read properties of undefined
+    (reading 'input')`.
+
+    This test stands up the full handler chain (FastAPI router →
+    dispatcher → samples_query.get_sample_detail), hits /api/samples/:id
+    against a real DB-backed install, and asserts every field the
+    dashboard's `SampleDetailResponse` interface declares. Any future
+    drift between the Python response and the TS dashboard contract
+    must fail here. The TS canon lives in
+    `packages/sdk-ts/src/samples/query.ts:SampleDetail` and is mirrored
+    in `packages/dashboard/src/lib/types.ts:SampleDetailResponse`.
+    """
+    url = _sqlite_url(tmp_path)
+    _bootstrap_tables(url)
+    engine = create_engine(url)
+
+    # Seed a sample + one feedback row sharing a group_id with a second
+    # sample, so we exercise the `related` array path too.
+    with engine.begin() as conn:
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc)
+        conn.execute(
+            gravel_samples.insert().values(
+                id="s-detail",
+                name="openai.chat.completions.create",
+                environment="prod",
+                model="gpt-4o-mini",
+                status="completed",
+                group_id="trace-1",
+                timestamp=now,
+                started_at=now,
+                completed_at=now,
+                duration_ms=42,
+                input={"messages": [{"role": "user", "content": "hi"}]},
+                output={"choices": [{"message": {"role": "assistant", "content": "hello"}}]},
+                metadata={"tokens_input": 4, "tokens_output": 2},
+                commit_sha="deadbeef",
+            )
+        )
+        conn.execute(
+            gravel_samples.insert().values(
+                id="s-related",
+                name="openai.chat.completions.create",
+                environment="prod",
+                model="gpt-4o-mini",
+                status="completed",
+                group_id="trace-1",
+                timestamp=now,
+                started_at=now,
+                completed_at=now,
+            )
+        )
+        conn.execute(
+            gravel_feedback.insert().values(
+                id="f-1",
+                sample_id="s-detail",
+                comment="off-topic",
+                correction="should mention X",
+                score="negative",
+                reporter_user_id="u-1",
+                source="ui",
+                timestamp=now,
+            )
+        )
+    engine.dispose()
+
+    app = FastAPI()
+    cfg = GravelConfig(
+        database={"url": url},
+        auth={"default_password": "test-password"},
+        mount_path="/admin/ai",
+    )
+    app.include_router(create_gravel_router(cfg), prefix="/admin/ai")
+    client = TestClient(app)
+
+    login = client.post("/admin/ai/api/auth/login", json={"password": "test-password"})
+    assert login.status_code == 200
+    cookie = login.headers["set-cookie"]
+
+    res = client.get("/admin/ai/api/samples/s-detail", headers={"cookie": cookie})
+    assert res.status_code == 200, res.text
+    data = res.json()
+
+    # Top-level shape — SampleDetailResponse.
+    assert set(data) == {"sample", "feedback", "related"}, (
+        f"Top-level keys must be exactly sample/feedback/related; got {sorted(data)}. "
+        "Dashboard's `const { sample, feedback } = data` requires this."
+    )
+
+    s = data["sample"]
+    # Every SampleListItem field the dashboard reads, plus the
+    # detail-only fields (commit_sha / input / output / metadata).
+    required_sample_keys = {
+        "id", "name", "model", "environment", "status", "group_id",
+        "started_at", "completed_at", "duration_ms",
+        "tokens_in", "tokens_out", "feedback_count", "feedback_score",
+        "commit_sha", "input", "output", "metadata",
+    }
+    missing = required_sample_keys - set(s)
+    assert not missing, f"sample is missing keys the dashboard needs: {missing}"
+    assert s["id"] == "s-detail"
+    assert s["model"] == "gpt-4o-mini"
+    assert s["commit_sha"] == "deadbeef"
+    # input/output must be present and non-None — this is what
+    # `extractMessages(sample.input)` calls in SampleReviewDialog.
+    assert s["input"] is not None
+    assert s["output"] is not None
+    assert s["feedback_count"] == 1
+    assert s["feedback_score"] == "negative"
+    # Tokens from metadata.
+    assert s["tokens_in"] == 4
+    assert s["tokens_out"] == 2
+
+    # FeedbackItem shape per packages/dashboard/src/lib/types.ts.
+    assert len(data["feedback"]) == 1
+    fb = data["feedback"][0]
+    required_feedback_keys = {
+        "id", "sample_id", "comment", "correction", "score",
+        "reporter_user_id", "created_at",
+    }
+    missing_fb = required_feedback_keys - set(fb)
+    assert not missing_fb, f"feedback row is missing keys: {missing_fb}"
+    assert fb["sample_id"] == "s-detail"
+    assert fb["score"] == "negative"
+    # `created_at` (TS canon) — must NOT be `timestamp` (the old Python name).
+    assert isinstance(fb["created_at"], str)
+    assert "timestamp" not in fb, (
+        "feedback row must use `created_at` not `timestamp` — the dashboard "
+        "FeedbackItem interface declares created_at"
+    )
+
+    # Related samples sharing this one's group_id.
+    assert len(data["related"]) == 1
+    assert data["related"][0]["id"] == "s-related"
+    # Related rows must be SampleListItem-shaped (no input/output/metadata).
+    related_keys = set(data["related"][0])
+    assert "tokens_in" in related_keys
+    assert "feedback_count" in related_keys
+
+
+def test_api_samples_detail_404_for_unknown_id(tmp_path: Path) -> None:
+    """Defensive: the handler must 404 (not 500, not return None as
+    JSON null) when the requested sample doesn't exist."""
+    url = _sqlite_url(tmp_path)
+    _bootstrap_tables(url)
+
+    app = FastAPI()
+    cfg = GravelConfig(
+        database={"url": url},
+        auth={"default_password": "test-password"},
+        mount_path="/admin/ai",
+    )
+    app.include_router(create_gravel_router(cfg), prefix="/admin/ai")
+    client = TestClient(app)
+    login = client.post("/admin/ai/api/auth/login", json={"password": "test-password"})
+    cookie = login.headers["set-cookie"]
+    res = client.get("/admin/ai/api/samples/does-not-exist", headers={"cookie": cookie})
+    assert res.status_code == 404

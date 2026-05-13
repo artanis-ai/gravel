@@ -120,8 +120,13 @@ def _seed_feedback(
     reporter_user_id: str | None = "u1",
     source: str = "ui",
     timestamp: datetime.datetime | None = None,
+    created_at: datetime.datetime | None = None,
 ) -> None:
     ts = timestamp or _utc(2026, 5, 1, 12)
+    # Mirror the TS canon: detail view orders feedback by `created_at`,
+    # not `timestamp`. Default to whatever the test asks for timestamp
+    # so legacy tests still drive both columns consistently.
+    ca = created_at or ts
     with engine.begin() as conn:
         conn.execute(
             gravel_feedback.insert().values(
@@ -133,6 +138,7 @@ def _seed_feedback(
                 source=source,
                 reporter_user_id=reporter_user_id,
                 timestamp=ts,
+                created_at=ca,
             )
         )
 
@@ -444,27 +450,36 @@ def test_get_sample_detail_returns_full_shape(engine):
     )
     detail = get_sample_detail(engine, "s1")
     assert detail is not None
-    assert detail["id"] == "s1"
-    assert detail["name"] == "my-trace"
-    assert detail["group_id"] == "grp1"
-    assert detail["prompt_id"] == "p_xyz"
-    assert detail["commit_sha"] == "abc123"
-    assert detail["metadata"] == {"k": "v"}
+    # SampleDetailResponse canon: { sample, feedback, related }.
+    # Pre-v0.5.24 the Python detail returned a flat object and the
+    # dashboard's `const { sample } = data` destructure crashed on
+    # `sample.input`. Test pins the canonical shape now.
+    assert set(detail) == {"sample", "feedback", "related"}
+    s = detail["sample"]
+    assert s["id"] == "s1"
+    assert s["name"] == "my-trace"
+    assert s["group_id"] == "grp1"
+    assert s["commit_sha"] == "abc123"
+    assert s["metadata"] == {"k": "v"}
     # Input/output preserved as written.
-    assert detail["input"] is not None
-    assert detail["output"] is not None
-    # Feedback list shape matches the dashboard's expectations.
+    assert s["input"] is not None
+    assert s["output"] is not None
+    # Feedback list shape matches the dashboard's FeedbackItem.
     assert len(detail["feedback"]) == 1
     fb = detail["feedback"][0]
+    assert fb["id"] == "f1"
+    assert fb["sample_id"] == "s1"
     assert fb["score"] == "positive"
     assert fb["comment"] == "great"
     assert fb["correction"] is None
-    assert fb["source"] == "ui"
     assert fb["reporter_user_id"] == "u-alice"
+    assert "created_at" in fb  # ISO string, not the old `timestamp` key
+    # No other samples with this group_id → related is empty.
+    assert detail["related"] == []
 
 
 def test_get_sample_detail_feedback_ordered_newest_first(engine):
-    """Feedback list ordered by timestamp DESC so the most-recent
+    """Feedback list ordered by created_at DESC so the most-recent
     reviewer comment is at the top of the dialog."""
     _seed_sample(engine, sid="s1")
     _seed_feedback(engine, fid="old", sample_id="s1", timestamp=_utc(2026, 5, 1))
@@ -520,11 +535,11 @@ def test_record_sample_feedback_persists_and_surfaces_in_detail(engine):
     )
     detail = get_sample_detail(engine, "s1")
     fb = detail["feedback"][0]
+    assert fb["sample_id"] == "s1"
     assert fb["score"] == "negative"
     assert fb["comment"] == "off-topic"
     assert fb["correction"] == "should mention X"
     assert fb["reporter_user_id"] == "u-bob"
-    assert fb["source"] == "ui"  # default source
 
 
 # -------------------- gravel_tables_exist --------------------
