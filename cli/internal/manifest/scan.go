@@ -33,6 +33,55 @@ var promptFileExts = map[string]struct{}{
 	".prompt": {},
 }
 
+// docFilenames is the case-insensitive denylist of conventional
+// documentation filenames (without extension) the fast scan refuses
+// to ingest as prompts. Without this, a project that keeps a
+// `prompts/README.md` describing its own prompt conventions ends up
+// with the README itself as a fake prompt in the manifest. The user
+// can still add a genuinely-named-README prompt via the wizard's
+// manual-entry path.
+//
+// Source: the set of files GitHub treats as project metadata + a few
+// extras seen in real customer repos.
+var docFilenames = map[string]struct{}{
+	"README":          {},
+	"CHANGELOG":       {},
+	"CONTRIBUTING":    {},
+	"LICENSE":         {},
+	"LICENCE":         {},
+	"NOTICE":          {},
+	"AUTHORS":         {},
+	"MAINTAINERS":     {},
+	"HISTORY":         {},
+	"CHANGES":         {},
+	"SECURITY":        {},
+	"CODE_OF_CONDUCT": {},
+	"COPYING":         {},
+	"INSTALL":         {},
+	"TODO":            {},
+	"ROADMAP":         {},
+	"USAGE":           {},
+}
+
+// docDirNames is the set of subdirectory names INSIDE a conventional
+// prompt dir that fast-scan skips wholesale. Common pattern:
+// `prompts/docs/` for "how to write good prompts" docs. The whole
+// subtree gets pruned via filepath.SkipDir.
+var docDirNames = map[string]struct{}{
+	"docs":          {},
+	"doc":           {},
+	"documentation": {},
+	"examples":      {},
+}
+
+// isDocFilename returns true when filename (e.g. "README.md")
+// matches the docFilenames denylist. Case-insensitive stem match.
+func isDocFilename(filename string) bool {
+	stem := strings.ToUpper(strings.TrimSuffix(filename, filepath.Ext(filename)))
+	_, ok := docFilenames[stem]
+	return ok
+}
+
 // FastScanResult bundles the updated manifest with counts that the
 // CLI surfaces to the user.
 type FastScanResult struct {
@@ -136,10 +185,26 @@ func FastScan(repoRoot string, current Manifest) (FastScanResult, error) {
 				return err
 			}
 			if dirent.IsDir() {
+				// Skip subtrees that are clearly docs about the
+				// prompts rather than prompts themselves (e.g.
+				// prompts/docs/, templates/examples/). Don't apply
+				// to the top-level promptFileDirs entry itself.
+				if path != dirAbs {
+					if _, skip := docDirNames[strings.ToLower(dirent.Name())]; skip {
+						return filepath.SkipDir
+					}
+				}
 				return nil
 			}
 			ext := strings.ToLower(filepath.Ext(path))
 			if _, ok := promptFileExts[ext]; !ok {
+				return nil
+			}
+			// Skip conventional doc filenames (README.md, LICENSE.md,
+			// CHANGELOG.md, ...). They sit alongside genuine prompts
+			// to document them and would otherwise pollute the
+			// manifest with non-prompt entries.
+			if isDocFilename(dirent.Name()) {
 				return nil
 			}
 			rel, err := filepath.Rel(repoRoot, path)

@@ -165,6 +165,217 @@ func TestWrite_NoHTMLEscape(t *testing.T) {
 
 // --- fast scan --------------------------------------------------------------
 
+// --- doc-filename filter ----------------------------------------------------
+// Heavy coverage for the "scan ignores docs" rule. Without this filter
+// every project that keeps a `prompts/README.md` describing its prompt
+// conventions ends up with the README itself listed as a prompt.
+
+func TestIsDocFilename_MatchMatrix(t *testing.T) {
+	cases := []struct {
+		name string
+		want bool
+	}{
+		// Standard project metadata files (denylist hits).
+		{"README.md", true},
+		{"readme.md", true}, // case-insensitive
+		{"Readme.md", true},
+		{"README.txt", true},
+		{"README.prompt", true}, // .prompt ext shouldn't save a README from the filter
+		{"CHANGELOG.md", true},
+		{"CHANGES.md", true},
+		{"HISTORY.md", true},
+		{"CONTRIBUTING.md", true},
+		{"LICENSE.md", true},
+		{"LICENCE.md", true}, // British spelling
+		{"NOTICE.md", true},
+		{"AUTHORS.md", true},
+		{"MAINTAINERS.md", true},
+		{"SECURITY.md", true},
+		{"CODE_OF_CONDUCT.md", true},
+		{"COPYING.md", true},
+		{"INSTALL.md", true},
+		{"TODO.md", true},
+		{"ROADMAP.md", true},
+		{"USAGE.md", true},
+
+		// Genuine prompt-y names that just happen to share characters.
+		{"readme-style-system-prompt.md", false},
+		{"my-readme.md", false},     // contains readme but is not "readme"
+		{"system.md", false},        // genuine prompt
+		{"welcome.txt", false},
+		{"summarise.prompt", false},
+		{"chatbot.md", false},
+
+		// Filenames that look like docs but have non-doc extensions
+		// — these are filtered upstream by promptFileExts anyway, but
+		// isDocFilename's job is just "does the stem match a doc name?"
+		{"README.json", true},
+
+		// Edge cases.
+		{".md", false},                  // empty stem
+		{"PROMPT.md", false},            // would be a prompt named PROMPT
+		{"system-CHANGELOG.md", false},  // not exactly CHANGELOG
+		{"CHANGELOG-old.md", false},     // CHANGELOG-old isn't in the list
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := isDocFilename(tc.name)
+			if got != tc.want {
+				t.Errorf("isDocFilename(%q) = %v, want %v", tc.name, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFastScan_SkipsReadmeInPromptsDir(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "prompts/README.md", "# How we organise prompts\n")
+	writeFile(t, dir, "prompts/system.md", "You are a helpful agent.\n")
+	res, err := FastScan(dir, Empty())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Added != 1 {
+		t.Errorf("Added = %d, want 1 (README must be filtered)", res.Added)
+	}
+	if len(res.Manifest.Prompts) != 1 || res.Manifest.Prompts[0].Path != "prompts/system.md" {
+		t.Errorf("manifest unexpected: %+v", res.Manifest.Prompts)
+	}
+}
+
+func TestFastScan_SkipsAllDocFilenames(t *testing.T) {
+	// One real prompt plus the entire doc-filename denylist sitting
+	// next to it. The genuine prompt is the only thing that lands.
+	dir := t.TempDir()
+	writeFile(t, dir, "prompts/system.md", "the actual prompt")
+	for _, name := range []string{
+		"README.md", "CHANGELOG.md", "CONTRIBUTING.md",
+		"LICENSE.md", "LICENCE.md", "NOTICE.md", "AUTHORS.md",
+		"MAINTAINERS.md", "HISTORY.md", "CHANGES.md", "SECURITY.md",
+		"CODE_OF_CONDUCT.md", "COPYING.md", "INSTALL.md", "TODO.md",
+		"ROADMAP.md", "USAGE.md",
+	} {
+		writeFile(t, dir, "prompts/"+name, "doc content")
+	}
+	res, err := FastScan(dir, Empty())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Added != 1 {
+		t.Errorf("Added = %d, want 1 (every doc filename must be skipped)", res.Added)
+	}
+	if len(res.Manifest.Prompts) != 1 || res.Manifest.Prompts[0].Path != "prompts/system.md" {
+		t.Errorf("manifest unexpected: %+v", res.Manifest.Prompts)
+	}
+}
+
+func TestFastScan_SkipsDocsSubdirWholesale(t *testing.T) {
+	// `prompts/docs/foo.md` is documentation about the prompts, not a
+	// prompt. Same for `templates/examples/...`. SkipDir on the
+	// subtree, not just the README inside it.
+	dir := t.TempDir()
+	writeFile(t, dir, "prompts/system.md", "real prompt")
+	writeFile(t, dir, "prompts/docs/how-to-write-prompts.md", "docs")
+	writeFile(t, dir, "prompts/docs/style-guide.md", "more docs")
+	writeFile(t, dir, "templates/examples/example1.md", "example doc")
+	writeFile(t, dir, "templates/onboarding.md", "real template")
+	res, err := FastScan(dir, Empty())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Added != 2 {
+		t.Errorf("Added = %d, want 2 (docs/ + examples/ skipped wholesale)", res.Added)
+	}
+	paths := []string{}
+	for _, p := range res.Manifest.Prompts {
+		paths = append(paths, p.Path)
+	}
+	want := []string{"prompts/system.md", "templates/onboarding.md"}
+	if !equalUnordered(paths, want) {
+		t.Errorf("manifest paths = %v, want %v", paths, want)
+	}
+}
+
+func TestFastScan_DocDirCaseInsensitive(t *testing.T) {
+	// `prompts/Docs/` and `prompts/DOCUMENTATION/` should also skip.
+	dir := t.TempDir()
+	writeFile(t, dir, "prompts/system.md", "real prompt")
+	writeFile(t, dir, "prompts/Docs/how-to.md", "docs")
+	writeFile(t, dir, "prompts/DOCUMENTATION/style-guide.md", "more docs")
+	res, _ := FastScan(dir, Empty())
+	if res.Added != 1 {
+		t.Errorf("Added = %d, want 1 (Docs/ and DOCUMENTATION/ are case-insensitive matches)", res.Added)
+	}
+}
+
+// REGRESSION: don't skip the top-level `prompts/` dir itself even if
+// the dir name shadows a docDirName entry hypothetically. (None of
+// the current promptFileDirs collide with docDirNames, but if someone
+// later adds "examples" to promptFileDirs we don't want them to nuke
+// themselves.)
+func TestFastScan_DocDirSkip_DoesNotEatTopLevelEntry(t *testing.T) {
+	dir := t.TempDir()
+	// `prompts/` is a top-level promptFileDir; it must not be
+	// SkipDir'd even though "prompts" is similar to (but not in)
+	// docDirNames.
+	writeFile(t, dir, "prompts/system.md", "real prompt")
+	res, err := FastScan(dir, Empty())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Added != 1 {
+		t.Errorf("top-level prompts/ got skipped; Added = %d, want 1", res.Added)
+	}
+}
+
+// User who explicitly added a README as a prompt earlier (via the
+// manual-entry path in the wizard) must KEEP it on re-scan — the
+// doc-filename filter only applies to NEW-file discovery, not to
+// already-tracked entries.
+func TestFastScan_RespectsManualReadmeOnRescan(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "prompts/README.md", "actually a prompt the user added by hand")
+	writeFile(t, dir, "prompts/system.md", "another real prompt")
+	current := Empty()
+	current.Prompts = []Prompt{{
+		ID:   GeneratePromptID("prompts/README.md", -1),
+		Type: PromptFile,
+		Path: "prompts/README.md",
+		Hash: HashPrompt("actually a prompt the user added by hand"),
+	}}
+	res, err := FastScan(dir, current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := []string{}
+	for _, p := range res.Manifest.Prompts {
+		paths = append(paths, p.Path)
+	}
+	want := []string{"prompts/README.md", "prompts/system.md"}
+	if !equalUnordered(paths, want) {
+		t.Errorf("re-scan dropped the user's manually-added README. paths=%v want=%v", paths, want)
+	}
+}
+
+func equalUnordered(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	seen := make(map[string]int, len(a))
+	for _, x := range a {
+		seen[x]++
+	}
+	for _, x := range b {
+		seen[x]--
+	}
+	for _, v := range seen {
+		if v != 0 {
+			return false
+		}
+	}
+	return true
+}
+
 func TestFastScan_DiscoversNewFiles(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "prompts/welcome.md", "Hello, world.\n")
