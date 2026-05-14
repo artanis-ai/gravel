@@ -1,0 +1,32 @@
+{
+  "name": "anthropic.messages.create",
+  "description": "Plain Anthropic call. Token usage uses input_tokens/output_tokens. Output content is an array of typed blocks (here just one text block). stop_reason='end_turn' is the happy path.",
+  "source": "anthropic-messages",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "model": "claude-3-5-sonnet-latest",
+    "max_tokens": 256,
+    "messages": [
+      { "role": "user", "content": "What's the capital of France?" }
+    ]
+  },
+  "output": {
+    "id": "msg_01anthropic1",
+    "type": "message",
+    "role": "assistant",
+    "model": "claude-3-5-sonnet-20241022",
+    "content": [
+      { "type": "text", "text": "The capital of France is Paris." }
+    ],
+    "stop_reason": "end_turn",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 13,
+      "output_tokens": 9,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0
+    }
+  },
+  "metadata": { "tokens_input": 13, "tokens_output": 9 }
+}

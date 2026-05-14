@@ -1,0 +1,41 @@
+{
+  "name": "anthropic.messages.create",
+  "description": "Anthropic-specific: tool results come back as a user message with a tool_result content block (not a separate role='tool' message like OpenAI). The tool_use_id pairs with the prior assistant tool_use.id. Renderer must group the result with its call visually, even though they live on different role messages.",
+  "source": "anthropic-messages",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "model": "claude-3-5-sonnet-latest",
+    "max_tokens": 512,
+    "messages": [
+      { "role": "user", "content": "What's the weather in Tokyo?" },
+      {
+        "role": "assistant",
+        "content": [
+          { "type": "text", "text": "Let me check that for you." },
+          { "type": "tool_use", "id": "toolu_01tokyo", "name": "get_weather", "input": { "location": "Tokyo" } }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "toolu_01tokyo",
+            "content": "{\"temp_c\":14,\"condition\":\"clear\"}"
+          }
+        ]
+      }
+    ]
+  },
+  "output": {
+    "id": "msg_01anthropicToolResult",
+    "type": "message",
+    "role": "assistant",
+    "model": "claude-3-5-sonnet-20241022",
+    "content": [{ "type": "text", "text": "It's 14°C and clear in Tokyo right now." }],
+    "stop_reason": "end_turn",
+    "usage": { "input_tokens": 421, "output_tokens": 16 }
+  },
+  "metadata": { "tokens_input": 421, "tokens_output": 16 }
+}

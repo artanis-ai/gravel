@@ -1,0 +1,43 @@
+{
+  "name": "anthropic.messages.create",
+  "description": "Anthropic tool use: assistant response contains a tool_use content block with id/name/input (parsed dict, not a JSON string like OpenAI). stop_reason='tool_use'. Renderer aligns the visual treatment with OpenAI tool_calls.",
+  "source": "anthropic-messages",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "model": "claude-3-5-sonnet-latest",
+    "max_tokens": 512,
+    "messages": [
+      { "role": "user", "content": "What's the weather in Tokyo?" }
+    ],
+    "tools": [
+      {
+        "name": "get_weather",
+        "description": "Current weather for a city.",
+        "input_schema": {
+          "type": "object",
+          "properties": { "location": { "type": "string" } },
+          "required": ["location"]
+        }
+      }
+    ]
+  },
+  "output": {
+    "id": "msg_01anthropicTools",
+    "type": "message",
+    "role": "assistant",
+    "model": "claude-3-5-sonnet-20241022",
+    "content": [
+      { "type": "text", "text": "Let me check that for you." },
+      {
+        "type": "tool_use",
+        "id": "toolu_01tokyo",
+        "name": "get_weather",
+        "input": { "location": "Tokyo" }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "usage": { "input_tokens": 374, "output_tokens": 67 }
+  },
+  "metadata": { "tokens_input": 374, "tokens_output": 67 }
+}

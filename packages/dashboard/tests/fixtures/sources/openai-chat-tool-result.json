@@ -1,0 +1,48 @@
+{
+  "name": "openai.chat.completions.create",
+  "description": "Follow-up call where the tool result is fed back into the conversation via a role='tool' message. Tests that the renderer pairs the tool message with the original tool_call_id and renders the result distinctly from a regular user message.",
+  "source": "openai-chat",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "model": "gpt-4o",
+    "messages": [
+      { "role": "system", "content": "Use tools when relevant." },
+      { "role": "user", "content": "What's the weather in San Francisco?" },
+      {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "id": "call_sf_001",
+            "type": "function",
+            "function": { "name": "get_weather", "arguments": "{\"location\":\"San Francisco\"}" }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "call_sf_001",
+        "content": "{\"temp_c\":17,\"condition\":\"partly cloudy\"}"
+      }
+    ]
+  },
+  "output": {
+    "id": "chatcmpl-9e4followUpX2",
+    "object": "chat.completion",
+    "model": "gpt-4o-2024-08-06",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "It's 17°C and partly cloudy in San Francisco.",
+          "refusal": null
+        },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": { "prompt_tokens": 134, "completion_tokens": 14, "total_tokens": 148 }
+  },
+  "metadata": { "tokens_input": 134, "tokens_output": 14 }
+}

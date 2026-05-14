@@ -1,0 +1,39 @@
+{
+  "name": "langchain.llm",
+  "description": "Python `langchain.llm` trace (raw text LLM, not a chat model). Input is `{prompts: string[], serialized: <llm config>, ...kwargs}` where the kwarg fields include `invocation_params`, `options`, `name`, `batch_size`, `metadata`. Output is an LLMResult: `{generations: Array<Array<Generation>>, llm_output, run}` where `generations[i]` is the list of completions for `prompts[i]` (so a single prompt with n=1 is `[[{text, generation_info}]]`).",
+  "source": "langchain-llm",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "prompts": ["What is the chemical symbol for sodium? Answer in one word."],
+    "serialized": {
+      "lc": 1,
+      "type": "constructor",
+      "id": ["langchain_openai", "llms", "OpenAI"],
+      "kwargs": { "model_name": "gpt-3.5-turbo-instruct", "temperature": 0 }
+    },
+    "invocation_params": { "model_name": "gpt-3.5-turbo-instruct", "temperature": 0, "max_tokens": 32 },
+    "options": { "stop": null },
+    "batch_size": 1
+  },
+  "output": {
+    "generations": [
+      [
+        {
+          "text": "Na",
+          "generation_info": { "finish_reason": "stop", "logprobs": null }
+        }
+      ]
+    ],
+    "llm_output": {
+      "token_usage": { "prompt_tokens": 14, "completion_tokens": 2, "total_tokens": 16 },
+      "model_name": "gpt-3.5-turbo-instruct"
+    },
+    "run": null
+  },
+  "metadata": {
+    "model": "gpt-3.5-turbo-instruct",
+    "tokens_input": 14,
+    "tokens_output": 2
+  }
+}

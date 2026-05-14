@@ -26,8 +26,19 @@ interface DialogProps {
 export function Dialog({ open, onClose, ariaLabel, children, size = 'fullscreen' }: DialogProps) {
   useEffect(() => {
     if (!open) return
+    // Track open dialogs globally so when an inner dialog is open, the
+    // outer one's Escape handler doesn't fire too. The topmost dialog
+    // (last to mount) gets sole rights to handle Escape.
+    const stack = getDialogStack()
+    const id = ++stack.nextId
+    stack.openIds.push(id)
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose()
+      if (e.key !== 'Escape') return
+      const top = stack.openIds[stack.openIds.length - 1]
+      if (top !== id) return
+      e.stopPropagation()
+      e.preventDefault()
+      onClose()
     }
     window.addEventListener('keydown', onKey)
     // Lock body scroll while modal is up.
@@ -35,6 +46,7 @@ export function Dialog({ open, onClose, ariaLabel, children, size = 'fullscreen'
     document.body.style.overflow = 'hidden'
     return () => {
       window.removeEventListener('keydown', onKey)
+      stack.openIds = stack.openIds.filter((x) => x !== id)
       document.body.style.overflow = prevOverflow
     }
   }, [open, onClose])
@@ -73,4 +85,17 @@ export function Dialog({ open, onClose, ariaLabel, children, size = 'fullscreen'
     </div>
   )
   return createPortal(modal, document.body)
+}
+
+interface DialogStack {
+  nextId: number
+  openIds: number[]
+}
+
+function getDialogStack(): DialogStack {
+  const w = window as unknown as { __gravelDialogStack?: DialogStack }
+  if (!w.__gravelDialogStack) {
+    w.__gravelDialogStack = { nextId: 0, openIds: [] }
+  }
+  return w.__gravelDialogStack
 }

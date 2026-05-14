@@ -35,6 +35,10 @@ interface RunState {
   input: unknown
   model?: string
   provider?: string
+  /** Restorer returned by `gravelContext.pushSdkTracingDisabled()` at
+   *  start; called in the matching end/error callback to revert the
+   *  async-context store. Only set for LLM-shaped callbacks. */
+  popSdkSuppress?: () => void
 }
 
 const activeRuns = new Map<string, RunState>()
@@ -70,12 +74,14 @@ async function patchLangchain(): Promise<void> {
       _parentRunId?: string,
       extraParams?: Record<string, unknown>,
     ): void {
+      const popSdkSuppress = gravelContext.pushSdkTracingDisabled()
       activeRuns.set(runId, {
         startedAt: new Date(),
         name: `langchain.llm.${llm?.id?.[llm.id.length - 1] ?? 'call'}`,
         input: { prompts, extraParams },
         model: extractModel(llm, extraParams),
         provider: 'langchain',
+        popSdkSuppress,
       })
     }
 
@@ -86,12 +92,14 @@ async function patchLangchain(): Promise<void> {
       _parentRunId?: string,
       extraParams?: Record<string, unknown>,
     ): void {
+      const popSdkSuppress = gravelContext.pushSdkTracingDisabled()
       activeRuns.set(runId, {
         startedAt: new Date(),
         name: `langchain.chat.${llm?.id?.[llm.id.length - 1] ?? 'call'}`,
         input: { messages, extraParams },
         model: extractModel(llm, extraParams),
         provider: 'langchain',
+        popSdkSuppress,
       })
     }
 
@@ -99,6 +107,7 @@ async function patchLangchain(): Promise<void> {
       const state = activeRuns.get(runId)
       if (!state) return
       activeRuns.delete(runId)
+      state.popSdkSuppress?.()
       const usage = output?.llmOutput?.tokenUsage ?? output?.llmOutput?.usage
       void persistSample({
         name: state.name,
@@ -118,6 +127,7 @@ async function patchLangchain(): Promise<void> {
       const state = activeRuns.get(runId)
       if (!state) return
       activeRuns.delete(runId)
+      state.popSdkSuppress?.()
       void persistSample({
         name: state.name,
         status: 'errored',
@@ -155,6 +165,107 @@ async function patchLangchain(): Promise<void> {
     }
 
     handleChainError(err: Error, runId: string): void {
+      const state = activeRuns.get(runId)
+      if (!state) return
+      activeRuns.delete(runId)
+      void persistSample({
+        name: state.name,
+        status: 'errored',
+        startedAt: state.startedAt,
+        finishedAt: new Date(),
+        provider: state.provider,
+        input: state.input,
+        errorMessage: err?.message ?? String(err),
+      })
+    }
+
+    // ---- Tools ----
+    // Tool invocations get their own trace row so reviewers can find
+    // them in the Samples list. Mirrors the Python LC handler.
+    handleToolStart(
+      tool: any,
+      input: string,
+      runId: string,
+      _parentRunId?: string,
+      _tags?: string[],
+      _metadata?: Record<string, unknown>,
+      _runName?: string,
+    ): void {
+      activeRuns.set(runId, {
+        startedAt: new Date(),
+        name: `langchain.tool.${tool?.id?.[tool.id.length - 1] ?? tool?.name ?? 'call'}`,
+        input: { input, tool: tool?.name ?? tool?.id?.join('.') },
+        provider: 'langchain',
+      })
+    }
+
+    handleToolEnd(output: unknown, runId: string): void {
+      const state = activeRuns.get(runId)
+      if (!state) return
+      activeRuns.delete(runId)
+      void persistSample({
+        name: state.name,
+        status: 'completed',
+        startedAt: state.startedAt,
+        finishedAt: new Date(),
+        provider: state.provider,
+        input: state.input,
+        output: typeof output === 'string' ? { value: output } : output,
+      })
+    }
+
+    handleToolError(err: Error, runId: string): void {
+      const state = activeRuns.get(runId)
+      if (!state) return
+      activeRuns.delete(runId)
+      void persistSample({
+        name: state.name,
+        status: 'errored',
+        startedAt: state.startedAt,
+        finishedAt: new Date(),
+        provider: state.provider,
+        input: state.input,
+        errorMessage: err?.message ?? String(err),
+      })
+    }
+
+    // ---- Retrievers ----
+    // Each retrieval gets its own trace row so reviewers can see
+    // which query produced which documents.
+    handleRetrieverStart(
+      retriever: any,
+      query: string,
+      runId: string,
+      _parentRunId?: string,
+      _tags?: string[],
+      _metadata?: Record<string, unknown>,
+      _runName?: string,
+    ): void {
+      activeRuns.set(runId, {
+        startedAt: new Date(),
+        name: `langchain.retriever.${retriever?.id?.[retriever.id.length - 1] ?? 'call'}`,
+        input: { query, retriever: retriever?.id?.join('.') },
+        provider: 'langchain',
+      })
+    }
+
+    handleRetrieverEnd(documents: unknown, runId: string): void {
+      const state = activeRuns.get(runId)
+      if (!state) return
+      activeRuns.delete(runId)
+      const count = Array.isArray(documents) ? documents.length : null
+      void persistSample({
+        name: state.name,
+        status: 'completed',
+        startedAt: state.startedAt,
+        finishedAt: new Date(),
+        provider: state.provider,
+        input: state.input,
+        output: count !== null ? { documents, count } : documents,
+      })
+    }
+
+    handleRetrieverError(err: Error, runId: string): void {
       const state = activeRuns.get(runId)
       if (!state) return
       activeRuns.delete(runId)

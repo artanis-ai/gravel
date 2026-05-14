@@ -1,0 +1,40 @@
+{
+  "name": "openai.chat.completions.create",
+  "description": "Cross-cutting: streaming state observations. The SDK records each delta chunk in `metadata.states` (Python) or `metadata.observations` (TS, historical alias). Each entry has `{type, ts, ...}`. Renderer must show the assembled output prominently and the chunk list under a collapsible 'Stream chunks: N' disclosure, NOT inline as a wall of JSON. Includes a chunk-throughput stat (chunks/sec) above the disclosure.",
+  "source": "openai-chat",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "model": "gpt-4o-mini",
+    "messages": [
+      { "role": "user", "content": "Count down from 3." }
+    ],
+    "stream": true
+  },
+  "output": {
+    "id": "chatcmpl-stateObs",
+    "object": "chat.completion",
+    "model": "gpt-4o-mini",
+    "choices": [
+      {
+        "index": 0,
+        "message": { "role": "assistant", "content": "3... 2... 1..." },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": { "prompt_tokens": 14, "completion_tokens": 7, "total_tokens": 21 }
+  },
+  "metadata": {
+    "tokens_input": 14,
+    "tokens_output": 7,
+    "states": [
+      { "type": "chunk", "ts": 1715688000000, "delta": "3" },
+      { "type": "chunk", "ts": 1715688000040, "delta": "..." },
+      { "type": "chunk", "ts": 1715688000080, "delta": " 2" },
+      { "type": "chunk", "ts": 1715688000120, "delta": "..." },
+      { "type": "chunk", "ts": 1715688000160, "delta": " 1" },
+      { "type": "chunk", "ts": 1715688000200, "delta": "..." },
+      { "type": "finish", "ts": 1715688000220, "finish_reason": "stop" }
+    ]
+  }
+}

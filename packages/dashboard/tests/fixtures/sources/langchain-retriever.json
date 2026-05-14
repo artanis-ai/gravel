@@ -1,0 +1,35 @@
+{
+  "name": "langchain.retriever",
+  "description": "LC retrieval. Captured by the SDK callback handler's `on_retriever_start` (Python) / `handleRetrieverStart` (TS), persisted as its own trace row so reviewers can audit which queries returned which documents. Input is `{query, serialized, retriever?, parent_run_id?}` — `query` is the raw retrieval query, `serialized` is LC's dump of the retriever (vector store, BM25, hybrid, etc.). Output is `{documents: [Document], count: N}` where each Document has `{page_content, metadata: {source, ...}}`.",
+  "source": "langchain-retriever",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "query": "What are the quiet hours?",
+    "serialized": {
+      "lc": 1,
+      "type": "constructor",
+      "id": ["langchain", "vectorstores", "chroma", "Chroma", "as_retriever"],
+      "kwargs": { "search_kwargs": { "k": 3 } }
+    },
+    "parent_run_id": "8e1f3ab2-0b9c-4f3a-8aa0-1e8c2c2d7c4e"
+  },
+  "output": {
+    "documents": [
+      {
+        "page_content": "Quiet hours at Maple Ridge run from 10pm to 8am on weekdays and 11pm to 9am on weekends.",
+        "metadata": { "source": "lease.md", "section": "quiet_hours", "score": 0.91 }
+      },
+      {
+        "page_content": "Tenants are responsible for ensuring guests respect quiet hours.",
+        "metadata": { "source": "lease.md", "section": "guests", "score": 0.74 }
+      },
+      {
+        "page_content": "Repeated noise complaints can lead to formal warnings or lease termination.",
+        "metadata": { "source": "lease.md", "section": "enforcement", "score": 0.62 }
+      }
+    ],
+    "count": 3
+  },
+  "metadata": null
+}

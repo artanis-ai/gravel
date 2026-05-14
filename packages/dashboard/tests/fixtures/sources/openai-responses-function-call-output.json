@@ -1,0 +1,52 @@
+{
+  "name": "openai.responses.create",
+  "description": "OpenAI Responses API follow-up turn: the previous turn produced a function_call item; this turn feeds the function_call_output item back so the model can finalise its answer. Input is the FULL item list (assistant-style function_call, then function_call_output with the result). Renderer must pair the call with its result visually.",
+  "source": "openai-responses",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "model": "gpt-5-2026-02",
+    "input": [
+      { "type": "message", "role": "user", "content": [{ "type": "input_text", "text": "What's the weather in Tokyo?" }] },
+      {
+        "type": "function_call",
+        "id": "fc_01responsesTokyo",
+        "call_id": "call_01responsesTokyo",
+        "name": "get_weather",
+        "arguments": "{\"location\":\"Tokyo\"}"
+      },
+      {
+        "type": "function_call_output",
+        "call_id": "call_01responsesTokyo",
+        "output": "{\"temp_c\":14,\"condition\":\"clear\"}"
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "name": "get_weather",
+        "description": "Current weather for a city.",
+        "parameters": {
+          "type": "object",
+          "properties": { "location": { "type": "string" } },
+          "required": ["location"]
+        }
+      }
+    ]
+  },
+  "output": {
+    "id": "resp_01responsesFuncOut",
+    "object": "response",
+    "model": "gpt-5-2026-02",
+    "output": [
+      {
+        "type": "message",
+        "id": "msg_01responsesFuncOut",
+        "role": "assistant",
+        "content": [{ "type": "output_text", "text": "It's 14°C and clear in Tokyo right now." }]
+      }
+    ],
+    "usage": { "input_tokens": 188, "output_tokens": 14, "total_tokens": 202 }
+  },
+  "metadata": { "tokens_input": 188, "tokens_output": 14 }
+}

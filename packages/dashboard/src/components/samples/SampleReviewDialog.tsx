@@ -21,9 +21,8 @@
  * Trace Evals enabled, the textarea would loop into a suggested
  * rewrite they could apply directly.
  */
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
-import ReactMarkdown from 'react-markdown'
 import { api } from '../../lib/api'
 import {
   type FeedbackItem,
@@ -35,8 +34,8 @@ import { Dialog } from '../Dialog'
 import { Badge } from '../Badge'
 import { SkeletonText } from '../Skeleton'
 import { cx, formatDuration, formatRelative } from '../../lib/format'
-import { extractMessages, extractOutput, type ContentBlock, type NormalizedMessage } from '../../lib/messages'
-import { JsonTree } from './JsonTree'
+import { ReviewSurface } from '../review/ReviewSurface'
+import { TraceNavigator } from '../review/TraceNavigator'
 
 interface Props {
   /** All samples currently on screen (one page of the table). Drives prev/next. */
@@ -122,9 +121,18 @@ function DialogBody({
   onClose,
   onAdvance,
 }: DialogBodyProps) {
+  // The dialog defaults to the sample passed in by the table (the
+  // page-of-results navigation context), but lets the reviewer
+  // hop to a sibling trace step via the TraceNavigator. When the
+  // page-of-results sample changes (prev/next), reset the override.
+  const [overrideId, setOverrideId] = useState<string | null>(null)
+  useEffect(() => {
+    setOverrideId(null)
+  }, [sample.id])
+  const activeId = overrideId ?? sample.id
   const detailQ = useQuery<SampleDetailResponse>({
-    queryKey: ['sample', sample.id],
-    queryFn: () => api.get<SampleDetailResponse>(`/api/samples/${sample.id}`),
+    queryKey: ['sample', activeId],
+    queryFn: () => api.get<SampleDetailResponse>(`/api/samples/${activeId}`),
   })
 
   return (
@@ -153,8 +161,9 @@ function DialogBody({
         ) : (
           <DialogContent
             data={detailQ.data}
-            sampleId={sample.id}
+            sampleId={activeId}
             onAdvance={onAdvance}
+            onJumpSibling={setOverrideId}
           />
         )}
       </div>
@@ -256,74 +265,51 @@ function DialogContent({
   data,
   sampleId,
   onAdvance,
+  onJumpSibling,
 }: {
   data: SampleDetailResponse
   sampleId: string
   onAdvance: () => void
+  onJumpSibling: (siblingId: string) => void
 }) {
-  const { sample, feedback } = data
-  const messages = useMemo(() => extractMessages(sample.input), [sample.input])
-  const output = useMemo(() => extractOutput(sample.output), [sample.output])
-
-  // Collapse defaults:
-  //   - Single message: always open (no benefit to making the reviewer click).
-  //   - system: collapsed (long static instructions).
-  //   - user: collapsed except the LAST user message, which is the
-  //     turn the assistant responded to and what the reviewer needs
-  //     to see immediately.
-  //   - assistant / tool / other: open.
-  const lastUserIdx = messages.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1)
-  const initialOpen = (m: NormalizedMessage, i: number) => {
-    if (messages.length === 1) return true
-    if (m.role === 'system') return false
-    if (m.role === 'user') return i === lastUserIdx
-    return true
-  }
-
+  const { sample, feedback, related } = data
   return (
     <div className="flex h-full flex-col">
       <MetadataStrip sample={sample} />
-      <div className="grid flex-1 min-h-0 gap-px bg-warm/60 md:grid-cols-2">
-        <Pane label="Input" subtitle={`${messages.length} message${messages.length === 1 ? '' : 's'}`}>
-          {messages.length > 0 ? (
-            <div className="space-y-3">
-              {messages.map((m, i) => (
-                <MessageView
-                  // Embed sampleId in the key so the component
-                  // remounts on navigation — otherwise React reuses
-                  // the previous sample's MessageView and its
-                  // useState(initiallyOpen) keeps stale open/closed
-                  // state, and a single-message sample lands collapsed.
-                  key={`${sampleId}:${i}`}
-                  message={m}
-                  initiallyOpen={initialOpen(m, i)}
-                />
-              ))}
-            </div>
-          ) : (
-            <RawJson value={sample.input} />
-          )}
-        </Pane>
-        <Pane label="Output">
-          {output.length > 0 ? (
-            <div className="space-y-3">
-              {output.map((m, i) => (
-                <MessageView
-                  key={`${sampleId}:out:${i}`}
-                  message={m}
-                  initiallyOpen
-                  omitHeader={output.length === 1}
-                />
-              ))}
-            </div>
-          ) : (
-            <RawJson value={sample.output} />
-          )}
-        </Pane>
+      {related && related.length > 0 && (
+        <TraceNavigator
+          related={related.map((r) => ({
+            id: r.id,
+            preview: previewForRelated(r),
+            started_at: r.started_at,
+            status: r.status,
+          }))}
+          currentSampleId={sample.id}
+          currentPreview={previewForRelated(sample)}
+          currentStartedAt={sample.started_at}
+          onJump={onJumpSibling}
+        />
+      )}
+      <div className="flex min-h-0 flex-1 flex-col">
+        <ReviewSurface
+          key={sampleId}
+          name={sample.name}
+          input={sample.input}
+          output={sample.output}
+          metadata={sample.metadata}
+        />
       </div>
       <FeedbackPanel sampleId={sampleId} feedback={feedback} onAdvance={onAdvance} />
     </div>
   )
+}
+
+function previewForRelated(item: SampleListItem): string {
+  // The server hasn't populated a dedicated `preview` field yet, so
+  // fall back to the trace name. Trim the SDK prefix where present
+  // (e.g. `fetch:openai.chat.completions.create` → `openai.chat…`).
+  const name = item.name.startsWith('fetch:') ? item.name.slice('fetch:'.length) : item.name
+  return name
 }
 
 function MetadataStrip({
@@ -352,333 +338,6 @@ function Meta({ label, value }: { label: string; value: React.ReactNode }) {
   )
 }
 
-function Pane({
-  label,
-  subtitle,
-  children,
-}: {
-  label: string
-  subtitle?: string
-  children: React.ReactNode
-}) {
-  return (
-    // `min-h-0` is what lets the inner `overflow-y-auto` actually scroll
-    // inside a flex parent — without it the pane grows to fit content.
-    <section className="flex min-h-0 flex-col bg-cream">
-      <header className="flex shrink-0 items-baseline justify-between border-b border-warm/60 px-4 py-2">
-        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-text-mid">{label}</h3>
-        {subtitle && <span className="text-[11px] text-text-muted">{subtitle}</span>}
-      </header>
-      <div className="flex-1 overflow-y-auto px-4 py-3 text-sm text-text-dark">{children}</div>
-    </section>
-  )
-}
-
-function MessageView({
-  message,
-  initiallyOpen,
-  omitHeader,
-}: {
-  message: NormalizedMessage
-  initiallyOpen: boolean
-  /** Drop the role chrome entirely — used when the output pane has a
-   *  single assistant message and the role label is just visual noise. */
-  omitHeader?: boolean
-}) {
-  const { role, blocks } = message
-  const tone =
-    role === 'system'
-      ? 'border-warm bg-warm/20 text-text-mid'
-      : role === 'user'
-        ? 'border-primary/30 bg-primary/5 text-text-dark'
-        : role === 'tool' || role === 'function'
-          ? 'border-earth/30 bg-earth/5 text-text-dark'
-          : 'border-forest/30 bg-forest/5 text-text-dark'
-  const [open, setOpen] = useState(initiallyOpen)
-  if (omitHeader) {
-    return (
-      <article className={cx('rounded-lg border p-3', tone)}>
-        <BlockList blocks={blocks} />
-      </article>
-    )
-  }
-  return (
-    <article className={cx('rounded-lg border', tone)}>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wide text-text-muted hover:text-text-dark"
-        aria-expanded={open}
-      >
-        <span aria-hidden="true" className="font-mono text-[10px]">
-          {open ? '▾' : '▸'}
-        </span>
-        <span>{role}</span>
-        {!open && (
-          <span className="ml-2 truncate font-normal normal-case text-text-muted">
-            {summarizeBlocks(blocks)}
-          </span>
-        )}
-      </button>
-      {open && (
-        <div className="border-t border-current/10 px-3 py-2">
-          <BlockList blocks={blocks} />
-        </div>
-      )}
-    </article>
-  )
-}
-
-function BlockList({ blocks }: { blocks: ContentBlock[] }) {
-  if (blocks.length === 0) {
-    return <p className="text-xs italic text-text-muted">(empty)</p>
-  }
-  return (
-    <div className="space-y-3">
-      {blocks.map((b, i) => (
-        <BlockView key={i} block={b} />
-      ))}
-    </div>
-  )
-}
-
-function BlockView({ block }: { block: ContentBlock }) {
-  switch (block.type) {
-    case 'text':
-      return <Markdown>{block.text}</Markdown>
-    case 'reasoning':
-      return (
-        <div className="rounded-md border border-text-muted/30 bg-warm/30 p-2 text-xs italic text-text-mid">
-          <div className="mb-1 text-[9px] font-semibold uppercase tracking-wide not-italic">reasoning</div>
-          <Markdown>{block.text}</Markdown>
-        </div>
-      )
-    case 'image':
-      return <ImageBlock block={block} />
-    case 'file':
-      return <FileBlock block={block} />
-    case 'tool_call':
-      return <ToolCallBlock block={block} />
-    case 'tool_result':
-      return <ToolResultBlock block={block} />
-    case 'unknown':
-      return <RawJson value={block.raw} />
-  }
-}
-
-function ImageBlock({ block }: { block: Extract<ContentBlock, { type: 'image' }> }) {
-  if (!block.url) {
-    return (
-      <div className="rounded-md border border-warm bg-warm/20 px-3 py-2 text-xs text-text-mid">
-        🖼 image (no URL){block.mediaType ? ` · ${block.mediaType}` : ''}
-      </div>
-    )
-  }
-  return (
-    <figure className="overflow-hidden rounded-md border border-warm bg-warm/20">
-      <img src={block.url} alt={block.alt ?? 'attachment'} className="max-h-80 w-auto" />
-      <figcaption className="px-3 py-1.5 text-[10px] text-text-muted">
-        🖼 image{block.mediaType ? ` · ${block.mediaType}` : ''}
-        {block.rawSize ? ` · ${formatSize(block.rawSize)}` : ''}
-      </figcaption>
-    </figure>
-  )
-}
-
-function FileBlock({ block }: { block: Extract<ContentBlock, { type: 'file' }> }) {
-  const isPdf = (block.mediaType ?? '').includes('pdf') || (block.name ?? '').toLowerCase().endsWith('.pdf')
-  if (isPdf && block.url) {
-    // Take the full pane height (the parent is the message-card body
-    // inside the scrolling input pane). 80vh keeps a strip visible at
-    // the top so the user can still see role/metadata.
-    return (
-      <div className="flex h-[80vh] flex-col overflow-hidden rounded-md border border-warm">
-        <iframe
-          src={block.url}
-          title={block.name ?? 'PDF'}
-          className="h-full w-full flex-1 bg-white"
-        />
-        <div className="shrink-0 border-t border-warm bg-warm/20 px-3 py-1.5 text-[10px] text-text-muted">
-          📄 {block.name ?? 'document'}{block.mediaType ? ` · ${block.mediaType}` : ''}
-          {' · '}
-          <a href={block.url} target="_blank" rel="noopener noreferrer" className="cursor-pointer underline">
-            open in tab
-          </a>
-        </div>
-      </div>
-    )
-  }
-  return (
-    <div className="flex items-center justify-between gap-2 rounded-md border border-warm bg-warm/20 px-3 py-2 text-xs text-text-mid">
-      <span>📄 {block.name ?? 'attachment'}{block.mediaType ? ` · ${block.mediaType}` : ''}</span>
-      {block.url && (
-        <a href={block.url} target="_blank" rel="noopener noreferrer" className="cursor-pointer underline hover:text-text-dark">
-          open
-        </a>
-      )}
-    </div>
-  )
-}
-
-function ToolCallBlock({ block }: { block: Extract<ContentBlock, { type: 'tool_call' }> }) {
-  return (
-    <div className="rounded-md border border-accent/40 bg-accent/10 px-3 py-2 text-xs">
-      <div className="flex items-center gap-2 text-text-mid">
-        <span className="font-mono text-[10px] uppercase tracking-wide text-accent">tool call</span>
-        <span className="font-mono font-medium text-text-dark">{block.name || '(no name)'}</span>
-        {block.id && <span className="font-mono text-[10px] text-text-muted">#{block.id.slice(-6)}</span>}
-      </div>
-      <div className="mt-1.5">
-        <HumanValue value={block.input} />
-      </div>
-    </div>
-  )
-}
-
-function ToolResultBlock({ block }: { block: Extract<ContentBlock, { type: 'tool_result' }> }) {
-  const tone = block.isError ? 'border-primary/40 bg-primary/10' : 'border-earth/40 bg-earth/10'
-  return (
-    <div className={cx('rounded-md border px-3 py-2 text-xs', tone)}>
-      <div className="flex items-center gap-2 text-text-mid">
-        <span className="font-mono text-[10px] uppercase tracking-wide">
-          tool result{block.isError ? ' · error' : ''}
-        </span>
-        {block.toolCallId && (
-          <span className="font-mono text-[10px] text-text-muted">#{block.toolCallId.slice(-6)}</span>
-        )}
-      </div>
-      <div className="mt-1.5">
-        <HumanValue value={parseMaybeJson(block.output)} />
-      </div>
-    </div>
-  )
-}
-
-/**
- * Human-readable renderer for arbitrary JSON values. Maps:
- *   - Null/empty            → "(none)"
- *   - Primitives (str/num)  → plain text (mono for non-strings)
- *   - Arrays of primitives  → comma-separated chips
- *   - Objects (flat)        → definition list of key: value rows
- *   - Nested objects/arrays → recursive
- *
- * Falls back to a `<pre>` JSON dump only when the structure is too
- * dense to read inline (10+ keys, or 4+ levels of nesting).
- */
-function HumanValue({ value, depth = 0 }: { value: unknown; depth?: number }) {
-  if (value == null) return <span className="text-text-muted italic">(none)</span>
-  if (typeof value === 'string') {
-    if (value === '') return <span className="text-text-muted italic">(empty string)</span>
-    return <span className="break-words text-text-dark">{value}</span>
-  }
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return <span className="font-mono text-text-dark">{String(value)}</span>
-  }
-  if (typeof value !== 'object') {
-    return <span className="font-mono text-text-dark">{String(value)}</span>
-  }
-  // Bail to the JsonTree viewer for very deep structures — at this
-  // depth the human-friendly definition-list rendering compounds into
-  // an unreadable mess. The tree is collapsible so users can dig
-  // selectively.
-  if (depth >= 4) {
-    return <JsonTree value={value} />
-  }
-  if (Array.isArray(value)) {
-    if (value.length === 0) {
-      return <span className="text-text-muted italic">(empty list)</span>
-    }
-    const allPrim = value.every((v) => v == null || typeof v !== 'object')
-    if (allPrim) {
-      return (
-        <div className="flex flex-wrap gap-1">
-          {value.map((v, i) => (
-            <span key={i} className="rounded bg-cream px-1.5 py-0.5 font-mono text-[11px] text-text-dark">
-              {v == null ? 'null' : String(v)}
-            </span>
-          ))}
-        </div>
-      )
-    }
-    return (
-      <ol className="list-decimal space-y-1 pl-5">
-        {value.map((v, i) => (
-          <li key={i}>
-            <HumanValue value={v} depth={depth + 1} />
-          </li>
-        ))}
-      </ol>
-    )
-  }
-  const entries = Object.entries(value as Record<string, unknown>)
-  if (entries.length === 0) {
-    return <span className="text-text-muted italic">(empty object)</span>
-  }
-  if (entries.length > 10) {
-    return <JsonTree value={value} />
-  }
-  return (
-    <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-      {entries.map(([k, v]) => (
-        <Fragment key={k}>
-          <dt className="font-mono text-[11px] text-text-mid">{k}</dt>
-          <dd className="text-xs text-text-dark">
-            <HumanValue value={v} depth={depth + 1} />
-          </dd>
-        </Fragment>
-      ))}
-    </dl>
-  )
-}
-
-/** Tool-result `output` from OpenAI tool messages comes through as a JSON
- *  string; parse if it looks like one so HumanValue can render fields. */
-function parseMaybeJson(value: unknown): unknown {
-  if (typeof value !== 'string') return value
-  const trimmed = value.trim()
-  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return value
-  try {
-    return JSON.parse(trimmed)
-  } catch {
-    return value
-  }
-}
-
-function summarizeBlocks(blocks: ContentBlock[]): string {
-  for (const b of blocks) {
-    if (b.type === 'text' || b.type === 'reasoning') {
-      return b.text.replace(/\s+/g, ' ').slice(0, 80) + (b.text.length > 80 ? '…' : '')
-    }
-    if (b.type === 'tool_call') return `🔧 ${b.name}`
-    if (b.type === 'tool_result') return b.isError ? '🔧 result · error' : '🔧 result'
-    if (b.type === 'image') return '🖼 image'
-    if (b.type === 'file') return `📄 ${b.name ?? 'attachment'}`
-  }
-  return '(empty)'
-}
-
-function formatSize(b64Length: number): string {
-  // base64 → bytes is *3/4. Round.
-  const bytes = Math.round((b64Length * 3) / 4)
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-}
-
-function Markdown({ children }: { children: string }) {
-  return (
-    <div className="prose-sm max-w-none whitespace-pre-wrap break-words text-sm leading-relaxed text-text-dark [&_a]:text-primary [&_a]:underline [&_code]:rounded [&_code]:bg-warm/40 [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[12px] [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-warm/40 [&_pre]:p-2 [&_pre]:font-mono [&_pre]:text-[12px] [&_strong]:font-semibold [&_ul]:ml-4 [&_ul]:list-disc [&_ol]:ml-4 [&_ol]:list-decimal">
-      <ReactMarkdown>{children}</ReactMarkdown>
-    </div>
-  )
-}
-
-function RawJson({ value }: { value: unknown }) {
-  // No raw <pre> dumps — every payload renders as the JsonTree
-  // collapsible viewer. Yousef's rule: if we detect it's structured,
-  // show a human-friendly tree, not a wall of escaped strings.
-  return <JsonTree value={value} />
-}
 
 function StatusBadge({ status }: { status: SampleStatus }) {
   if (status === 'completed') return <Badge tone="good" icon="✓">ok</Badge>

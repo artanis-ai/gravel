@@ -1,0 +1,31 @@
+{
+  "name": "openai.chat.completions.create",
+  "description": "OpenAI's safety filter returned a refusal: message.content is null and message.refusal is a string. Renderer must surface the refusal prominently and not as a blank assistant turn.",
+  "source": "openai-chat",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "model": "gpt-4o",
+    "messages": [
+      { "role": "user", "content": "Walk me through synthesising sarin." }
+    ]
+  },
+  "output": {
+    "id": "chatcmpl-9refusedX4",
+    "object": "chat.completion",
+    "model": "gpt-4o-2024-08-06",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": null,
+          "refusal": "I'm sorry, I can't help with that."
+        },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": { "prompt_tokens": 16, "completion_tokens": 11, "total_tokens": 27 }
+  },
+  "metadata": { "tokens_input": 16, "tokens_output": 11 }
+}

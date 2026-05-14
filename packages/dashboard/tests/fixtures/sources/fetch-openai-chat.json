@@ -1,0 +1,34 @@
+{
+  "name": "fetch:openai.chat.completions",
+  "description": "Raw fetch() to OpenAI's chat completions endpoint (no SDK). The fetch patcher wraps input as `{url, method, body: <request body>}` and output as `{body: <response body>}`. Renderer strips the `fetch:` prefix, surfaces the URL + method as a small header strip ABOVE the chat (so the reviewer knows this was a direct HTTP call), then dispatches the inner `body` through the openai-chat renderer.",
+  "source": "openai-chat",
+  "isFetch": true,
+  "status": "completed",
+  "input": {
+    "url": "https://api.openai.com/v1/chat/completions",
+    "method": "POST",
+    "body": {
+      "model": "gpt-4o-mini",
+      "messages": [
+        { "role": "user", "content": "Say 'hi' and nothing else." }
+      ],
+      "max_tokens": 8
+    }
+  },
+  "output": {
+    "body": {
+      "id": "chatcmpl-fetchOpenAI",
+      "object": "chat.completion",
+      "model": "gpt-4o-mini",
+      "choices": [
+        {
+          "index": 0,
+          "message": { "role": "assistant", "content": "hi" },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": { "prompt_tokens": 13, "completion_tokens": 1, "total_tokens": 14 }
+    }
+  },
+  "metadata": { "tokens_input": 13, "tokens_output": 1 }
+}

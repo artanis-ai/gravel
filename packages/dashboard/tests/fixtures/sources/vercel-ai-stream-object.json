@@ -1,0 +1,43 @@
+{
+  "name": "vercel-ai.streamObject",
+  "description": "Vercel AI SDK `streamObject` (v4+ naming, default `object` mode). The wrapper persists the FINAL assembled object in `output.object` (awaited from `response.object` after the stream finishes), plus `usage` with `inputTokens`/`outputTokens` and any populated v4+ response fields. Partial deltas are NOT persisted (the SDK chooses the consolidated view to keep the persisted sample meaningful).",
+  "source": "vercel-ai-object",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "prompt": "Generate a 3-question quiz on Edinburgh trivia.",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "questions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "q": { "type": "string" },
+              "answer": { "type": "string" }
+            },
+            "required": ["q", "answer"]
+          }
+        }
+      },
+      "required": ["questions"]
+    }
+  },
+  "output": {
+    "object": {
+      "questions": [
+        { "q": "Which hill overlooks Holyrood Palace?", "answer": "Arthur's Seat" },
+        { "q": "What is Princes Street Gardens built on top of?", "answer": "The drained Nor Loch" },
+        { "q": "Who designed the Scott Monument?", "answer": "George Meikle Kemp" }
+      ]
+    },
+    "finishReason": "stop",
+    "usage": { "inputTokens": 31, "outputTokens": 87, "totalTokens": 118 }
+  },
+  "metadata": {
+    "model": "openai/gpt-4o-mini",
+    "tokens_input": 31,
+    "tokens_output": 87
+  }
+}

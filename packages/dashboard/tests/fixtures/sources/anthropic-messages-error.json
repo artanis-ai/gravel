@@ -1,0 +1,24 @@
+{
+  "name": "anthropic.messages.create",
+  "description": "Anthropic errored call: SDK catches the APIError, persists status='errored' with metadata.error={message, type, status} and output=null. Renderer must show a red-tinted error panel with the human-readable message and the request that triggered it, NOT fall through to an empty assistant message.",
+  "source": "anthropic-messages",
+  "isFetch": false,
+  "status": "errored",
+  "input": {
+    "model": "claude-3-5-sonnet-latest",
+    "max_tokens": 4096,
+    "messages": [
+      { "role": "user", "content": "Hello!" }
+    ]
+  },
+  "output": null,
+  "metadata": {
+    "error": {
+      "type": "rate_limit_error",
+      "message": "Number of request tokens has exceeded your per-minute rate limit. Please reduce your usage.",
+      "status": 429,
+      "request_id": "req_011anthropicErr"
+    },
+    "duration_ms": 312
+  }
+}

@@ -28,7 +28,11 @@ _PATCHED = False
 def _is_disabled() -> bool:
     if os.environ.get("GRAVEL_TRACING_DISABLED") == "1":
         return True
-    return gravel_context_singleton.is_tracing_disabled()
+    if gravel_context_singleton.is_tracing_disabled():
+        return True
+    # Suppress when the Langchain handler is recording the outer
+    # ChatAnthropic call — avoids double-tracing.
+    return gravel_context_singleton.is_sdk_tracing_disabled()
 
 
 def _safe_dump(obj: Any) -> Any:

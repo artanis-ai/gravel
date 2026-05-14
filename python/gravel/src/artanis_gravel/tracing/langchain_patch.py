@@ -70,12 +70,16 @@ def _build_handler_class() -> Any:
         ) -> None:
             if _is_disabled():
                 return
+            # Suppress the OpenAI / Anthropic SDK patches for the inner
+            # call — the LC LLM run is the canonical trace, not both.
+            token = gravel_context_singleton.push_sdk_tracing_disabled()
             self._runs[run_id] = {
                 "name": "langchain.llm",
                 "started_at": _now(),
                 "input": {"prompts": prompts, "serialized": serialized, **kwargs},
                 "model": _model_from_serialized(serialized),
                 "states": [],
+                "_sdk_token": token,
             }
 
         def on_chat_model_start(
@@ -89,6 +93,7 @@ def _build_handler_class() -> Any:
         ) -> None:
             if _is_disabled():
                 return
+            token = gravel_context_singleton.push_sdk_tracing_disabled()
             self._runs[run_id] = {
                 "name": "langchain.chat_model",
                 "started_at": _now(),
@@ -99,6 +104,7 @@ def _build_handler_class() -> Any:
                 },
                 "model": _model_from_serialized(serialized),
                 "states": [],
+                "_sdk_token": token,
             }
 
         def on_llm_end(self, response: Any, *, run_id: UUID, **kwargs: Any) -> None:
@@ -156,7 +162,11 @@ def _build_handler_class() -> Any:
                 error={"message": str(error), "type": type(error).__name__},
             )
 
-        # ---- Tools (state observations only, attached to parent run) ----
+        # ---- Tools ----
+        # Tool invocations get their OWN trace row (name=langchain.tool) so
+        # the reviewer can find them in the Samples list and give per-tool
+        # feedback. We also leave a one-line state observation on the
+        # parent run so the chain's narrative includes the tool call.
 
         def on_tool_start(
             self,
@@ -169,28 +179,156 @@ def _build_handler_class() -> Any:
         ) -> None:
             if _is_disabled():
                 return
-            target_run = self._runs.get(parent_run_id or run_id)
-            if target_run is None:
-                return
-            target_run["states"].append(
-                ObservationRecord(
-                    type="state",
-                    data={"event": "tool_start", "tool": serialized.get("name"), "input": input_str},
-                    key="tool",
-                )
-            )
+            tool_name = serialized.get("name") if isinstance(serialized, dict) else None
+            self._runs[run_id] = {
+                "name": "langchain.tool",
+                "started_at": _now(),
+                "input": {"input_str": input_str, "serialized": serialized, **kwargs},
+                "model": None,
+                "states": [],
+                "parent_run_id": str(parent_run_id) if parent_run_id else None,
+                "tool_name": tool_name,
+            }
+            if parent_run_id is not None:
+                parent = self._runs.get(parent_run_id)
+                if parent is not None:
+                    parent["states"].append(
+                        ObservationRecord(
+                            type="state",
+                            data={"event": "tool_start", "tool": tool_name, "input": input_str},
+                            key="tool",
+                        )
+                    )
 
-        def on_tool_end(self, output: str, *, run_id: UUID, parent_run_id: UUID | None = None, **kwargs: Any) -> None:
-            target_run = self._runs.get(parent_run_id or run_id)
-            if target_run is None:
-                return
-            target_run["states"].append(
-                ObservationRecord(
-                    type="state",
-                    data={"event": "tool_end", "output": output},
-                    key="tool",
-                )
+        def on_tool_end(
+            self,
+            output: Any,
+            *,
+            run_id: UUID,
+            parent_run_id: UUID | None = None,
+            **kwargs: Any,
+        ) -> None:
+            self._finish(run_id, status="ok", output=_dump(output))
+            if parent_run_id is not None:
+                parent = self._runs.get(parent_run_id)
+                if parent is not None:
+                    parent["states"].append(
+                        ObservationRecord(
+                            type="state",
+                            data={"event": "tool_end", "output": _dump(output)},
+                            key="tool",
+                        )
+                    )
+
+        def on_tool_error(
+            self,
+            error: BaseException,
+            *,
+            run_id: UUID,
+            parent_run_id: UUID | None = None,
+            **kwargs: Any,
+        ) -> None:
+            self._finish(
+                run_id,
+                status="errored",
+                output=None,
+                error={"message": str(error), "type": type(error).__name__},
             )
+            if parent_run_id is not None:
+                parent = self._runs.get(parent_run_id)
+                if parent is not None:
+                    parent["states"].append(
+                        ObservationRecord(
+                            type="state",
+                            data={"event": "tool_error", "message": str(error)},
+                            key="tool",
+                        )
+                    )
+
+        # ---- Retrievers ----
+        # Same shape as tools: each retrieval gets its own trace row so the
+        # reviewer can see which queries returned which documents.
+
+        def on_retriever_start(
+            self,
+            serialized: dict[str, Any],
+            query: str,
+            *,
+            run_id: UUID,
+            parent_run_id: UUID | None = None,
+            **kwargs: Any,
+        ) -> None:
+            if _is_disabled():
+                return
+            self._runs[run_id] = {
+                "name": "langchain.retriever",
+                "started_at": _now(),
+                "input": {"query": query, "serialized": serialized, **kwargs},
+                "model": None,
+                "states": [],
+                "parent_run_id": str(parent_run_id) if parent_run_id else None,
+            }
+            if parent_run_id is not None:
+                parent = self._runs.get(parent_run_id)
+                if parent is not None:
+                    parent["states"].append(
+                        ObservationRecord(
+                            type="state",
+                            data={"event": "retriever_start", "query": query},
+                            key="retriever",
+                        )
+                    )
+
+        def on_retriever_end(
+            self,
+            documents: Any,
+            *,
+            run_id: UUID,
+            parent_run_id: UUID | None = None,
+            **kwargs: Any,
+        ) -> None:
+            dumped = _dump(documents)
+            doc_count = len(dumped) if isinstance(dumped, list) else None
+            self._finish(
+                run_id,
+                status="ok",
+                output={"documents": dumped, "count": doc_count} if doc_count is not None else dumped,
+            )
+            if parent_run_id is not None:
+                parent = self._runs.get(parent_run_id)
+                if parent is not None:
+                    parent["states"].append(
+                        ObservationRecord(
+                            type="state",
+                            data={"event": "retriever_end", "count": doc_count},
+                            key="retriever",
+                        )
+                    )
+
+        def on_retriever_error(
+            self,
+            error: BaseException,
+            *,
+            run_id: UUID,
+            parent_run_id: UUID | None = None,
+            **kwargs: Any,
+        ) -> None:
+            self._finish(
+                run_id,
+                status="errored",
+                output=None,
+                error={"message": str(error), "type": type(error).__name__},
+            )
+            if parent_run_id is not None:
+                parent = self._runs.get(parent_run_id)
+                if parent is not None:
+                    parent["states"].append(
+                        ObservationRecord(
+                            type="state",
+                            data={"event": "retriever_error", "message": str(error)},
+                            key="retriever",
+                        )
+                    )
 
         # ---- internal ----
 
@@ -205,6 +343,14 @@ def _build_handler_class() -> Any:
             run = self._runs.pop(run_id, None)
             if run is None:
                 return
+            # Restore sdk_tracing_disabled if we pushed it at start
+            # (only the LLM-shaped callbacks do).
+            sdk_token = run.get("_sdk_token")
+            if sdk_token is not None:
+                try:
+                    gravel_context_singleton.pop_sdk_tracing_disabled(sdk_token)
+                except Exception:  # noqa: BLE001
+                    pass
             completed_at = _now()
             obs: list[ObservationRecord] = [
                 ObservationRecord(type="input", data=run["input"], key="input"),

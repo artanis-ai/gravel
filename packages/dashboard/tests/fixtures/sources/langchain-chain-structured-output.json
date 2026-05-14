@@ -1,0 +1,42 @@
+{
+  "name": "langchain.chain",
+  "description": "REAL CAPTURE from landlord-ai gravel.db (id 2c79258a). LC chain whose `inputs` is a LIST of mixed-shape entries (a plain `{role, content}` dict followed by full LC message dicts — happens when prompt template is composed with a runtime messages array) and whose `output` is a structured-output result `{is_greeting: true}`. Renderer must show this as 'classification → boolean=true' rather than as JSON.",
+  "source": "langchain-chain",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "inputs": [
+      {
+        "role": "system",
+        "content": "Decide if the tenant's message is a greeting with no actual question\n(e.g. \"hi\", \"hey there\", \"good morning\"). If yes, reply with the literal\nstring GREETING. Otherwise reply with QUESTION. No other output."
+      },
+      {
+        "content": "You are the AI concierge for Maple Ridge Apartments. You speak like a long-time\nfront-desk staffer: warm, slightly informal, never robotic. Greet by first name\nwhen you have it. Use one-line responses when the answer is short — don't pad.\n",
+        "additional_kwargs": {},
+        "response_metadata": {},
+        "type": "system",
+        "name": null,
+        "id": "6711c2fe-62f3-4b6b-a5c3-44b342fe24de"
+      },
+      {
+        "content": "What are the quiet hours?",
+        "additional_kwargs": {},
+        "response_metadata": {},
+        "type": "human",
+        "name": null,
+        "id": "4b7c0b2a-330d-42cd-95ad-b6d41f3d081b"
+      },
+      {
+        "content": "Yo",
+        "additional_kwargs": {},
+        "response_metadata": {},
+        "type": "human",
+        "name": null,
+        "id": "4f75829a-7a2a-4e34-b0f0-79aa9c381474"
+      }
+    ],
+    "serialized": null
+  },
+  "output": { "is_greeting": true },
+  "metadata": null
+}

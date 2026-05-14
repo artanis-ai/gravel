@@ -1,0 +1,27 @@
+{
+  "name": "openai.chat.completions.create",
+  "description": "Streamed call. The persister assembles the chunks and writes the final assistant text as output, but also records a 'stream' state observation with chunk_count under metadata.states. Renderer must surface the streamed-ness distinctly (a chip / pill) so reviewers can tell.",
+  "source": "openai-chat",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "model": "gpt-4o-mini",
+    "messages": [{ "role": "user", "content": "Count to three." }],
+    "stream": true
+  },
+  "output": {
+    "chunks": [
+      { "choices": [{ "delta": { "role": "assistant", "content": "One. " } }] },
+      { "choices": [{ "delta": { "content": "Two. " } }] },
+      { "choices": [{ "delta": { "content": "Three." } }] },
+      { "choices": [{ "delta": {}, "finish_reason": "stop" }] }
+    ]
+  },
+  "metadata": {
+    "tokens_input": 11,
+    "tokens_output": 6,
+    "states": [
+      { "key": "stream", "data": { "chunk_count": 4 } }
+    ]
+  }
+}

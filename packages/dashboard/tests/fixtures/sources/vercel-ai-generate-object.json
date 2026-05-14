@@ -1,0 +1,44 @@
+{
+  "name": "vercel-ai.generateObject",
+  "description": "Vercel AI SDK `generateObject` (v4+ naming, default `output: 'object'` mode). Input includes a `schema` (Zod descriptor, serialised by Vercel AI as JSON Schema) and the tool definition uses `inputSchema` (NOT `parameters`). Output's `object` field is the structured value the schema validated against. Token usage uses `inputTokens` / `outputTokens`.",
+  "source": "vercel-ai-object",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "system": "Extract the order from the customer's message.",
+    "prompt": "Hi, I'd like two large flat whites and one almond croissant please.",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "qty": { "type": "integer" },
+              "size": { "type": "string", "nullable": true }
+            },
+            "required": ["name", "qty"]
+          }
+        }
+      },
+      "required": ["items"]
+    }
+  },
+  "output": {
+    "object": {
+      "items": [
+        { "name": "flat white", "qty": 2, "size": "large" },
+        { "name": "almond croissant", "qty": 1, "size": null }
+      ]
+    },
+    "finishReason": "stop",
+    "usage": { "inputTokens": 72, "outputTokens": 41, "totalTokens": 113 }
+  },
+  "metadata": {
+    "model": "openai/gpt-4o-mini",
+    "tokens_input": 72,
+    "tokens_output": 41
+  }
+}

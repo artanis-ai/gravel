@@ -77,6 +77,12 @@ class _ContextState:
     # httpx/requests/aiohttp call doesn't get double-traced.
     # Mirrors `packages/sdk-ts/src/tracing/context.ts:fetchTracingDisabled`.
     fetch_tracing_disabled: bool = False
+    # When set, the OpenAI / Anthropic SDK auto-patches skip persistence.
+    # Set by the Langchain handler around `on_chat_model_start` /
+    # `on_llm_start` because LC's ChatOpenAI / ChatAnthropic call the
+    # underlying SDK and we want the LC trace to be the canonical row,
+    # not both. Mirrors fetch_tracing_disabled one layer up.
+    sdk_tracing_disabled: bool = False
 
 
 _state: contextvars.ContextVar[_ContextState] = contextvars.ContextVar(
@@ -107,12 +113,34 @@ class _GravelContext:
     def is_fetch_tracing_disabled(self) -> bool:
         return _current_state().fetch_tracing_disabled
 
+    def is_sdk_tracing_disabled(self) -> bool:
+        return _current_state().sdk_tracing_disabled
+
+    def push_sdk_tracing_disabled(self) -> Any:
+        """Set `sdk_tracing_disabled = True` in the current context and
+        return a token. Callers MUST pass the token to
+        `pop_sdk_tracing_disabled()` to restore the prior value. Used by
+        the Langchain handler when LC's LLM callback wraps an inner
+        OpenAI/Anthropic SDK call we want suppressed."""
+        prev = _current_state()
+        new = _ContextState(
+            metadata=dict(prev.metadata),
+            tracing_disabled=prev.tracing_disabled,
+            fetch_tracing_disabled=prev.fetch_tracing_disabled,
+            sdk_tracing_disabled=True,
+        )
+        return _state.set(new)
+
+    def pop_sdk_tracing_disabled(self, token: Any) -> None:
+        _state.reset(token)
+
     def run(self, metadata: dict[str, Any], fn: Callable[[], T]) -> T:
         prev = _current_state()
         new = _ContextState(
             metadata={**prev.metadata, **metadata},
             tracing_disabled=prev.tracing_disabled,
             fetch_tracing_disabled=prev.fetch_tracing_disabled,
+            sdk_tracing_disabled=prev.sdk_tracing_disabled,
         )
         token = _state.set(new)
         try:
@@ -130,6 +158,7 @@ class _GravelContext:
             metadata=dict(prev.metadata),
             tracing_disabled=prev.tracing_disabled,
             fetch_tracing_disabled=True,
+            sdk_tracing_disabled=prev.sdk_tracing_disabled,
         )
         token = _state.set(new)
         try:
@@ -157,6 +186,7 @@ def gravel_context(metadata: dict[str, Any] | None = None) -> Iterator[_GravelCo
             metadata=merged,
             tracing_disabled=prev.tracing_disabled,
             fetch_tracing_disabled=prev.fetch_tracing_disabled,
+            sdk_tracing_disabled=prev.sdk_tracing_disabled,
         )
     )
     try:
@@ -174,6 +204,7 @@ def with_gravel_metadata(metadata: dict[str, Any]) -> Iterator[None]:
             metadata={**prev.metadata, **metadata},
             tracing_disabled=prev.tracing_disabled,
             fetch_tracing_disabled=prev.fetch_tracing_disabled,
+            sdk_tracing_disabled=prev.sdk_tracing_disabled,
         )
     )
     try:
@@ -215,6 +246,7 @@ def with_tracing_disabled() -> Iterator[None]:
             metadata=dict(prev.metadata),
             tracing_disabled=True,
             fetch_tracing_disabled=prev.fetch_tracing_disabled,
+            sdk_tracing_disabled=prev.sdk_tracing_disabled,
         )
     )
     try:

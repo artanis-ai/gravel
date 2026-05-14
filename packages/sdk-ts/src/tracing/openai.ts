@@ -121,7 +121,7 @@ function wrapCreate(proto: any, methodName: string, opts: WrapOptions): void {
   if ((original as any).__gravelWrapped) return
 
   const wrapped = function gravelOpenAIWrapped(this: any, ...args: unknown[]) {
-    if (isTracingDisabledEnv() || gravelContext.isTracingDisabled()) {
+    if (isTracingDisabledEnv() || gravelContext.isTracingDisabled() || gravelContext.isSdkTracingDisabled()) {
       return original.apply(this, args)
     }
     const startedAt = new Date()

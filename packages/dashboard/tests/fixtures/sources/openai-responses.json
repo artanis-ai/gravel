@@ -1,0 +1,44 @@
+{
+  "name": "openai.responses.create",
+  "description": "OpenAI Responses API (introduced 2025): item-based input, item-based output. Input items can be 'message' (with role + content), 'function_call', 'function_call_output'. Output items follow the same item taxonomy. Token usage uses input_tokens/output_tokens not prompt/completion.",
+  "source": "openai-responses",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "model": "gpt-4o",
+    "input": [
+      {
+        "type": "message",
+        "role": "system",
+        "content": [{ "type": "input_text", "text": "Be concise." }]
+      },
+      {
+        "type": "message",
+        "role": "user",
+        "content": [{ "type": "input_text", "text": "What's the capital of Japan?" }]
+      }
+    ],
+    "instructions": null
+  },
+  "output": {
+    "id": "resp_9responsesX1",
+    "object": "response",
+    "created_at": 1778711500,
+    "model": "gpt-4o-2024-08-06",
+    "output": [
+      {
+        "type": "message",
+        "id": "msg_x1",
+        "role": "assistant",
+        "content": [{ "type": "output_text", "text": "Tokyo." }]
+      }
+    ],
+    "usage": {
+      "input_tokens": 18,
+      "output_tokens": 1,
+      "total_tokens": 19
+    },
+    "status": "completed"
+  },
+  "metadata": { "tokens_input": 18, "tokens_output": 1 }
+}

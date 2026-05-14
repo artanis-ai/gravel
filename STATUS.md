@@ -1,6 +1,6 @@
 # Status
 
-> **Last updated:** 2026-05-14 (v0.5.26 shipped; audit-driven fixes through v0.5.7–v0.5.26).
+> **Last updated:** 2026-05-14 (v0.6.0 shipped; Review-surface rewrite + per-source renderers + cross-cutting chrome).
 
 ## Where we are
 
@@ -13,6 +13,8 @@
 **Judge + eval runner shipped** with project ownership enforcement and audit logging. **Mallet `analyzePrompt()` shipped** with Clerk-org rate-limiting through the CP proxy.
 
 ## Recent release activity (May 2026)
+
+- **v0.6.0** — Review-surface rewrite. Every persisted trace shape now has a dedicated renderer; the old `extractMessages` / `extractOutput` heuristics plus the `JsonTree` fallback are deleted. New `detectSource(name, input, output)` dispatches to one of 12 `SourceKind`s — `openai-chat`, `openai-responses`, `openai-embeddings`, `anthropic-messages`, `vercel-ai-text`, `vercel-ai-object`, `langchain-llm`, `langchain-chat-model`, `langchain-chain`, `langchain-tool`, `langchain-retriever`, plus `unknown` (which delegates to the recursive `HumanValue` and **never** JSON-dumps). Pinned by 41 fixture files at `packages/dashboard/tests/fixtures/sources/`. Cross-cutting chrome: `FetchHeader` (URL + method + status for fetch-captured samples), `ErrorBanner` (red panel for `metadata.error`), `TokenUsageStrip` (works across OpenAI Chat / Responses / Anthropic / Vercel AI v4+ naming), `StreamObservations` (chunk count + chunks/sec throughput + collapsible chunk list for streamed calls), `TraceNavigator` (multi-step trace step strip at the top of the dialog; clicking a sibling refetches it inline), `MetadataStrip` (separates user-supplied keys from SDK-emitted ones). Collapse defaults unified: system / developer / non-last user collapsed, the LAST user message + assistant + tool / function open. JSON-encoded `response_format: json_object` / `json_schema` content auto-parses; `additional_kwargs.parsed` (LangChain structured output) renders the parsed value instead of duplicating it. SDK-side: new `sdkTracingDisabled` AsyncLocalStorage flag (TS) / contextvar (Python) suppresses OpenAI / Anthropic SDK patches while LangChain owns the trace, killing the `langchain.chat_model` + `openai.chat.completions.create` duplicate-row class. Vercel AI tracer rewritten for v4+ field names (`inputTokens` / `outputTokens` / `inputSchema`); v3 back-compat dropped. LangChain callback handler captures tool invocations (`langchain.tool.<id>`) and retriever runs (`langchain.retriever.<id>`) as standalone trace rows, not just state observations. Image + PDF attachments are clickable into a lightbox dialog (with a nested-dialog Escape stack so the lightbox closes without dismissing the underlying review dialog). 301 dashboard tests, 187 sdk-ts tests, 321 Python tests — all green.
 
 - **v0.5.7** — `GET /api/prompts/{id}` added to the Python SDK; PromptDetail page worked for the first time on Python hosts.
 - **v0.5.8** — Real PyPI lookup in `/api/version`; UpdateBanner stopped reporting `hasUpdate: false` unconditionally. `CURRENT_VERSION = "0.1.0"` hardcoded value retired in favour of `importlib.metadata`.

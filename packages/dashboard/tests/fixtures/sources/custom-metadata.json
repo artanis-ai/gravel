@@ -1,0 +1,35 @@
+{
+  "name": "openai.chat.completions.create",
+  "description": "Cross-cutting: customer-supplied metadata via `with_gravel_metadata({...})` (Python) / `gravelMetadata({...})` (TS). Renderer separates USER metadata from SDK-provided keys: user keys (here `tenant_id`, `intent`, `feature_flag`) get a labelled 'User metadata' strip ABOVE the SDK-provided keys (`tokens_input`, `tokens_output`, `model`). Both renderers humanise the keys (snake_case → 'Tenant id' label).",
+  "source": "openai-chat",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "model": "gpt-4o-mini",
+    "messages": [
+      { "role": "user", "content": "What are the quiet hours?" }
+    ]
+  },
+  "output": {
+    "id": "chatcmpl-customMeta",
+    "object": "chat.completion",
+    "model": "gpt-4o-mini",
+    "choices": [
+      {
+        "index": 0,
+        "message": { "role": "assistant", "content": "Quiet hours run 10pm–8am on weekdays and 11pm–9am on weekends." },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": { "prompt_tokens": 39, "completion_tokens": 18, "total_tokens": 57 }
+  },
+  "metadata": {
+    "tokens_input": 39,
+    "tokens_output": 18,
+    "user": {
+      "tenant_id": "maple-ridge-7c2f",
+      "intent": "quiet_hours_query",
+      "feature_flag": "rag_v2"
+    }
+  }
+}

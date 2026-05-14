@@ -1,0 +1,24 @@
+{
+  "name": "openai.embeddings.create",
+  "description": "Single-string embedding. Output is a list of one vector; vector values are 1536 floats (truncated in this fixture to 4 for readability). Renderer must render the input as a text card and the output as a 'N vectors of dim D' summary with the first few values inline.",
+  "source": "openai-embeddings",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "model": "text-embedding-3-small",
+    "input": "Tenant reports a leaking ceiling in apartment 4B."
+  },
+  "output": {
+    "object": "list",
+    "data": [
+      {
+        "object": "embedding",
+        "index": 0,
+        "embedding": [-0.0123, 0.0456, 0.0789, -0.0234]
+      }
+    ],
+    "model": "text-embedding-3-small",
+    "usage": { "prompt_tokens": 12, "total_tokens": 12 }
+  },
+  "metadata": { "tokens_input": 12, "tokens_output": null }
+}

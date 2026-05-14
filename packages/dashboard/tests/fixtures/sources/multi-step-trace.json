@@ -1,0 +1,51 @@
+{
+  "name": "openai.chat.completions.create",
+  "description": "Cross-cutting: multi-step trace. The sample has a `group_id` matching sibling samples; on the detail response the dashboard receives a `related: <SampleSummary[]>` array with the other samples in the trace, ordered by `started_at`. Renderer surfaces a 'Trace: N steps' navigator at the top of the dialog with a horizontal step strip (1 ⬤ — 2 ◯ — 3 ◯) letting the reviewer hop to siblings. The active step is highlighted; clicking a sibling refetches that sample's detail.",
+  "source": "openai-chat",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "model": "gpt-4o-mini",
+    "messages": [
+      { "role": "system", "content": "Classify the intent." },
+      { "role": "user", "content": "Can I play drums?" }
+    ]
+  },
+  "output": {
+    "id": "chatcmpl-multiStep-2",
+    "object": "chat.completion",
+    "model": "gpt-4o-mini",
+    "choices": [
+      {
+        "index": 0,
+        "message": { "role": "assistant", "content": "noise_complaint" },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": { "prompt_tokens": 28, "completion_tokens": 4, "total_tokens": 32 }
+  },
+  "metadata": {
+    "tokens_input": 28,
+    "tokens_output": 4,
+    "group_id": "trace-multi-step-001",
+    "step_index": 2
+  },
+  "related": [
+    {
+      "id": "step-1-sample",
+      "group_id": "trace-multi-step-001",
+      "name": "openai.chat.completions.create",
+      "started_at": "2026-05-13T09:00:00.000Z",
+      "preview": "Classify → noise_complaint",
+      "status": "completed"
+    },
+    {
+      "id": "step-3-sample",
+      "group_id": "trace-multi-step-001",
+      "name": "anthropic.messages.create",
+      "started_at": "2026-05-13T09:00:01.500Z",
+      "preview": "Compose tenant reply citing lease.md",
+      "status": "completed"
+    }
+  ]
+}

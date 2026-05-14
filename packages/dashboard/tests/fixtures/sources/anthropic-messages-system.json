@@ -1,0 +1,25 @@
+{
+  "name": "anthropic.messages.create",
+  "description": "Anthropic-specific: the system prompt lives at top-level `system` (not in the messages array). It can be a string OR an array of text blocks (the array form is used for prompt caching). Renderer must show the system content above the conversation, not lose it.",
+  "source": "anthropic-messages",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "model": "claude-3-5-sonnet-latest",
+    "max_tokens": 512,
+    "system": "You are a Maple Ridge concierge. Be warm and concise.",
+    "messages": [
+      { "role": "user", "content": "Where do I drop off the rent?" }
+    ]
+  },
+  "output": {
+    "id": "msg_01anthropicSystem",
+    "type": "message",
+    "role": "assistant",
+    "model": "claude-3-5-sonnet-20241022",
+    "content": [{ "type": "text", "text": "You can drop it at the front desk between 9am and 6pm, or use the after-hours slot to the right of the door." }],
+    "stop_reason": "end_turn",
+    "usage": { "input_tokens": 41, "output_tokens": 28 }
+  },
+  "metadata": { "tokens_input": 41, "tokens_output": 28 }
+}

@@ -1,0 +1,52 @@
+{
+  "name": "langchain.chain",
+  "description": "REAL CAPTURE from landlord-ai gravel.db (id a1f20170). LC chain whose `inputs` is a SINGLE LC AIMessage dict (the output of a previous chain step, fed in as the input of a downstream Runnable). `additional_kwargs.parsed` carries the structured-output JSON, `response_metadata.token_usage` carries the token breakdown. Output is the parsed structured value `{is_greeting: true}`. Renderer must recognise that `inputs` is one LC message (not a `{messages: [...]}` wrapper) and render it as a single assistant message.",
+  "source": "langchain-chain",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "inputs": {
+      "content": "{\"is_greeting\":true}",
+      "additional_kwargs": {
+        "parsed": { "is_greeting": true },
+        "refusal": null
+      },
+      "response_metadata": {
+        "token_usage": {
+          "completion_tokens": 14,
+          "prompt_tokens": 342,
+          "total_tokens": 356,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": 0,
+            "audio_tokens": 0,
+            "reasoning_tokens": 0,
+            "rejected_prediction_tokens": 0
+          },
+          "prompt_tokens_details": { "audio_tokens": 0, "cached_tokens": 0 }
+        },
+        "model_provider": "openai",
+        "model_name": "gpt-5.4-nano-2026-03-17",
+        "system_fingerprint": null,
+        "id": "chatcmpl-DfLCQQgpacT0qZrBMJW9O5Tup3uZ3",
+        "service_tier": "default",
+        "finish_reason": "stop",
+        "logprobs": null
+      },
+      "type": "ai",
+      "name": null,
+      "id": "lc_run--019e257b-78b1-7a43-ae1f-f4f58535122a-0",
+      "tool_calls": [],
+      "invalid_tool_calls": [],
+      "usage_metadata": {
+        "input_tokens": 342,
+        "output_tokens": 14,
+        "total_tokens": 356,
+        "input_token_details": { "audio": 0, "cache_read": 0 },
+        "output_token_details": { "audio": 0, "reasoning": 0 }
+      }
+    },
+    "serialized": null
+  },
+  "output": { "is_greeting": true },
+  "metadata": null
+}

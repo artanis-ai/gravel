@@ -1,0 +1,65 @@
+{
+  "name": "langchain.chain",
+  "description": "REAL CAPTURE from landlord-ai gravel.db (id 85b645d0). LC chain whose `inputs` is `{messages: [LCMessageDict, ...]}` and whose `output` is also `{messages: [AIMessage]}`. The renderer must treat `inputs.messages` as the conversation prefix and `output.messages` as the final reply (extracting the AIMessage like a chat reply).",
+  "source": "langchain-chain",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "inputs": {
+      "messages": [
+        {
+          "content": "You are the AI concierge for Maple Ridge Apartments. You speak like a long-time\nfront-desk staffer: warm, slightly informal, never robotic. Greet by first name\nwhen you have it. Use one-line responses when the answer is short — don't pad.\n",
+          "additional_kwargs": {},
+          "response_metadata": {},
+          "type": "system",
+          "name": null,
+          "id": "6711c2fe-62f3-4b6b-a5c3-44b342fe24de"
+        },
+        {
+          "content": "What are the quiet hours?",
+          "additional_kwargs": {},
+          "response_metadata": {},
+          "type": "human",
+          "name": null,
+          "id": "4b7c0b2a-330d-42cd-95ad-b6d41f3d081b"
+        },
+        {
+          "content": "Quiet hours at Maple Ridge Apartments are from **10:00 PM to 8:00 AM on weekdays** and **11:00 PM to 9:00 AM on weekends**. During these times, please keep noise levels low to ensure everyone's comfort [lease.md]. If you have any more questions, feel free to ask!",
+          "additional_kwargs": {},
+          "response_metadata": {},
+          "type": "ai",
+          "name": null,
+          "id": "2f1fdeef-5642-43f1-82e1-ad1b29f0cafd",
+          "tool_calls": [],
+          "invalid_tool_calls": [],
+          "usage_metadata": null
+        },
+        {
+          "content": "Yo",
+          "additional_kwargs": {},
+          "response_metadata": {},
+          "type": "human",
+          "name": null,
+          "id": "4f75829a-7a2a-4e34-b0f0-79aa9c381474"
+        }
+      ]
+    },
+    "serialized": null
+  },
+  "output": {
+    "messages": [
+      {
+        "content": "Hi Sarah! What can I help with?",
+        "additional_kwargs": {},
+        "response_metadata": {},
+        "type": "ai",
+        "name": null,
+        "id": null,
+        "tool_calls": [],
+        "invalid_tool_calls": [],
+        "usage_metadata": null
+      }
+    ]
+  },
+  "metadata": null
+}

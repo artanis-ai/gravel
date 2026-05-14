@@ -10,12 +10,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const fakeModule: any = {
   generateText: async (params: any) => ({
     text: 'hello',
-    usage: { promptTokens: 3, completionTokens: 2 },
+    content: [{ type: 'text', text: 'hello' }],
+    usage: { inputTokens: 3, outputTokens: 2, totalTokens: 5 },
     finishReason: 'stop',
+    response: { id: 'resp-1', modelId: 'fake-model', timestamp: new Date(0) },
   }),
   generateObject: async (params: any) => ({
     object: { foo: 'bar' },
-    usage: { promptTokens: 4, completionTokens: 1 },
+    usage: { inputTokens: 4, outputTokens: 1, totalTokens: 5 },
+    finishReason: 'stop',
   }),
   streamText: (params: any) => ({
     textStream: (async function* () {
@@ -23,11 +26,15 @@ const fakeModule: any = {
       yield 'i'
     })(),
     text: Promise.resolve('hi'),
-    usage: Promise.resolve({ promptTokens: 2, completionTokens: 2 }),
+    content: Promise.resolve([{ type: 'text', text: 'hi' }]),
+    finishReason: Promise.resolve('stop'),
+    usage: Promise.resolve({ inputTokens: 2, outputTokens: 2, totalTokens: 4 }),
+    response: Promise.resolve({ id: 'resp-s1', modelId: 'fake-model', timestamp: new Date(0) }),
   }),
   streamObject: (params: any) => ({
     object: Promise.resolve({ ok: true }),
-    usage: Promise.resolve({ promptTokens: 1, completionTokens: 1 }),
+    finishReason: Promise.resolve('stop'),
+    usage: Promise.resolve({ inputTokens: 1, outputTokens: 1, totalTokens: 2 }),
   }),
 }
 
@@ -95,7 +102,12 @@ describe('tracing/vercel-ai', () => {
     expect(streamPersists.length).toBe(1)
     expect(streamPersists[0].tokensInput).toBe(2)
     expect(streamPersists[0].tokensOutput).toBe(2)
-    expect(streamPersists[0].output).toEqual({ text: 'hi' })
+    expect(streamPersists[0].output).toMatchObject({
+      text: 'hi',
+      finishReason: 'stop',
+      usage: { inputTokens: 2, outputTokens: 2, totalTokens: 4 },
+    })
+    expect(streamPersists[0].model).toBe('fake-model')
   })
 
   it('GRAVEL_TRACING_DISABLED=1 short-circuits', async () => {

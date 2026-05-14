@@ -1,0 +1,20 @@
+{
+  "name": "openai.chat.completions.create",
+  "description": "API call errored (rate limit, auth, model overload). status='errored', metadata.error populated, output null. Renderer must render the error panel instead of an empty output pane.",
+  "source": "openai-chat",
+  "isFetch": false,
+  "status": "errored",
+  "input": {
+    "model": "gpt-4o",
+    "messages": [{ "role": "user", "content": "hello" }]
+  },
+  "output": null,
+  "metadata": {
+    "tokens_input": null,
+    "tokens_output": null,
+    "error": {
+      "message": "Rate limit reached for gpt-4o in organization org-XXX on requests per min (RPM): Limit 60, Used 60, Requested 1.",
+      "type": "RateLimitError"
+    }
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "name": "openai.chat.completions.create",
+  "description": "User message with an image_url content part. base64 image bodies in fixtures are truncated to keep diffs small; the renderer's image block must still produce a working <img> from a real data URL of any size. Pattern lifted from landlord-ai's vision_triage workflow.",
+  "source": "openai-chat",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "model": "gpt-4o",
+    "messages": [
+      { "role": "system", "content": "You are a vision describer for maintenance photos. Describe the subject, visible damage, apparent system, and severity hints." },
+      {
+        "role": "user",
+        "content": [
+          { "type": "text", "text": "What do you see in this photo?" },
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAr/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFAEBAAAAAAAAAAAAAAAAAAAAAP/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/AKpAAAAA//9k=",
+              "detail": "low"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "output": {
+    "id": "chatcmpl-9multimodalX3",
+    "object": "chat.completion",
+    "model": "gpt-4o-2024-08-06",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "1. **Subject** — area behind the toilet and sink.\n2. **Visible damage** — exposed wooden beams; possible water staining on the floor.\n3. **Apparent system** — plumbing.\n4. **Severity hints** — none visible.",
+          "refusal": null
+        },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": { "prompt_tokens": 345, "completion_tokens": 58, "total_tokens": 403 }
+  },
+  "metadata": { "tokens_input": 345, "tokens_output": 58 }
+}

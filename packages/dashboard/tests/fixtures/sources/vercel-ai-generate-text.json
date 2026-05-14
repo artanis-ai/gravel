@@ -1,0 +1,24 @@
+{
+  "name": "vercel-ai.generateText",
+  "description": "Vercel AI SDK `generateText` (v4+ naming). Input is the user's params object MINUS the `model` constructor (the SDK drops it and records `model` as a sibling field). Output keeps the v4+ field set: `text` / `object` (null for plain text) / `content` (top-level ContentPart array) / `finishReason` / `usage` with `inputTokens`+`outputTokens` (NOT `promptTokens`/`completionTokens`) / `toolCalls` / `toolResults` / `steps` / `reasoning` / `reasoningText` / `sources` / `files` / `warnings` / `providerMetadata`. Empty arrays + undefined fields are pruned by the wrapper.",
+  "source": "vercel-ai-text",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "system": "You are a tour guide for Edinburgh.",
+    "prompt": "Recommend one thing to do on Arthur's Seat at sunrise."
+  },
+  "output": {
+    "text": "Hike up the eastern ridge, you'll catch the sunrise lighting up the Forth before the city wakes up.",
+    "content": [
+      { "type": "text", "text": "Hike up the eastern ridge, you'll catch the sunrise lighting up the Forth before the city wakes up." }
+    ],
+    "finishReason": "stop",
+    "usage": { "inputTokens": 28, "outputTokens": 24, "totalTokens": 52 }
+  },
+  "metadata": {
+    "model": "openai/gpt-4o-mini",
+    "tokens_input": 28,
+    "tokens_output": 24
+  }
+}

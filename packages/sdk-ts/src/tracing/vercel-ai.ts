@@ -106,9 +106,9 @@ function wrapVercelFn(mod: any, name: string): void {
           startedAt,
           finishedAt: new Date(),
           provider: 'vercel-ai',
-          model,
-          tokensInput: usage?.promptTokens ?? usage?.inputTokens,
-          tokensOutput: usage?.completionTokens ?? usage?.outputTokens,
+          model: response?.response?.modelId ?? model,
+          tokensInput: usage?.inputTokens,
+          tokensOutput: usage?.outputTokens,
           input,
           output: extractGenerateOutput(response),
         })
@@ -142,31 +142,66 @@ function attachStreamObservers(
   name: string,
   ctx: { startedAt: Date; model?: string; input: unknown },
 ): void {
-  // The Vercel AI SDK's stream result exposes a `.usage` Promise and either
-  // `.text` (streamText) or `.object` (streamObject). Awaiting these does
-  // NOT consume the user's iterator — they're independent consolidations.
+  // The Vercel AI SDK's stream result exposes a set of Promises (`.usage`,
+  // `.text`, `.object`, `.toolCalls`, `.toolResults`, `.steps`, `.reasoning`,
+  // `.reasoningText`, `.sources`, `.files`, `.warnings`, `.providerMetadata`,
+  // `.finishReason`, `.content`, `.response`). Awaiting them does NOT consume
+  // the user's iterator — they're independent consolidations.
   const finalize = async () => {
     try {
-      const usage = await Promise.resolve(response?.usage).catch(() => undefined)
+      const settle = async <T>(p: unknown): Promise<T | undefined> => {
+        try {
+          return (await Promise.resolve(p)) as T | undefined
+        } catch {
+          return undefined
+        }
+      }
+      const usage = await settle<any>(response?.usage)
+      const finishReason = await settle<string>(response?.finishReason)
+      const toolCalls = await settle<unknown[]>(response?.toolCalls)
+      const toolResults = await settle<unknown[]>(response?.toolResults)
+      const steps = await settle<unknown[]>(response?.steps)
+      const reasoning = await settle<unknown[]>(response?.reasoning)
+      const reasoningText = await settle<string>(response?.reasoningText)
+      const sources = await settle<unknown[]>(response?.sources)
+      const files = await settle<unknown[]>(response?.files)
+      const warnings = await settle<unknown[]>(response?.warnings)
+      const providerMetadata = await settle<Record<string, unknown>>(
+        response?.providerMetadata,
+      )
+      const content = await settle<unknown[]>(response?.content)
+      const resp = await settle<any>(response?.response)
       const text =
-        name === 'streamText'
-          ? await Promise.resolve(response?.text).catch(() => undefined)
-          : undefined
+        name === 'streamText' ? await settle<string>(response?.text) : undefined
       const object =
-        name === 'streamObject'
-          ? await Promise.resolve(response?.object).catch(() => undefined)
-          : undefined
+        name === 'streamObject' ? await settle<unknown>(response?.object) : undefined
+      const output = pruneUndefined({
+        text,
+        object,
+        content,
+        finishReason,
+        usage,
+        toolCalls,
+        toolResults,
+        steps,
+        reasoning,
+        reasoningText,
+        sources,
+        files,
+        warnings,
+        providerMetadata,
+      })
       void persistSample({
         name: `vercel-ai.${name}`,
         status: 'completed',
         startedAt: ctx.startedAt,
         finishedAt: new Date(),
         provider: 'vercel-ai',
-        model: ctx.model,
-        tokensInput: usage?.promptTokens ?? usage?.inputTokens,
-        tokensOutput: usage?.completionTokens ?? usage?.outputTokens,
+        model: resp?.modelId ?? ctx.model,
+        tokensInput: usage?.inputTokens,
+        tokensOutput: usage?.outputTokens,
         input: ctx.input,
-        output: name === 'streamText' ? { text } : { object },
+        output,
       })
     } catch (err) {
       void persistSample({
@@ -203,14 +238,30 @@ function sanitizeInput(params: any): unknown {
 
 function extractGenerateOutput(response: any): unknown {
   if (response == null) return response
-  // Pull the user-meaningful fields and avoid serializing the entire response
-  // object (which can include large internal fields).
-  return {
+  return pruneUndefined({
     text: response.text,
     object: response.object,
+    content: response.content,
     finishReason: response.finishReason,
     usage: response.usage,
     toolCalls: response.toolCalls,
     toolResults: response.toolResults,
+    steps: response.steps,
+    reasoning: response.reasoning,
+    reasoningText: response.reasoningText,
+    sources: response.sources,
+    files: response.files,
+    warnings: response.warnings,
+    providerMetadata: response.providerMetadata,
+  })
+}
+
+function pruneUndefined(obj: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(obj)) {
+    if (v === undefined) continue
+    if (Array.isArray(v) && v.length === 0) continue
+    out[k] = v
   }
+  return out
 }

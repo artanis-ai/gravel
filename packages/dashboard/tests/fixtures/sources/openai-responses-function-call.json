@@ -1,0 +1,46 @@
+{
+  "name": "openai.responses.create",
+  "description": "Responses API with tool use. Output contains a 'function_call' item with call_id, name, and arguments string. The follow-up call passes a 'function_call_output' item back in input. Renderer surfaces function_call items as tool_call blocks (same visual treatment as Chat Completions tool_calls) and function_call_output as tool_result blocks.",
+  "source": "openai-responses",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "model": "gpt-4o",
+    "input": [
+      {
+        "type": "message",
+        "role": "user",
+        "content": [{ "type": "input_text", "text": "What's the weather in Tokyo?" }]
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "name": "get_weather",
+        "description": "Get the current weather.",
+        "parameters": {
+          "type": "object",
+          "properties": { "location": { "type": "string" } },
+          "required": ["location"]
+        }
+      }
+    ]
+  },
+  "output": {
+    "id": "resp_9responsesFnCallX2",
+    "object": "response",
+    "model": "gpt-4o-2024-08-06",
+    "output": [
+      {
+        "type": "function_call",
+        "id": "fc_001",
+        "call_id": "call_tokyo_001",
+        "name": "get_weather",
+        "arguments": "{\"location\":\"Tokyo\"}"
+      }
+    ],
+    "usage": { "input_tokens": 32, "output_tokens": 11, "total_tokens": 43 },
+    "status": "completed"
+  },
+  "metadata": { "tokens_input": 32, "tokens_output": 11 }
+}

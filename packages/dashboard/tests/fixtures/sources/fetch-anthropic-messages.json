@@ -1,0 +1,30 @@
+{
+  "name": "fetch:anthropic.messages",
+  "description": "Raw fetch() to Anthropic's Messages endpoint. Same wrap shape as the OpenAI fetch fixture: `{url, method, body}` → `{body}`. Renderer dispatches the inner body through the anthropic-messages renderer.",
+  "source": "anthropic-messages",
+  "isFetch": true,
+  "status": "completed",
+  "input": {
+    "url": "https://api.anthropic.com/v1/messages",
+    "method": "POST",
+    "body": {
+      "model": "claude-3-5-sonnet-latest",
+      "max_tokens": 64,
+      "messages": [
+        { "role": "user", "content": "What's 7 * 8?" }
+      ]
+    }
+  },
+  "output": {
+    "body": {
+      "id": "msg_01fetchAnthropic",
+      "type": "message",
+      "role": "assistant",
+      "model": "claude-3-5-sonnet-20241022",
+      "content": [{ "type": "text", "text": "7 * 8 = 56." }],
+      "stop_reason": "end_turn",
+      "usage": { "input_tokens": 16, "output_tokens": 9 }
+    }
+  },
+  "metadata": { "tokens_input": 16, "tokens_output": 9 }
+}

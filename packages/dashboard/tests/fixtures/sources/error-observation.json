@@ -1,0 +1,24 @@
+{
+  "name": "openai.chat.completions.create",
+  "description": "Cross-cutting: errored call. `status='errored'`, `output=null` (or partial), `metadata.error = {message, type, status?, request_id?, stack?}`. Renderer wraps the conversation in a red-tinted panel with the error message + type + request_id chip; the (likely empty) output area renders 'No response — the provider returned an error.' rather than nothing.",
+  "source": "openai-chat",
+  "isFetch": false,
+  "status": "errored",
+  "input": {
+    "model": "gpt-4o-mini",
+    "messages": [
+      { "role": "user", "content": "Some prompt that hit a quota or timeout." }
+    ]
+  },
+  "output": null,
+  "metadata": {
+    "error": {
+      "type": "openai.RateLimitError",
+      "message": "You exceeded your current quota. Please check your plan and billing details.",
+      "status": 429,
+      "request_id": "req_011errorObs",
+      "stack": "Traceback (most recent call last):\n  File \".../app.py\", line 84, in ask\n    resp = client.chat.completions.create(...)\nopenai.RateLimitError: You exceeded your current quota."
+    },
+    "duration_ms": 412
+  }
+}

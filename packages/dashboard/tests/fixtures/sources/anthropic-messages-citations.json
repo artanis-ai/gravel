@@ -1,0 +1,60 @@
+{
+  "name": "anthropic.messages.create",
+  "description": "Anthropic citations: when the model cites a source, it emits a {type:'text', citations:[...]} block. Each citation has {type, cited_text, document_index, document_title, start_char_index, end_char_index} (char-based) OR start_page_number/end_page_number (page-based). Renderer must surface the cited_text as a footnote-style chip under the text block, not lose them.",
+  "source": "anthropic-messages",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "model": "claude-3-5-sonnet-latest",
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "document",
+            "source": {
+              "type": "text",
+              "media_type": "text/plain",
+              "data": "Maple Ridge community handbook. Quiet hours are 10pm to 7am. Trash pickup is Tuesday and Friday. The pool is open May through September."
+            },
+            "title": "Maple Ridge Handbook",
+            "citations": { "enabled": true }
+          },
+          { "type": "text", "text": "When is trash pickup?" }
+        ]
+      }
+    ]
+  },
+  "output": {
+    "id": "msg_01anthropicCitations",
+    "type": "message",
+    "role": "assistant",
+    "model": "claude-3-5-sonnet-20241022",
+    "content": [
+      {
+        "type": "text",
+        "text": "Trash pickup at Maple Ridge is on ",
+        "citations": null
+      },
+      {
+        "type": "text",
+        "text": "Tuesday and Friday",
+        "citations": [
+          {
+            "type": "char_location",
+            "cited_text": "Trash pickup is Tuesday and Friday.",
+            "document_index": 0,
+            "document_title": "Maple Ridge Handbook",
+            "start_char_index": 56,
+            "end_char_index": 91
+          }
+        ]
+      },
+      { "type": "text", "text": ".", "citations": null }
+    ],
+    "stop_reason": "end_turn",
+    "usage": { "input_tokens": 84, "output_tokens": 19 }
+  },
+  "metadata": { "tokens_input": 84, "tokens_output": 19 }
+}

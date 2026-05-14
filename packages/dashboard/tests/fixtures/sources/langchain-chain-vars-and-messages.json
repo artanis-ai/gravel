@@ -1,0 +1,33 @@
+{
+  "name": "langchain.chain",
+  "description": "REAL CAPTURE from landlord-ai gravel.db (id 9206efaf). LC chain whose `inputs` is `{var1, messages}` — template variables alongside a messages array. Here `is_greeting: true` is a runtime var that branches the chain, then `messages` is the conversation. Output is a string-valued dict `{value: 'greeting_reply'}`. Renderer must surface the vars distinctly from the messages (vars as a labelled key strip, messages as a chat), and show the output as a labelled 'value: greeting_reply' chip — not raw JSON.",
+  "source": "langchain-chain",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "inputs": {
+      "is_greeting": true,
+      "messages": [
+        {
+          "content": "You are the AI concierge for Maple Ridge Apartments. You speak like a long-time\nfront-desk staffer: warm, slightly informal, never robotic. Greet by first name\nwhen you have it. Use one-line responses when the answer is short — don't pad.\n",
+          "additional_kwargs": {},
+          "response_metadata": {},
+          "type": "system",
+          "name": null,
+          "id": "6711c2fe-62f3-4b6b-a5c3-44b342fe24de"
+        },
+        {
+          "content": "Yo",
+          "additional_kwargs": {},
+          "response_metadata": {},
+          "type": "human",
+          "name": null,
+          "id": "4f75829a-7a2a-4e34-b0f0-79aa9c381474"
+        }
+      ]
+    },
+    "serialized": null
+  },
+  "output": { "value": "greeting_reply" },
+  "metadata": null
+}

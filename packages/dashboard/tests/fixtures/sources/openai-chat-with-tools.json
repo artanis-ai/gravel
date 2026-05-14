@@ -1,0 +1,76 @@
+{
+  "name": "openai.chat.completions.create",
+  "description": "Assistant returns parallel tool_calls (two functions). finish_reason='tool_calls'. Renderer must surface each call as a tool_call block with its parsed arguments.",
+  "source": "openai-chat",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "model": "gpt-4o",
+    "messages": [
+      { "role": "system", "content": "Use tools when relevant." },
+      { "role": "user", "content": "What's the weather in San Francisco and London?" }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "get_weather",
+          "description": "Look up the current weather in a city.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "location": { "type": "string", "description": "City name" }
+            },
+            "required": ["location"]
+          }
+        }
+      }
+    ],
+    "tool_choice": "auto"
+  },
+  "output": {
+    "id": "chatcmpl-9e3parallelToolsX1",
+    "object": "chat.completion",
+    "created": 1778711400,
+    "model": "gpt-4o-2024-08-06",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": null,
+          "refusal": null,
+          "tool_calls": [
+            {
+              "id": "call_sf_001",
+              "type": "function",
+              "function": {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"San Francisco\"}"
+              }
+            },
+            {
+              "id": "call_ldn_001",
+              "type": "function",
+              "function": {
+                "name": "get_weather",
+                "arguments": "{\"location\":\"London\"}"
+              }
+            }
+          ]
+        },
+        "logprobs": null,
+        "finish_reason": "tool_calls"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 81,
+      "completion_tokens": 42,
+      "total_tokens": 123
+    }
+  },
+  "metadata": {
+    "tokens_input": 81,
+    "tokens_output": 42
+  }
+}

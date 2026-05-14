@@ -1,0 +1,22 @@
+{
+  "name": "langchain.tool",
+  "description": "LC tool invocation. Captured by the SDK callback handler's `on_tool_start` (Python) / `handleToolStart` (TS), persisted as its own trace row. Input is `{input_str | input, serialized, tool}` where `input_str` is the (often-stringified) tool argument the agent passed and `serialized` is LC's dump of the tool definition. Output is whatever the tool returned (string, dict, or list of docs). `parent_run_id` in input lets the dashboard link the tool back to the parent chain/agent run.",
+  "source": "langchain-tool",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "input_str": "{\"city\":\"Edinburgh\"}",
+    "serialized": {
+      "lc": 1,
+      "type": "constructor",
+      "id": ["langchain_community", "tools", "weather", "WeatherTool"],
+      "kwargs": { "name": "get_weather", "description": "Look up current weather." }
+    },
+    "tool": "get_weather",
+    "parent_run_id": "8e1f3ab2-0b9c-4f3a-8aa0-1e8c2c2d7c4e"
+  },
+  "output": {
+    "value": "{\"temp_c\":7,\"condition\":\"overcast\"}"
+  },
+  "metadata": null
+}

@@ -1,0 +1,73 @@
+{
+  "name": "langchain.chat_model",
+  "description": "Python `langchain.chat_model` trace (the LC equivalent of OpenAI chat). Input is `{messages: <Array<Array<LCMessageDict>>>, serialized, ...kwargs}` — note `messages` is a list of BATCHES (outer array) of messages (inner array). Output is an LLMResult where each generation has a `message` field (an AIMessage dump) PLUS the flattened `text`. LCMessageDict has `{content, additional_kwargs, response_metadata, type: 'human'|'ai'|'system'|'tool'|'function', name, id, tool_calls?, invalid_tool_calls?, usage_metadata?}`.",
+  "source": "langchain-chat-model",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "messages": [
+      [
+        {
+          "content": "You are the AI concierge for Maple Ridge Apartments.",
+          "additional_kwargs": {},
+          "response_metadata": {},
+          "type": "system",
+          "name": null,
+          "id": "sys-1"
+        },
+        {
+          "content": "What time is trash pickup?",
+          "additional_kwargs": {},
+          "response_metadata": {},
+          "type": "human",
+          "name": null,
+          "id": "human-1"
+        }
+      ]
+    ],
+    "serialized": {
+      "lc": 1,
+      "type": "constructor",
+      "id": ["langchain_openai", "chat_models", "base", "ChatOpenAI"],
+      "kwargs": { "model_name": "gpt-4o-mini", "temperature": 0 }
+    },
+    "invocation_params": { "model": "gpt-4o-mini", "temperature": 0 }
+  },
+  "output": {
+    "generations": [
+      [
+        {
+          "text": "Trash pickup is Tuesday and Friday mornings around 7am.",
+          "generation_info": { "finish_reason": "stop", "logprobs": null },
+          "type": "ChatGeneration",
+          "message": {
+            "content": "Trash pickup is Tuesday and Friday mornings around 7am.",
+            "additional_kwargs": {},
+            "response_metadata": {
+              "token_usage": { "prompt_tokens": 39, "completion_tokens": 13, "total_tokens": 52 },
+              "model_name": "gpt-4o-mini",
+              "finish_reason": "stop"
+            },
+            "type": "ai",
+            "name": null,
+            "id": "run-ai-1",
+            "tool_calls": [],
+            "invalid_tool_calls": [],
+            "usage_metadata": { "input_tokens": 39, "output_tokens": 13, "total_tokens": 52 }
+          }
+        }
+      ]
+    ],
+    "llm_output": {
+      "token_usage": { "prompt_tokens": 39, "completion_tokens": 13, "total_tokens": 52 },
+      "model_name": "gpt-4o-mini",
+      "system_fingerprint": "fp_test"
+    },
+    "run": null
+  },
+  "metadata": {
+    "model": "gpt-4o-mini",
+    "tokens_input": 39,
+    "tokens_output": 13
+  }
+}

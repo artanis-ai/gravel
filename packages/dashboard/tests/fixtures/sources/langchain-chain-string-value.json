@@ -1,0 +1,13 @@
+{
+  "name": "langchain.chain",
+  "description": "LC chain whose `inputs` is a single string template var and whose `output` is the `{value: '...'}` shape an LC StrOutputParser or itemgetter('value') chain produces. Renderer recognises a length-1 dict whose value is a primitive (string / number / bool) and renders the value directly with the key as a chip-label.",
+  "source": "langchain-chain",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "inputs": { "topic": "ice cream" },
+    "serialized": null
+  },
+  "output": { "value": "Strawberry, vanilla, and pistachio." },
+  "metadata": null
+}

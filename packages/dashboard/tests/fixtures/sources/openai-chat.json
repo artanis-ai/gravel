@@ -1,0 +1,51 @@
+{
+  "name": "openai.chat.completions.create",
+  "description": "Plain two-turn text conversation. No tools, no attachments, no streaming. Most common shape.",
+  "source": "openai-chat",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "model": "gpt-4o-mini",
+    "messages": [
+      { "role": "system", "content": "You are a helpful assistant. Be concise." },
+      { "role": "user", "content": "What's the capital of Japan?" }
+    ],
+    "temperature": 0.2
+  },
+  "output": {
+    "id": "chatcmpl-9e2KLm8VxAJrZbHQpwI8aPNvQz123",
+    "object": "chat.completion",
+    "created": 1778711343,
+    "model": "gpt-4o-mini-2024-07-18",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "Tokyo.",
+          "refusal": null,
+          "annotations": []
+        },
+        "logprobs": null,
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 24,
+      "completion_tokens": 1,
+      "total_tokens": 25,
+      "prompt_tokens_details": { "cached_tokens": 0, "audio_tokens": 0 },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "audio_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0
+      }
+    },
+    "system_fingerprint": "fp_abc123"
+  },
+  "metadata": {
+    "tokens_input": 24,
+    "tokens_output": 1
+  }
+}

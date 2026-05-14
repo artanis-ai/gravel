@@ -18,12 +18,26 @@ interface ContextState {
    * double-traced.
    */
   fetchTracingDisabled: boolean
+  /**
+   * When set, the OpenAI / Anthropic SDK auto-patches skip persistence.
+   * Set by the Langchain handler around `handleChatModelStart` /
+   * `handleLLMStart` so LC's ChatOpenAI → openai.chat.completions.create
+   * isn't traced twice. Mirrors `fetchTracingDisabled` one layer up.
+   */
+  sdkTracingDisabled: boolean
 }
 
 const storage = new AsyncLocalStorage<ContextState>()
 
 function currentState(): ContextState {
-  return storage.getStore() ?? { metadata: {}, tracingDisabled: false, fetchTracingDisabled: false }
+  return (
+    storage.getStore() ?? {
+      metadata: {},
+      tracingDisabled: false,
+      fetchTracingDisabled: false,
+      sdkTracingDisabled: false,
+    }
+  )
 }
 
 export const gravelContext = {
@@ -43,6 +57,23 @@ export const gravelContext = {
     const previous = currentState()
     return storage.run({ ...previous, fetchTracingDisabled: true }, fn)
   },
+  /** Internal — used by the Langchain handler so its inner ChatOpenAI /
+   *  ChatAnthropic call doesn't produce a second trace. */
+  runWithSdkTracingDisabled<T>(fn: () => T): T {
+    const previous = currentState()
+    return storage.run({ ...previous, sdkTracingDisabled: true }, fn)
+  },
+  /** Internal — used by callback-style integrations (Langchain) where
+   *  we can't wrap the inner call in `runWithSdkTracingDisabled`
+   *  because we only get notified at start / end. Mutates the current
+   *  async-context store and returns a function that restores the
+   *  prior state. Pair with the returned restorer in the matching
+   *  end / error callback. */
+  pushSdkTracingDisabled(): () => void {
+    const previous = currentState()
+    storage.enterWith({ ...previous, sdkTracingDisabled: true })
+    return () => storage.enterWith(previous)
+  },
   getMetadata(): Record<string, unknown> {
     return currentState().metadata
   },
@@ -51,6 +82,9 @@ export const gravelContext = {
   },
   isFetchTracingDisabled(): boolean {
     return currentState().fetchTracingDisabled
+  },
+  isSdkTracingDisabled(): boolean {
+    return currentState().sdkTracingDisabled
   },
 }
 

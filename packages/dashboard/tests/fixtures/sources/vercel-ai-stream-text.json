@@ -1,0 +1,30 @@
+{
+  "name": "vercel-ai.streamText",
+  "description": "Vercel AI SDK `streamText` (v4+ naming). After the user's iterator finishes, the wrapper awaits the consolidation promises on the response object (`.text`, `.usage`, `.finishReason`, `.toolCalls`, `.toolResults`, `.steps`, `.reasoning`, `.reasoningText`, `.sources`, `.files`, `.warnings`, `.providerMetadata`, `.content`, `.response`) and persists everything that resolved with a value. Undefined fields and empty arrays are pruned.",
+  "source": "vercel-ai-text",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          { "type": "text", "text": "List three breakfast options near the Royal Mile, one line each." }
+        ]
+      }
+    ]
+  },
+  "output": {
+    "text": "1. Hula Juice Cafe, bowls + smoothies.\n2. Mimi's Bakehouse, pastries + filter coffee.\n3. Lovecrumbs, slow-pour espresso + cakes.",
+    "content": [
+      { "type": "text", "text": "1. Hula Juice Cafe, bowls + smoothies.\n2. Mimi's Bakehouse, pastries + filter coffee.\n3. Lovecrumbs, slow-pour espresso + cakes." }
+    ],
+    "finishReason": "stop",
+    "usage": { "inputTokens": 18, "outputTokens": 39, "totalTokens": 57 }
+  },
+  "metadata": {
+    "model": "openai/gpt-4o",
+    "tokens_input": 18,
+    "tokens_output": 39
+  }
+}

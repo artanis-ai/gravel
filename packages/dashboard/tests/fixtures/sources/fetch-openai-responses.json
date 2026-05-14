@@ -1,0 +1,33 @@
+{
+  "name": "fetch:openai.responses",
+  "description": "Raw fetch() to OpenAI's Responses API (`/v1/responses`). Dispatches inner body through the openai-responses renderer.",
+  "source": "openai-responses",
+  "isFetch": true,
+  "status": "completed",
+  "input": {
+    "url": "https://api.openai.com/v1/responses",
+    "method": "POST",
+    "body": {
+      "model": "gpt-5-2026-02",
+      "input": "Give me one sentence about Edinburgh.",
+      "max_output_tokens": 64
+    }
+  },
+  "output": {
+    "body": {
+      "id": "resp_01fetchResp",
+      "object": "response",
+      "model": "gpt-5-2026-02",
+      "output": [
+        {
+          "type": "message",
+          "id": "msg_01fetchResp",
+          "role": "assistant",
+          "content": [{ "type": "output_text", "text": "Edinburgh's Old Town is a stone tangle of closes and wynds laid over centuries." }]
+        }
+      ],
+      "usage": { "input_tokens": 13, "output_tokens": 18, "total_tokens": 31 }
+    }
+  },
+  "metadata": { "tokens_input": 13, "tokens_output": 18 }
+}

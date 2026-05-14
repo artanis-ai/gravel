@@ -1,0 +1,26 @@
+{
+  "name": "openai.embeddings.create",
+  "description": "Batch embeddings: input is an array of strings. Output's data array has one entry per input, each carrying its own index. Renderer pairs each input string with its summary (no vector values inline for batches — the per-row card lists 'index 0 → 1536-d vector').",
+  "source": "openai-embeddings",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "model": "text-embedding-3-small",
+    "input": [
+      "Leaking ceiling in apartment 4B.",
+      "Door handle broken on the laundry room.",
+      "Boiler making a knocking sound at night."
+    ]
+  },
+  "output": {
+    "object": "list",
+    "data": [
+      { "object": "embedding", "index": 0, "embedding": [-0.01, 0.05, -0.03] },
+      { "object": "embedding", "index": 1, "embedding": [0.04, -0.02, 0.06] },
+      { "object": "embedding", "index": 2, "embedding": [-0.05, 0.01, 0.07] }
+    ],
+    "model": "text-embedding-3-small",
+    "usage": { "prompt_tokens": 28, "total_tokens": 28 }
+  },
+  "metadata": { "tokens_input": 28 }
+}

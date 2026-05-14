@@ -50,7 +50,7 @@ function wrapMessagesCreate(proto: any): void {
   if (typeof original !== 'function' || (original as any).__gravelWrapped) return
 
   const wrapped = function gravelAnthropicCreate(this: any, ...args: unknown[]) {
-    if (isTracingDisabledEnv() || gravelContext.isTracingDisabled()) {
+    if (isTracingDisabledEnv() || gravelContext.isTracingDisabled() || gravelContext.isSdkTracingDisabled()) {
       return original.apply(this, args)
     }
     const startedAt = new Date()
@@ -122,7 +122,7 @@ function wrapMessagesStream(proto: any): void {
   if (typeof original !== 'function' || (original as any).__gravelWrapped) return
 
   const wrapped = function gravelAnthropicStream(this: any, ...args: unknown[]) {
-    if (isTracingDisabledEnv() || gravelContext.isTracingDisabled()) {
+    if (isTracingDisabledEnv() || gravelContext.isTracingDisabled() || gravelContext.isSdkTracingDisabled()) {
       return original.apply(this, args)
     }
     const startedAt = new Date()

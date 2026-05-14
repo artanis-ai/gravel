@@ -1,0 +1,37 @@
+{
+  "name": "anthropic.messages.create",
+  "description": "Anthropic multimodal input: image block has a `source` object with either {type:'base64', media_type, data} or {type:'url', url}. Renderer converts base64 to a data: URL so the <img> tag works without re-fetching.",
+  "source": "anthropic-messages",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "model": "claude-3-5-sonnet-latest",
+    "max_tokens": 512,
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          { "type": "text", "text": "What's in this photo?" },
+          {
+            "type": "image",
+            "source": {
+              "type": "base64",
+              "media_type": "image/jpeg",
+              "data": "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQ=="
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "output": {
+    "id": "msg_01anthropicImage",
+    "type": "message",
+    "role": "assistant",
+    "model": "claude-3-5-sonnet-20241022",
+    "content": [{ "type": "text", "text": "I can see a small placeholder image — please share a higher-quality photo." }],
+    "stop_reason": "end_turn",
+    "usage": { "input_tokens": 268, "output_tokens": 22 }
+  },
+  "metadata": { "tokens_input": 268, "tokens_output": 22 }
+}

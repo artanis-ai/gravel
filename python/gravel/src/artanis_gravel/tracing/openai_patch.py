@@ -34,10 +34,14 @@ _PATCHED = False
 
 
 def _is_disabled() -> bool:
-    """Honour env-level kill switch + per-context disable."""
+    """Honour env-level kill switch + per-context disable + the
+    Langchain handler's `sdk_tracing_disabled` flag (so LC's inner
+    ChatOpenAI → openai.chat.completions.create doesn't double-trace)."""
     if os.environ.get("GRAVEL_TRACING_DISABLED") == "1":
         return True
-    return gravel_context_singleton.is_tracing_disabled()
+    if gravel_context_singleton.is_tracing_disabled():
+        return True
+    return gravel_context_singleton.is_sdk_tracing_disabled()
 
 
 # ---------- response shape extraction ----------
