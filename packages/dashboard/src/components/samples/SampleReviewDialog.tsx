@@ -36,6 +36,7 @@ import { Badge } from '../Badge'
 import { SkeletonText } from '../Skeleton'
 import { cx, formatDuration, formatRelative } from '../../lib/format'
 import { extractMessages, extractOutput, type ContentBlock, type NormalizedMessage } from '../../lib/messages'
+import { JsonTree } from './JsonTree'
 
 interface Props {
   /** All samples currently on screen (one page of the table). Drives prev/next. */
@@ -576,15 +577,12 @@ function HumanValue({ value, depth = 0 }: { value: unknown; depth?: number }) {
   if (typeof value !== 'object') {
     return <span className="font-mono text-text-dark">{String(value)}</span>
   }
-  // Bail to JSON for very deep / large structures — render quality
-  // tanks below this threshold and the user is better off with a code
-  // dump they can copy.
+  // Bail to the JsonTree viewer for very deep structures — at this
+  // depth the human-friendly definition-list rendering compounds into
+  // an unreadable mess. The tree is collapsible so users can dig
+  // selectively.
   if (depth >= 4) {
-    return (
-      <pre className="overflow-x-auto whitespace-pre-wrap rounded bg-cream p-2 font-mono text-[11px] text-text-dark">
-        {safeJson(value)}
-      </pre>
-    )
+    return <JsonTree value={value} />
   }
   if (Array.isArray(value)) {
     if (value.length === 0) {
@@ -617,11 +615,7 @@ function HumanValue({ value, depth = 0 }: { value: unknown; depth?: number }) {
     return <span className="text-text-muted italic">(empty object)</span>
   }
   if (entries.length > 10) {
-    return (
-      <pre className="overflow-x-auto whitespace-pre-wrap rounded bg-cream p-2 font-mono text-[11px] text-text-dark">
-        {safeJson(value)}
-      </pre>
-    )
+    return <JsonTree value={value} />
   }
   return (
     <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
@@ -680,11 +674,10 @@ function Markdown({ children }: { children: string }) {
 }
 
 function RawJson({ value }: { value: unknown }) {
-  return (
-    <pre className="whitespace-pre-wrap rounded-md bg-warm/30 p-3 font-mono text-[11px] text-text-dark">
-      {safeJson(value)}
-    </pre>
-  )
+  // No raw <pre> dumps — every payload renders as the JsonTree
+  // collapsible viewer. Yousef's rule: if we detect it's structured,
+  // show a human-friendly tree, not a wall of escaped strings.
+  return <JsonTree value={value} />
 }
 
 function StatusBadge({ status }: { status: SampleStatus }) {
@@ -887,14 +880,6 @@ function FeedbackButton({
 }
 
 // ---------- Helpers ----------
-
-function safeJson(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2)
-  } catch {
-    return String(value)
-  }
-}
 
 /** IDs for the `radius` samples on each side of `index`, clamped to the array. */
 function neighbouringIds(samples: SampleListItem[], index: number, radius: number): string[] {
