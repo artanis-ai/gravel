@@ -1,6 +1,6 @@
 # Status
 
-> **Last updated:** 2026-05-14 (v0.6.1 shipped; Python-repr fallback for LC tool args).
+> **Last updated:** 2026-05-14 (v0.6.2 shipped; wizard aborts on SDK install failure).
 
 ## Where we are
 
@@ -13,6 +13,8 @@
 **Judge + eval runner shipped** with project ownership enforcement and audit logging. **Mallet `analyzePrompt()` shipped** with Clerk-org rate-limiting through the CP proxy.
 
 ## Recent release activity (May 2026)
+
+- **v0.6.2** — `gravel init` now aborts when `uv add` / `pnpm add` fails. v0.6.1 (and earlier) printed `Install failed; re-run yourself: <cmd>` and then fell through to Step 1 (Dashboard), writing config files that referenced an SDK the project hadn't actually installed. The wizard now: (a) prints the captured stderr so the user can see *why* the install failed (PyPI propagation lag, dependency conflict, etc.), and (b) returns a non-zero error so cobra exits before any pillar runs. Power users can still pass the hidden `--skip-sdk-install` flag if they want to add the dep themselves.
 
 - **v0.6.1** — Python-repr fallback in the Review surface. LangChain's Python `on_tool_start` callback hands us `input_str = str(kwargs_dict)` — a Python repr (single quotes, capital `True/False/None`), not JSON. The v0.6.0 renderer's `JSON.parse` quietly failed on this and fell back to dumping the raw repr string into the dashboard. Two-pronged fix: (1) New `tryParseStructuredString(s)` in `packages/dashboard/src/lib/parseStructured.ts` walks Python-repr strings, rewriting single-quoted literals + `True/False/None` to JSON, with quote-respecting state-machine so values with apostrophes don't corrupt; LangchainTool + LangchainChatModel now route through it. 11 pinning unit tests + a behavioural test in `LangchainTool.test.tsx` against the exact screenshot payload. (2) Python `on_tool_start` in `langchain_patch.py` now also captures LC's structured `inputs: dict` kwarg (when present) under `input["input"]`, so newly-traced rows ship a dict instead of relying on the dashboard to parse the repr. Renderer prefers the dict over `input_str`.
 

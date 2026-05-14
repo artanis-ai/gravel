@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "artanis-gravel"
-version = "0.6.1"
+version = "0.6.2"
 description = "Embedded prompt management, tracing, and evals for AI engineering teams."
 readme = "README.md"
 license = { text = "Apache-2.0" }

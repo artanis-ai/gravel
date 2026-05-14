@@ -106,7 +106,18 @@ func Run(ctx context.Context, opts RunOptions, _ io.Writer) (RunResult, error) {
 		case SDKSkippedNoManifest:
 			sp.Fail(fmt.Sprintf("No project manifest in cwd; add %s yourself with: %s", pkg, Bold(sdkResult.Command)))
 		case SDKFailed:
-			sp.Fail(fmt.Sprintf("Install failed; re-run yourself: %s", Bold(sdkResult.Command)))
+			sp.Fail(fmt.Sprintf("Install failed: %s", Bold(sdkResult.Command)))
+			if strings.TrimSpace(sdkResult.Stderr) != "" {
+				Say("")
+				Say(Dim(strings.TrimRight(sdkResult.Stderr, "\n")))
+				Say("")
+			}
+			Say("Fix the install above (or pass --skip-sdk-install if you'll add the dep yourself) and re-run gravel init. Aborting before we wire up files against an uninstalled SDK.")
+			return RunResult{
+				Detection:  d,
+				SDKInstall: sdkResult,
+				State:      state,
+			}, fmt.Errorf("SDK install failed: %s", sdkResult.Command)
 		}
 	}
 
