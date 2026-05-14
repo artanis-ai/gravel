@@ -180,10 +180,21 @@ def _build_handler_class() -> Any:
             if _is_disabled():
                 return
             tool_name = serialized.get("name") if isinstance(serialized, dict) else None
+            # LC sometimes hands us a structured `inputs: dict` alongside
+            # the legacy `input_str: str` (which is str(kwargs_dict) and
+            # therefore a Python repr, NOT JSON). Prefer the dict when
+            # present so the dashboard renders structured rows instead
+            # of having to round-trip the repr.
+            structured_inputs = kwargs.get("inputs") if isinstance(kwargs.get("inputs"), dict) else None
             self._runs[run_id] = {
                 "name": "langchain.tool",
                 "started_at": _now(),
-                "input": {"input_str": input_str, "serialized": serialized, **kwargs},
+                "input": {
+                    "input": structured_inputs if structured_inputs is not None else input_str,
+                    "input_str": input_str,
+                    "serialized": serialized,
+                    **{k: v for k, v in kwargs.items() if k != "inputs"},
+                },
                 "model": None,
                 "states": [],
                 "parent_run_id": str(parent_run_id) if parent_run_id else None,

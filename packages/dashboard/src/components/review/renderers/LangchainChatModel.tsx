@@ -16,6 +16,7 @@ import type { ReactNode } from 'react'
 
 import { HumanValue } from '../HumanValue'
 import { Message, type MessageRole } from '../Message'
+import { tryParseStructuredString } from '../../../lib/parseStructured'
 import type { Renderer } from '../types'
 import { summariseContent } from '../summarise'
 import { ClickableImage } from '../ClickableMedia'
@@ -250,13 +251,10 @@ function renderContent(content: unknown): ReactNode {
 }
 
 function tryParseJson(s: string): unknown {
-  const trimmed = s.trim()
-  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return s
-  try {
-    return JSON.parse(s)
-  } catch {
-    return s
-  }
+  // Structured-output content from LC can arrive as either JSON or a
+  // Python repr (when LC's str()-serialised a dict before we got it).
+  const parsed = tryParseStructuredString(s)
+  return parsed === undefined ? s : parsed
 }
 
 function LcContentPart({ part }: { part: unknown }): ReactNode {

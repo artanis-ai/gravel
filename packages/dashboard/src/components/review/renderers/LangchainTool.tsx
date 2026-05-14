@@ -20,6 +20,7 @@
 import type { ReactNode } from 'react'
 
 import { HumanValue } from '../HumanValue'
+import { tryParseStructuredString } from '../../../lib/parseStructured'
 import type { Renderer } from '../types'
 
 export const LangchainToolRenderer: Renderer = ({ input, output }) => {
@@ -78,8 +79,13 @@ function extractToolName(input: unknown): string | null {
 
 function extractArgs(input: unknown): unknown {
   if (!isPlainObject(input)) return input
+  // Prefer the structured `input` field (LC's `inputs: dict` kwarg
+  // when present). Fall back to `input_str` (the Python repr) which
+  // the parser will then JSON/Python-repr-decode for us.
+  if ('input' in input && input.input !== null && input.input !== undefined) {
+    return parseJsonString(input.input)
+  }
   if ('input_str' in input) return parseJsonString(input.input_str)
-  if ('input' in input) return parseJsonString(input.input)
   if ('arguments' in input) return parseJsonString(input.arguments)
   return null
 }
@@ -122,14 +128,10 @@ function renderResult(output: unknown): ReactNode {
 }
 
 function parseJsonString(v: unknown): unknown {
-  if (typeof v !== 'string') return v
-  const trimmed = v.trim()
-  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return v
-  try {
-    return JSON.parse(v)
-  } catch {
-    return v
-  }
+  // LangChain Python tool callbacks hand us `input_str = str(kwargs_dict)`,
+  // which is a Python repr (single quotes, `True/False/None`) rather than
+  // JSON. The shared parser handles both shapes.
+  return tryParseStructuredString(v)
 }
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
