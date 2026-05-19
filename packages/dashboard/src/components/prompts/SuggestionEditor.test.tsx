@@ -103,6 +103,22 @@ describe('alignWhitespace (paragraph-vs-list separator drift)', () => {
     const candidate = 'one\n\ntwo\n\nthree'
     expect(alignWhitespace(orig, candidate)).toBe(candidate)
   })
+  it('handles trailing newline lost on serialise (CommonMark convention)', () => {
+    // prosemirror-markdown drops the source's trailing newline. Same
+    // non-ws tokens; alignWhitespace must restore the trailing `\n`.
+    const orig = 'one\ntwo\n'
+    const candidate = 'one\n\ntwo'
+    expect(alignWhitespace(orig, candidate)).toBe(orig)
+  })
+  it('investigator-shape: paragraph→list separator AND trailing newline drift', () => {
+    // Landlord-ai investigator.md class: paragraph followed by bullet
+    // list (serialiser inserts `\n\n`) PLUS source's trailing newline
+    // gets stripped. Two whitespace drifts at once; algorithm must
+    // still recognise the non-ws sequence is identical.
+    const orig = 'questions like:\n- "first?"\n- "second?"\n'
+    const candidate = 'questions like:\n\n- "first?"\n- "second?"'
+    expect(alignWhitespace(orig, candidate)).toBe(orig)
+  })
   it('identity on already-equal inputs', () => {
     const s = 'identical text'
     expect(alignWhitespace(s, s)).toBe(s)

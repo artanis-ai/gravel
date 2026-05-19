@@ -91,6 +91,27 @@ describe('SuggestionEditor round-trip stability (no spurious diff)', () => {
     expect(stats).toEqual({ insertions: 0, deletions: 0 })
   })
 
+  it('full landlord-ai investigator shape: paragraph→list AND trailing newline', async () => {
+    // The exact shape that bit us in dogfooding:
+    //   - headings (#)
+    //   - paragraph followed by single-newline bullet list
+    //   - inline code spans (backticks)
+    //   - file-level trailing newline (which prosemirror-markdown strips)
+    const src =
+      '# The Investigator\n\n' +
+      'You are an investigator agent.\n\n' +
+      '## Loop\n\n' +
+      'Examples of clarifying questions you might ask are like:\n' +
+      '- "Can you describe the smell?"\n' +
+      '- "Where exactly is the leak?"\n' +
+      '\n' +
+      '## Tools\n\n' +
+      '- `search_lease_and_policies` — for clauses about responsibility.\n' +
+      '- `schedule_contractor` — when you have enough.\n'
+    const stats = await mountAndGetStats(src)
+    expect(stats).toEqual({ insertions: 0, deletions: 0 })
+  })
+
   it('paragraph followed by bullet list (single newline separator): zero diff', async () => {
     // CommonMark serialiser puts `\n\n` between a paragraph and a
     // following list. Landlord-ai investigator prompt has the source

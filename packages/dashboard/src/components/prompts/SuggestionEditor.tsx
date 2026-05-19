@@ -83,27 +83,30 @@ function getMarkdown(editor: Editor, original: string): string {
 
 /**
  * When the serialiser's only divergence from the original is which
- * whitespace runs it picked (e.g. inserting `\n\n` before a list item
- * that originally had a single `\n` before it, per CommonMark block-
- * grammar rules), return the ORIGINAL verbatim. This makes mounting
+ * whitespace it picked — inserting `\n\n` before a list item that
+ * originally had a single `\n`, stripping a trailing newline, normalising
+ * leading whitespace — return the ORIGINAL verbatim. This makes mounting
  * an unedited prompt produce a zero diff regardless of the parser's
- * paragraph-vs-list normalisation. When the user has made real
- * content changes (i.e. non-whitespace tokens differ in count or
- * value), we trust the candidate and accept whatever whitespace
- * normalisation Tiptap applied — that's a tractable tradeoff: edits
- * preserve content faithfully; unedited content is byte-perfect.
+ * paragraph-vs-list normalisation or CommonMark serialiser conventions.
  *
- * Token model: split into a regular alternation of [non-whitespace
- * run, whitespace run, non-whitespace run, ...]. Same array length +
- * same content at every even index means "same content modulo
- * whitespace"; we use original's whitespace runs to rebuild.
+ * When the user has made real content changes (the sequence of
+ * non-whitespace runs differs in count or value), trust the candidate
+ * and accept whatever whitespace normalisation Tiptap applied — that's a
+ * tractable tradeoff: edits preserve content faithfully; unedited
+ * content is byte-perfect.
+ *
+ * Token model: split on /\s+/ and drop empties — leaves only the
+ * sequence of non-whitespace runs. If that sequence is identical
+ * between original and candidate, every difference is whitespace-only.
+ * This is robust against trailing-newline drift (the CommonMark
+ * serialiser doesn't emit a trailing `\n` even if the source has one)
+ * AND paragraph-to-list separator normalisation (single `\n` → `\n\n`).
  */
 export function alignWhitespace(original: string, candidate: string): string {
-  const wsRe = /(\s+)/g
-  const origTokens = original.split(wsRe)
-  const candTokens = candidate.split(wsRe)
+  const origTokens = original.split(/\s+/).filter(Boolean)
+  const candTokens = candidate.split(/\s+/).filter(Boolean)
   if (origTokens.length !== candTokens.length) return candidate
-  for (let i = 0; i < origTokens.length; i += 2) {
+  for (let i = 0; i < origTokens.length; i++) {
     if (origTokens[i] !== candTokens[i]) return candidate
   }
   return original
