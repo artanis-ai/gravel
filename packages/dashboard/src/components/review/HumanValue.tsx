@@ -47,7 +47,7 @@ export function HumanValue({ value, depth = 0 }: HumanValueProps): ReactNode {
   }
 
   if (value === null || value === undefined) {
-    return <span className="text-text-muted">—</span>
+    return <span className="text-text-muted">(none)</span>
   }
 
   if (typeof value === 'string') return <HumanString value={value} />

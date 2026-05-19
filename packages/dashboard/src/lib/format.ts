@@ -7,7 +7,7 @@ export function cx(...parts: Array<string | false | null | undefined>): string {
 }
 
 export function formatDuration(ms: number | null | undefined): string {
-  if (ms == null) return '—'
+  if (ms == null) return '(none)'
   if (ms < 1000) return `${ms}ms`
   if (ms < 60_000) return `${(ms / 1000).toFixed(2)}s`
   const m = Math.floor(ms / 60_000)
@@ -16,9 +16,9 @@ export function formatDuration(ms: number | null | undefined): string {
 }
 
 export function formatRelative(iso: string | null | undefined, now: Date = new Date()): string {
-  if (!iso) return '—'
+  if (!iso) return '(none)'
   const t = new Date(iso).getTime()
-  if (Number.isNaN(t)) return '—'
+  if (Number.isNaN(t)) return '(none)'
   const diff = now.getTime() - t
   const abs = Math.abs(diff)
   const minute = 60_000
@@ -34,7 +34,7 @@ export function formatRelative(iso: string | null | undefined, now: Date = new D
 }
 
 export function formatTokens(n: number | null | undefined): string {
-  if (n == null) return '—'
+  if (n == null) return '(none)'
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
   return String(n)

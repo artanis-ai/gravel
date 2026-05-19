@@ -57,7 +57,7 @@ export function TraceNavigator({
       <div className="mr-2 flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-text-muted">
         <span>Trace</span>
         <span className="font-mono">
-          {activeIndex >= 0 ? activeIndex + 1 : '—'} / {total}
+          {activeIndex >= 0 ? activeIndex + 1 : '?'} / {total}
         </span>
       </div>
       <ol className="flex flex-1 items-stretch gap-0">

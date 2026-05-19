@@ -47,8 +47,11 @@ test.describe('fixture screenshot baselines', () => {
       )
       // Make sure custom fonts are loaded so antialiasing is stable.
       await page.evaluate(() => document.fonts.ready)
-      await expect(page).toHaveScreenshot(`${name}.png`, {
-        fullPage: false,
+      // Capture only the rendered dialog. This keeps baselines at the
+      // dialog's natural rendered size (no wasted viewport background)
+      // and makes the suite resolution-agnostic.
+      const dialog = page.locator('[role="dialog"]')
+      await expect(dialog).toHaveScreenshot(`${name}.png`, {
         maxDiffPixelRatio: 0.01,
         animations: 'disabled',
         caret: 'hide',

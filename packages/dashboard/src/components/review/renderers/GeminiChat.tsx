@@ -385,7 +385,13 @@ function renderInlineData(inline: Record<string, unknown>): ReactNode {
   if (!data) return <HumanValue value={inline} />
   const uri = data.startsWith('data:') ? data : `data:${mime};base64,${data}`
   if (mime.startsWith('image/')) {
-    return <ClickableImage src={uri} alt="image attachment" className="max-h-32 max-w-xs" />
+    return (
+      <ClickableImage
+        src={uri}
+        alt="image attachment"
+        className="h-32 w-32 bg-warm/40 object-contain"
+      />
+    )
   }
   if (mime.startsWith('audio/')) {
     return <audio controls src={uri} className="h-8 max-w-xs" />
