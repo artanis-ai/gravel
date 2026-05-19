@@ -72,4 +72,17 @@ describe('undoConservativeEscapes (PR #247 round-trip)', () => {
     const clean = 'Standard prompt content with no escapes.'
     expect(undoConservativeEscapes(clean)).toBe(clean)
   })
+  it('strips backslash before newlines (CommonMark hard-break syntax)', () => {
+    // breaks:true + tiptap-markdown emits `\<newline>` for each hard
+    // break. Source had plain `\n`. Without this strip, every newline
+    // in a prompt adds a phantom +1/-0 to the diff.
+    expect(undoConservativeEscapes('line one\\\nline two\\\nline three')).toBe(
+      'line one\nline two\nline three',
+    )
+  })
+  it('preserves literal backslash sequences', () => {
+    // `\\` (escaped backslash) shouldn't get over-collapsed. Real
+    // path strings like `path\\to\\file` survive intact.
+    expect(undoConservativeEscapes('path\\to\\file')).toBe('path\\to\\file')
+  })
 })

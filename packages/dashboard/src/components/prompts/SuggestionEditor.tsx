@@ -86,15 +86,29 @@ function getMarkdown(editor: Editor): string {
  * defend against CommonMark mis-parses. Prompts are read by LLMs, not
  * markdown renderers; the escapes are pure noise and bite the diff.
  *
- * Conservative: only strips a `\` when it precedes one of `-_*#` AND
+ * Two classes of escape to strip:
+ *
+ * 1. **Structural-char escapes** — `\-`, `\_`, `\*`, `\#`. tiptap-markdown
+ *    emits these to defend against `---` being read as a horizontal
+ *    rule, `*foo*` as emphasis, etc. Prompts don't render as markdown
+ *    so the escapes round-trip as visible noise (`\---` instead of
+ *    `---`). Yousef's PR #247 was the canonical case.
+ *
+ * 2. **Hard-break backslashes** — `\<newline>`. With `breaks: true`,
+ *    single newlines in the source parse as hard breaks; on serialise
+ *    tiptap-markdown emits them as `\` followed by a literal newline
+ *    (CommonMark's explicit hard-break syntax). Source had a plain
+ *    `\n` — the round-trip should give us back a plain `\n`, not
+ *    `\\\n`. Yousef's landlord-ai dogfooding caught this: every single
+ *    newline in a prompt contributed a phantom +1/-0 diff.
+ *
+ * Conservative: only strips a `\` when it precedes one of `-_*#\n` AND
  * the resulting text wouldn't change meaning under normal prompt usage.
- * We don't touch `\\` (literal backslash), `\\``, or escapes inside
- * fenced code blocks (which we can't easily detect here; the upstream
- * editor doesn't pass that context, so we accept the risk for code
- * spans, which are exceedingly rare in prompts).
+ * We don't touch `\\` (literal backslash) or other escapes; fenced code
+ * blocks aren't a concern in practice for prompt files.
  */
 export function undoConservativeEscapes(md: string): string {
-  return md.replace(/\\([-_*#])/g, '$1')
+  return md.replace(/\\([-_*#\n])/g, '$1')
 }
 
 /**

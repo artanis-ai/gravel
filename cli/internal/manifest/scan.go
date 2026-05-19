@@ -95,7 +95,23 @@ type FastScanResult struct {
 // FastScan re-scans the working tree against the existing manifest.
 // Pure function modulo file I/O. Returns the new manifest plus
 // counts; the caller decides whether to persist via Write().
+//
+// Reads the optional `promptScanRoots` field from the project's
+// gravel_config.{ts,py} via FastScanWithRoots. The bare FastScan is
+// the historical shape — convenience for callers that don't have a
+// reason to override.
 func FastScan(repoRoot string, current Manifest) (FastScanResult, error) {
+	return FastScanWithRoots(repoRoot, current, nil)
+}
+
+// FastScanWithRoots is FastScan with an explicit override list of
+// directories to scan in addition to the conventional defaults. Pass
+// nil for `extraRoots` to get the default list (`prompts/`,
+// `templates/`, etc. — see promptFileDirs). Olly's de_platform install
+// kept prompts under `api/py/prompts/` which isn't in the default
+// list; the wizard now lets users set `promptScanRoots` in their
+// gravel_config and routes it through here.
+func FastScanWithRoots(repoRoot string, current Manifest, extraRoots []string) (FastScanResult, error) {
 	result := FastScanResult{
 		Manifest: Manifest{
 			Version:            current.Version,
@@ -179,7 +195,25 @@ func FastScan(repoRoot string, current Manifest) (FastScanResult, error) {
 	for _, p := range current.Prompts {
 		known[p.Path] = struct{}{}
 	}
-	for _, d := range promptFileDirs {
+	// Union the conventional dirs with any user-configured extras. We
+	// dedupe so a config that re-lists a default dir doesn't double-
+	// scan it; preserve insertion order so output is deterministic.
+	scanRoots := make([]string, 0, len(promptFileDirs)+len(extraRoots))
+	seenRoots := make(map[string]struct{}, len(promptFileDirs)+len(extraRoots))
+	for _, d := range append(append([]string{}, promptFileDirs...), extraRoots...) {
+		if d = strings.TrimSpace(d); d == "" {
+			continue
+		}
+		// Normalise to forward slash for the dedupe key so a user
+		// passing "api\\py\\prompts" on Windows doesn't escape it.
+		key := filepath.ToSlash(d)
+		if _, dup := seenRoots[key]; dup {
+			continue
+		}
+		seenRoots[key] = struct{}{}
+		scanRoots = append(scanRoots, d)
+	}
+	for _, d := range scanRoots {
 		dirAbs := filepath.Join(repoRoot, d)
 		info, err := os.Stat(dirAbs)
 		if err != nil || !info.IsDir() {

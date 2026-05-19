@@ -227,6 +227,48 @@ func TestIsDocFilename_MatchMatrix(t *testing.T) {
 	}
 }
 
+func TestFastScanWithRoots_CustomDirPicksUpPromptsOutsideDefaults(t *testing.T) {
+	// Olly's de_platform install kept prompts under api/py/prompts/
+	// (not on the conventional list). With promptScanRoots configured
+	// the scanner finds them; without it, zero entries.
+	dir := t.TempDir()
+	writeFile(t, dir, "api/py/prompts/judge.txt", "you are an evaluation judge")
+	writeFile(t, dir, "api/py/prompts/rewrite.txt", "rewrite the user's draft")
+
+	// Default scan misses both.
+	bare, err := FastScan(dir, Empty())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bare.Added != 0 {
+		t.Errorf("expected 0 prompts under default roots, got %d", bare.Added)
+	}
+
+	// With the custom root, both land.
+	withRoots, err := FastScanWithRoots(dir, Empty(), []string{"api/py/prompts"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withRoots.Added != 2 {
+		t.Errorf("expected 2 prompts via custom root, got %d (%+v)", withRoots.Added, withRoots.Manifest.Prompts)
+	}
+}
+
+func TestFastScanWithRoots_DedupesAgainstDefaults(t *testing.T) {
+	// User puts "prompts" (a default) in their config too. We should
+	// scan it once, not twice — duplicate-path entries would break the
+	// manifest's uniqueness invariant.
+	dir := t.TempDir()
+	writeFile(t, dir, "prompts/system.md", "you are a helpful agent")
+	res, err := FastScanWithRoots(dir, Empty(), []string{"prompts"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Added != 1 {
+		t.Errorf("expected 1 prompt with dedupe, got %d (%+v)", res.Added, res.Manifest.Prompts)
+	}
+}
+
 func TestFastScan_SkipsReadmeInPromptsDir(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "prompts/README.md", "# How we organise prompts\n")
