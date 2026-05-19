@@ -91,6 +91,20 @@ describe('SuggestionEditor round-trip stability (no spurious diff)', () => {
     expect(stats).toEqual({ insertions: 0, deletions: 0 })
   })
 
+  it('paragraph followed by bullet list (single newline separator): zero diff', async () => {
+    // CommonMark serialiser puts `\n\n` between a paragraph and a
+    // following list. Landlord-ai investigator prompt has the source
+    // form `text:\n- item` (single newline). Round-trip must restore
+    // the original separator.
+    const src =
+      'Examples of clarifying questions you might ask are like:\n' +
+      '- "Can you describe the smell?"\n' +
+      '- "Where exactly is the leak?"\n' +
+      '- "How long has this been happening?"'
+    const stats = await mountAndGetStats(src)
+    expect(stats).toEqual({ insertions: 0, deletions: 0 })
+  })
+
   it('curly-quote-free prompt: tiptap doesn\'t smart-quote the literal "', async () => {
     // The editor must NOT replace ASCII " with curly “” on parse,
     // otherwise prompts with code-style quoted strings drift.

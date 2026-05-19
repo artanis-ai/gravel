@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeDiffStats, undoConservativeEscapes } from './SuggestionEditor'
+import { alignWhitespace, computeDiffStats, undoConservativeEscapes } from './SuggestionEditor'
 
 describe('computeDiffStats (word-level)', () => {
   it('reports zeros when texts match', () => {
@@ -84,5 +84,32 @@ describe('undoConservativeEscapes (PR #247 round-trip)', () => {
     // `\\` (escaped backslash) shouldn't get over-collapsed. Real
     // path strings like `path\\to\\file` survive intact.
     expect(undoConservativeEscapes('path\\to\\file')).toBe('path\\to\\file')
+  })
+})
+
+describe('alignWhitespace (paragraph-vs-list separator drift)', () => {
+  it('returns the original when content is identical modulo whitespace', () => {
+    const orig = 'text:\n- one\n- two'
+    const candidate = 'text:\n\n- one\n- two' // serialiser inserted blank line
+    expect(alignWhitespace(orig, candidate)).toBe(orig)
+  })
+  it('passes through candidate when content tokens differ', () => {
+    const orig = 'text: one two'
+    const candidate = 'text: one three'
+    expect(alignWhitespace(orig, candidate)).toBe(candidate)
+  })
+  it('passes through when token count differs (added paragraph)', () => {
+    const orig = 'one\n\ntwo'
+    const candidate = 'one\n\ntwo\n\nthree'
+    expect(alignWhitespace(orig, candidate)).toBe(candidate)
+  })
+  it('identity on already-equal inputs', () => {
+    const s = 'identical text'
+    expect(alignWhitespace(s, s)).toBe(s)
+  })
+  it('handles empty strings safely', () => {
+    expect(alignWhitespace('', '')).toBe('')
+    expect(alignWhitespace('content', '')).toBe('')
+    expect(alignWhitespace('', 'content')).toBe('content')
   })
 })

@@ -75,10 +75,38 @@ import {
  * unedited prompt showed +5/-2 diff stats from the editor alone, which
  * frightens domain experts into thinking they accidentally edited.
  */
-function getMarkdown(editor: Editor): string {
+function getMarkdown(editor: Editor, original: string): string {
   const storage = editor.storage as { markdown?: { getMarkdown: () => string } }
   const raw = storage.markdown?.getMarkdown() ?? editor.getText()
-  return undoConservativeEscapes(raw)
+  return alignWhitespace(original, undoConservativeEscapes(raw))
+}
+
+/**
+ * When the serialiser's only divergence from the original is which
+ * whitespace runs it picked (e.g. inserting `\n\n` before a list item
+ * that originally had a single `\n` before it, per CommonMark block-
+ * grammar rules), return the ORIGINAL verbatim. This makes mounting
+ * an unedited prompt produce a zero diff regardless of the parser's
+ * paragraph-vs-list normalisation. When the user has made real
+ * content changes (i.e. non-whitespace tokens differ in count or
+ * value), we trust the candidate and accept whatever whitespace
+ * normalisation Tiptap applied — that's a tractable tradeoff: edits
+ * preserve content faithfully; unedited content is byte-perfect.
+ *
+ * Token model: split into a regular alternation of [non-whitespace
+ * run, whitespace run, non-whitespace run, ...]. Same array length +
+ * same content at every even index means "same content modulo
+ * whitespace"; we use original's whitespace runs to rebuild.
+ */
+export function alignWhitespace(original: string, candidate: string): string {
+  const wsRe = /(\s+)/g
+  const origTokens = original.split(wsRe)
+  const candTokens = candidate.split(wsRe)
+  if (origTokens.length !== candTokens.length) return candidate
+  for (let i = 0; i < origTokens.length; i += 2) {
+    if (origTokens[i] !== candTokens[i]) return candidate
+  }
+  return original
 }
 
 /**
@@ -283,7 +311,7 @@ export function SuggestionEditor({
       },
     },
     onUpdate({ editor }) {
-      const md: string = getMarkdown(editor)
+      const md: string = getMarkdown(editor, originalRef.current)
       onChangeRef.current(md)
       const stats = computeDiffStats(originalRef.current, md)
       onDiffStatsRef.current?.(stats)
@@ -295,7 +323,7 @@ export function SuggestionEditor({
   // re-setting content would clobber the cursor on every keystroke.
   useEffect(() => {
     if (!editor) return
-    const current: string = getMarkdown(editor)
+    const current: string = getMarkdown(editor, originalRef.current)
     if (current === value) return
     editor.commands.setContent(value, { emitUpdate: false })
     // Re-emit diff stats after a parent-driven content swap.
@@ -312,7 +340,7 @@ export function SuggestionEditor({
   // approximation disagree.
   useEffect(() => {
     if (!editor) return
-    const current: string = getMarkdown(editor)
+    const current: string = getMarkdown(editor, original)
     onDiffStatsRef.current?.(computeDiffStats(original, current))
     setSuggestionDiffOriginal(editor.view, markdownToDocText(original, extensions))
   }, [editor, original, extensions])
