@@ -64,6 +64,7 @@ type LLMLib string
 const (
 	LLMOpenAI    LLMLib = "OpenAI"
 	LLMAnthropic LLMLib = "Anthropic"
+	LLMGemini    LLMLib = "Gemini"
 	LLMLangChain LLMLib = "LangChain"
 	LLMVercelAI  LLMLib = "Vercel AI"
 )
@@ -197,6 +198,9 @@ func fillTS(d *Detection, cwd string) {
 	if deps["@anthropic-ai/sdk"] {
 		d.LLMLibs = append(d.LLMLibs, LLMAnthropic)
 	}
+	if deps["@google/genai"] {
+		d.LLMLibs = append(d.LLMLibs, LLMGemini)
+	}
 	if deps["@langchain/core"] || deps["@langchain/openai"] || deps["@langchain/anthropic"] || deps["langchain"] {
 		d.LLMLibs = append(d.LLMLibs, LLMLangChain)
 	}
@@ -257,6 +261,9 @@ func fillPython(d *Detection, cwd string) {
 	}
 	if wordRE("anthropic").MatchString(text) {
 		d.LLMLibs = append(d.LLMLibs, LLMAnthropic)
+	}
+	if strings.Contains(text, "google-genai") {
+		d.LLMLibs = append(d.LLMLibs, LLMGemini)
 	}
 	if wordRE("langchain").MatchString(text) {
 		d.LLMLibs = append(d.LLMLibs, LLMLangChain)

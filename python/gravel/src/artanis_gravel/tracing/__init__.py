@@ -55,6 +55,10 @@ def install_auto_tracing(engine: Any) -> bool:
     except ImportError:
         pass
     try:
+        from . import gemini_patch  # noqa: F401 — module-level patch
+    except ImportError:
+        pass
+    try:
         from . import langchain_patch
         langchain_patch.install()
     except ImportError:

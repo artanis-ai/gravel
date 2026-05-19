@@ -1,0 +1,75 @@
+{
+  "name": "gemini.models.generate_content",
+  "description": "Gemini follow-up turn after a function_call. The previous turn produced a `function_call` part; this turn replies with a `function_response` part inside a `role: 'user'` content block, carrying the tool's actual result. Renderer pairs the call with its response visually.",
+  "source": "gemini-chat",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "model": "gemini-2.0-flash",
+    "contents": [
+      {
+        "role": "user",
+        "parts": [{ "text": "What's the weather in Tokyo right now?" }]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "function_call": {
+              "name": "get_weather",
+              "args": { "city": "Tokyo" }
+            }
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "parts": [
+          {
+            "function_response": {
+              "name": "get_weather",
+              "response": { "temp_c": 14, "condition": "clear" }
+            }
+          }
+        ]
+      }
+    ],
+    "config": {
+      "tools": [
+        {
+          "function_declarations": [
+            {
+              "name": "get_weather",
+              "description": "Get the current weather for a city.",
+              "parameters": {
+                "type": "object",
+                "properties": { "city": { "type": "string" } },
+                "required": ["city"]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "output": {
+    "candidates": [
+      {
+        "content": {
+          "role": "model",
+          "parts": [
+            { "text": "It's 14°C and clear in Tokyo right now." }
+          ]
+        },
+        "finish_reason": "STOP",
+        "index": 0
+      }
+    ],
+    "usage_metadata": {
+      "prompt_token_count": 92,
+      "candidates_token_count": 12,
+      "total_token_count": 104
+    }
+  },
+  "metadata": { "tokens_input": 92, "tokens_output": 12 }
+}

@@ -111,6 +111,24 @@ describe('tokensFromUsage', () => {
       tokensFromUsage({ inputTokens: 3, outputTokens: 4, totalTokens: 7 }),
     ).toEqual({ input: 3, output: 4, total: 7 })
   })
+  it('reads Gemini Python snake_case', () => {
+    expect(
+      tokensFromUsage({
+        prompt_token_count: 12,
+        candidates_token_count: 3,
+        total_token_count: 15,
+      }),
+    ).toEqual({ input: 12, output: 3, total: 15 })
+  })
+  it('reads Gemini TS camelCase', () => {
+    expect(
+      tokensFromUsage({
+        promptTokenCount: 5,
+        candidatesTokenCount: 2,
+        totalTokenCount: 7,
+      }),
+    ).toEqual({ input: 5, output: 2, total: 7 })
+  })
   it('returns null when no recognisable keys are present', () => {
     expect(tokensFromUsage({ foo: 1 })).toBeNull()
     expect(tokensFromUsage(null)).toBeNull()

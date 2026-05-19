@@ -11,6 +11,7 @@
 import type { SourceKind } from '../../../lib/source'
 import type { Renderer } from '../types'
 import { AnthropicMessagesRenderer } from './AnthropicMessages'
+import { GeminiChatRenderer } from './GeminiChat'
 import { LangchainChainRenderer } from './LangchainChain'
 import { LangchainChatModelRenderer } from './LangchainChatModel'
 import { LangchainLLMRenderer } from './LangchainLLM'
@@ -28,6 +29,7 @@ export const RENDERERS: Record<SourceKind, Renderer> = {
   'openai-responses': OpenAIResponsesRenderer,
   'openai-embeddings': OpenAIEmbeddingsRenderer,
   'anthropic-messages': AnthropicMessagesRenderer,
+  'gemini-chat': GeminiChatRenderer,
   'vercel-ai-text': VercelAITextRenderer,
   'vercel-ai-object': VercelAIObjectRenderer,
   'langchain-llm': LangchainLLMRenderer,

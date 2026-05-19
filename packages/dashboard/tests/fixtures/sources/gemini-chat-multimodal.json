@@ -1,0 +1,42 @@
+{
+  "name": "gemini.models.generate_content",
+  "description": "Gemini multimodal: an image-bearing part. `inline_data: {mime_type, data}` where `data` is base64 (truncated here for fixture readability). Renderer shows the image as a clickable thumbnail (via ClickableImage). PDF and audio land here too with their respective mime types.",
+  "source": "gemini-chat",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "model": "gemini-2.0-flash",
+    "contents": [
+      {
+        "role": "user",
+        "parts": [
+          {
+            "inline_data": {
+              "mime_type": "image/png",
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABAQEAB6vp7AAAAABJRU5ErkJggg=="
+            }
+          },
+          { "text": "What is in this image? One sentence." }
+        ]
+      }
+    ]
+  },
+  "output": {
+    "candidates": [
+      {
+        "content": {
+          "role": "model",
+          "parts": [{ "text": "A single black pixel on a transparent background." }]
+        },
+        "finish_reason": "STOP",
+        "index": 0
+      }
+    ],
+    "usage_metadata": {
+      "prompt_token_count": 264,
+      "candidates_token_count": 10,
+      "total_token_count": 274
+    }
+  },
+  "metadata": { "tokens_input": 264, "tokens_output": 10 }
+}

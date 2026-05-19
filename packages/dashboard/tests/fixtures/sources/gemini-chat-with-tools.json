@@ -1,0 +1,60 @@
+{
+  "name": "gemini.models.generate_content",
+  "description": "Gemini with function calling. Tools are declared as `config.tools[].function_declarations[]` with name/description/parameters JSON-schema. The model's tool call comes back as a part `function_call: {name, args}` (args is a dict, NOT a JSON-encoded string — different from OpenAI). Renderer treats it the same visual way as OpenAI's tool_call.",
+  "source": "gemini-chat",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "model": "gemini-2.0-flash",
+    "contents": [
+      {
+        "role": "user",
+        "parts": [{ "text": "What's the weather in Tokyo right now?" }]
+      }
+    ],
+    "config": {
+      "tools": [
+        {
+          "function_declarations": [
+            {
+              "name": "get_weather",
+              "description": "Get the current weather for a city.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "city": { "type": "string", "description": "City name" }
+                },
+                "required": ["city"]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "output": {
+    "candidates": [
+      {
+        "content": {
+          "role": "model",
+          "parts": [
+            {
+              "function_call": {
+                "name": "get_weather",
+                "args": { "city": "Tokyo" }
+              }
+            }
+          ]
+        },
+        "finish_reason": "STOP",
+        "index": 0
+      }
+    ],
+    "usage_metadata": {
+      "prompt_token_count": 41,
+      "candidates_token_count": 9,
+      "total_token_count": 50
+    }
+  },
+  "metadata": { "tokens_input": 41, "tokens_output": 9 }
+}

@@ -18,6 +18,7 @@ if (DISABLED) {
   // Side-effect imports — each module patches what it can find.
   void import('./tracing/openai.js')
   void import('./tracing/anthropic.js')
+  void import('./tracing/gemini.js')
   void import('./tracing/langchain.js')
   void import('./tracing/vercel-ai.js')
   // Last so SDK-level patches take precedence: SDKs route through fetch

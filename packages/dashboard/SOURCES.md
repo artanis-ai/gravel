@@ -88,6 +88,29 @@ Notable nuances:
   newer (2026-Q1) — renderer should at least pass through
   `HumanValue` if not rendered specifically.
 
+### Gemini
+
+Both stacks (Python `google-genai`, TS `@google/genai`) trace under the same canonical name.
+
+| Trace name | Renderer | Fixtures |
+|---|---|---|
+| `gemini.models.generate_content` | `gemini-chat` | `gemini-chat.json` (plain text), `gemini-chat-system.json` (config.system_instruction), `gemini-chat-with-tools.json` (function_call output), `gemini-chat-tool-result.json` (function_response follow-up), `gemini-chat-multimodal.json` (inline_data image), `gemini-chat-safety.json` (finish_reason=SAFETY + safety_ratings), `gemini-chat-error.json` |
+| `gemini.models.generate_content_stream` | `gemini-chat` (assembled) | `gemini-chat-stream.json` (assembled candidates + metadata.states chunk list) |
+| `fetch:gemini.models.generate_content` | `gemini-chat` (after `{body}` unwrap) | `fetch-gemini-chat.json` |
+
+Notable nuances:
+- **Content-blocks shape**: `contents[]` is an array of `Content` objects with `role` (`"user"` | `"model"`) and `parts[]`. The model speaks via `role: "model"` (NOT `"assistant"`). Closer to Anthropic than OpenAI Chat.
+- **`system_instruction` is NOT in the conversation**. It lives at `config.system_instruction` (separate field). Renderer surfaces it as a collapsed System message above the contents.
+- **Part taxonomy**: `text` (string), `inline_data: {mime_type, data}` (base64 image/audio/PDF), `file_data: {mime_type, file_uri}` (URI-referenced file), `function_call: {name, args}` (tool call), `function_response: {name, response}` (tool result), plus less-common `executable_code` / `code_execution_result` (fall through to HumanValue).
+- **Snake_case vs camelCase**: Python SDK uses snake_case attributes (`finish_reason`, `usage_metadata`, `inline_data`); JS SDK uses camelCase (`finishReason`, `usageMetadata`, `inlineData`). Renderer accepts both via `pickField`.
+- **Token usage** at `output.usage_metadata` (Python) / `output.usageMetadata` (TS): `prompt_token_count` / `promptTokenCount`, `candidates_token_count` / `candidatesTokenCount`, `total_token_count` / `totalTokenCount`, plus `cached_content_token_count` for prompt-caching (passes through to HumanValue).
+- **`finish_reason`** taxonomy: `STOP` / `MAX_TOKENS` / `SAFETY` / `RECITATION` / `LANGUAGE` / `OTHER`. Renderer surfaces non-`STOP` as a caption pill.
+- **`safety_ratings[]`** are always present (one per harm category). Renderer hides the all-`NEGLIGIBLE` case and surfaces a disclosure when any rating is `LOW` / `MEDIUM` / `HIGH` or `blocked: true`.
+- **Structured output**: `config.response_mime_type: 'application/json'` (+ optional `response_schema`) makes the model emit `parts[0].text` as a JSON-encoded string. Renderer parses via `tryParseStructuredString` and renders the value, not the raw JSON.
+- **`function_call.args`** is a dict (NOT a JSON-encoded string — different from OpenAI's `tool_call.function.arguments`). Renderer passes straight to HumanValue.
+- **Async**: `client.aio.models.generate_content(...)` exists on a separate `AsyncModels` class in Python; sync tracing is what ships today. Async parity is on the roadmap alongside async OpenAI / Anthropic.
+- **Vertex AI** is the same SDK with `genai.Client(vertexai=True, project=..., location=...)` — the patch covers it transparently.
+
 ### Vercel AI (TS only)
 
 | Trace name | Renderer | Fixtures |

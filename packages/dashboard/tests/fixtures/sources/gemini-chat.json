@@ -1,0 +1,39 @@
+{
+  "name": "gemini.models.generate_content",
+  "description": "Gemini (Google `google-genai` / `@google/genai`) plain turn. Input has a flat `contents` list of Content objects with `role` + `parts[]`. Output is a `GenerateContentResponse` with `candidates[].content.parts[]` (the assistant's reply) plus `usage_metadata` (snake_case in Python, `usageMetadata` in TS — fixture pins the Python shape; renderer + tokensFromUsage accept both).",
+  "source": "gemini-chat",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "model": "gemini-2.0-flash",
+    "contents": [
+      {
+        "role": "user",
+        "parts": [{ "text": "What's the capital of Japan? One word." }]
+      }
+    ]
+  },
+  "output": {
+    "candidates": [
+      {
+        "content": {
+          "role": "model",
+          "parts": [{ "text": "Tokyo." }]
+        },
+        "finish_reason": "STOP",
+        "index": 0,
+        "safety_ratings": [
+          { "category": "HARM_CATEGORY_HARASSMENT", "probability": "NEGLIGIBLE" },
+          { "category": "HARM_CATEGORY_HATE_SPEECH", "probability": "NEGLIGIBLE" }
+        ]
+      }
+    ],
+    "usage_metadata": {
+      "prompt_token_count": 12,
+      "candidates_token_count": 3,
+      "total_token_count": 15
+    },
+    "model_version": "gemini-2.0-flash-001"
+  },
+  "metadata": { "tokens_input": 12, "tokens_output": 3 }
+}

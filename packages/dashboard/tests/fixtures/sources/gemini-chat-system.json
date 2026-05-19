@@ -1,0 +1,38 @@
+{
+  "name": "gemini.models.generate_content",
+  "description": "Gemini call with a system instruction. Unlike OpenAI Chat (where system is just role='system' in messages[]), Gemini puts the system instruction in `config.system_instruction` (separate from the conversation). Renderer surfaces it as a collapsed system message above the contents.",
+  "source": "gemini-chat",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "model": "gemini-2.0-flash",
+    "contents": [
+      {
+        "role": "user",
+        "parts": [{ "text": "Translate to French: 'good morning'" }]
+      }
+    ],
+    "config": {
+      "system_instruction": "You are a professional French translator. Respond with only the translation, no commentary.",
+      "temperature": 0.2
+    }
+  },
+  "output": {
+    "candidates": [
+      {
+        "content": {
+          "role": "model",
+          "parts": [{ "text": "Bonjour." }]
+        },
+        "finish_reason": "STOP",
+        "index": 0
+      }
+    ],
+    "usage_metadata": {
+      "prompt_token_count": 28,
+      "candidates_token_count": 3,
+      "total_token_count": 31
+    }
+  },
+  "metadata": { "tokens_input": 28, "tokens_output": 3 }
+}

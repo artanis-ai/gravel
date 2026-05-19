@@ -1,18 +1,20 @@
 # Status
 
-> **Last updated:** 2026-05-14 (v0.6.2 shipped; wizard aborts on SDK install failure).
+> **Last updated:** 2026-05-19 (v0.7.0 shipped; Gemini provider tracing + renderer).
 
 ## Where we are
 
 **Wedge backend is live and on PyPI + npm.** Customers can wizard-install on TS or Python hosts, sign in to a default-password dashboard (or auto-admin on loopback), list and edit manifest prompts (file-type or embedded with char-offset slicing), submit drafts as a single GitHub PR via the `gravel[bot]` GitHub App with the manifest atomically rewritten to keep subsequent prompts' offsets valid, view live traces, and leave feedback.
 
-**Cross-stack parity is real.** Five integrations — FastAPI, ASGI, WSGI, Django, Flask — all delegate to one shared dispatcher (`python/gravel/src/artanis_gravel/_handler.py`) and return byte-equal responses for the same request. The TS handler is the second canon; CI cross-references both. Tracing auto-patches cover OpenAI / Anthropic / LangChain on Python (Vercel AI + generic `fetch` on TS as well).
+**Cross-stack parity is real.** Five integrations — FastAPI, ASGI, WSGI, Django, Flask — all delegate to one shared dispatcher (`python/gravel/src/artanis_gravel/_handler.py`) and return byte-equal responses for the same request. The TS handler is the second canon; CI cross-references both. Tracing auto-patches cover OpenAI / Anthropic / Gemini / LangChain on Python (Vercel AI + generic `fetch` on TS as well).
 
 **Cloud is live.** Control plane at `https://gravel.artanis.ai` (Next.js 15 + Clerk + Drizzle on Vercel + Neon, prod Clerk instance). Routes: `/api/health`, `/api/judge`, `/api/analyze`, `/api/projects`, `/api/cli/auth/*`, `/api/cli/github/install/start`, `/api/cli/github/installation-token`, `/api/webhooks/clerk`, `/api/webhooks/polar`.
 
 **Judge + eval runner shipped** with project ownership enforcement and audit logging. **Mallet `analyzePrompt()` shipped** with Clerk-org rate-limiting through the CP proxy.
 
 ## Recent release activity (May 2026)
+
+- **v0.7.0** — Gemini (Google) joins OpenAI / Anthropic as a first-class provider. Python tracer in `python/gravel/src/artanis_gravel/tracing/gemini_patch.py` monkey-patches `google.genai.models.Models.generate_content` and `.generate_content_stream` at the class level; sync + streaming covered, async (the `.aio.models.*` namespace) parked on the roadmap alongside async OpenAI / Anthropic. TS tracer in `packages/sdk-ts/src/tracing/gemini.ts` patches `@google/genai`'s `Models.prototype.generateContent` / `.generateContentStream` via the existing idempotence-guarded prototype-walk pattern. Both stacks trace under the same canonical name `gemini.models.generate_content` (matching the OpenAI / Anthropic snake_case convention). Same suppression flags apply unchanged: `sdk_tracing_disabled` (when LangChain owns the trace) and `fetch_tracing_disabled` (so the underlying httpx call doesn't double-record). Dashboard ships a dedicated `GeminiChat` renderer covering: `system_instruction` (config-level, not in the conversation), the full Part taxonomy (`text`, `inline_data` multimodal, `file_data`, `function_call`, `function_response`), `finish_reason` non-`STOP` captions, `safety_ratings[]` disclosure with the non-`NEGLIGIBLE` breakdown, and structured-output `response_mime_type: 'application/json'` JSON parsing. Snake_case (Python) and camelCase (TS) both accepted via `pickField`. `tokensFromUsage` extended with `prompt_token_count` / `promptTokenCount` / `candidates_token_count` / `candidatesTokenCount` / `total_token_count` / `totalTokenCount` so the existing TokenUsageStrip just works. 9 fixtures (parity with Anthropic), 9 Python pytest cases, 5 TS vitest cases. Wizard `LLMGemini` detection added for both `google-genai` (Python) and `@google/genai` (TS) — the install summary now lists Gemini alongside OpenAI / Anthropic when present. Vertex AI works transparently (same SDK).
 
 - **v0.6.2** — `gravel init` now aborts when `uv add` / `pnpm add` fails. v0.6.1 (and earlier) printed `Install failed; re-run yourself: <cmd>` and then fell through to Step 1 (Dashboard), writing config files that referenced an SDK the project hadn't actually installed. The wizard now: (a) prints the captured stderr so the user can see *why* the install failed (PyPI propagation lag, dependency conflict, etc.), and (b) returns a non-zero error so cobra exits before any pillar runs. Power users can still pass the hidden `--skip-sdk-install` flag if they want to add the dep themselves.
 

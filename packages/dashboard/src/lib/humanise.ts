@@ -127,6 +127,9 @@ export function tokensFromUsage(usage: unknown): {
       'inputTokens',
       'prompt_tokens',
       'promptTokens',
+      // Gemini (`google-genai` snake_case + `@google/genai` camelCase).
+      'prompt_token_count',
+      'promptTokenCount',
     ]) ?? null
   const output =
     pickNumber(usage, [
@@ -134,8 +137,18 @@ export function tokensFromUsage(usage: unknown): {
       'outputTokens',
       'completion_tokens',
       'completionTokens',
+      // Gemini.
+      'candidates_token_count',
+      'candidatesTokenCount',
     ]) ?? null
-  const total = pickNumber(usage, ['total_tokens', 'totalTokens']) ?? null
+  const total =
+    pickNumber(usage, [
+      'total_tokens',
+      'totalTokens',
+      // Gemini.
+      'total_token_count',
+      'totalTokenCount',
+    ]) ?? null
   if (input === null && output === null && total === null) return null
   return { input, output, total }
 }

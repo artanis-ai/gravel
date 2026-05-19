@@ -104,6 +104,35 @@ setup(
 	}
 }
 
+func TestDetect_GeminiPython(t *testing.T) {
+	dir := newFixture(t, map[string]string{
+		"pyproject.toml": `[project]
+name = "app"
+dependencies = ["fastapi", "google-genai>=1.0"]
+`,
+	})
+	d := Detect(dir)
+	if !contains(d.LLMLibs, LLMGemini) {
+		t.Errorf("google-genai not detected as Gemini: %v", d.LLMLibs)
+	}
+}
+
+func TestDetect_GeminiTS(t *testing.T) {
+	dir := newFixture(t, map[string]string{
+		"package.json": `{
+  "name": "app",
+  "dependencies": {
+    "next": "15.0.0",
+    "@google/genai": "1.0.0"
+  }
+}`,
+	})
+	d := Detect(dir)
+	if !contains(d.LLMLibs, LLMGemini) {
+		t.Errorf("@google/genai not detected as Gemini: %v", d.LLMLibs)
+	}
+}
+
 func TestDetect_FastAPIWithSetupCfg(t *testing.T) {
 	// setup.cfg [options] install_requires syntax — another legacy
 	// shape.

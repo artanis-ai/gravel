@@ -1,0 +1,26 @@
+{
+  "name": "gemini.models.generate_content",
+  "description": "Gemini errored call. `output: null`, `metadata.error = {message, type, status?}` populated by the SDK patch. Renderer paints the ErrorBanner above the panes and the (empty) output area degrades gracefully.",
+  "source": "gemini-chat",
+  "isFetch": false,
+  "status": "errored",
+  "input": {
+    "model": "gemini-2.0-flash",
+    "contents": [
+      {
+        "role": "user",
+        "parts": [{ "text": "Some prompt that hit a quota or transient error." }]
+      }
+    ]
+  },
+  "output": null,
+  "metadata": {
+    "error": {
+      "type": "google.genai.errors.ServerError",
+      "message": "503 The model is overloaded. Please try again later.",
+      "status": 503,
+      "stack": "Traceback (most recent call last):\n  File \".../app.py\", line 84, in ask\n    resp = client.models.generate_content(...)\ngoogle.genai.errors.ServerError: 503 The model is overloaded. Please try again later."
+    },
+    "duration_ms": 318
+  }
+}

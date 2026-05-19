@@ -3,10 +3,10 @@
  *
  * Every persisted sample row is one of a small number of provider
  * shapes (OpenAI Chat / Responses / Embeddings, Anthropic Messages,
- * Vercel AI text / object, Langchain LLM / chat_model / chain) or a
- * raw-fetch wrap of one of those. `detectSource` reads `name` (and
- * shape-checks `input` / `output` where the name is ambiguous) and
- * returns a `SourceKind` discriminator. The Review surface then
+ * Gemini, Vercel AI text / object, Langchain LLM / chat_model / chain)
+ * or a raw-fetch wrap of one of those. `detectSource` reads `name`
+ * (and shape-checks `input` / `output` where the name is ambiguous)
+ * and returns a `SourceKind` discriminator. The Review surface then
  * dispatches to the matching renderer.
  *
  * The fixture directory at `tests/fixtures/sources/` pins every
@@ -21,6 +21,7 @@ export type SourceKind =
   | 'openai-responses'
   | 'openai-embeddings'
   | 'anthropic-messages'
+  | 'gemini-chat'
   | 'vercel-ai-text'
   | 'vercel-ai-object'
   | 'langchain-llm'
@@ -96,6 +97,13 @@ export function detectSource(name: string, _input: unknown, _output: unknown): S
   if (stripped === 'anthropic.messages.create') return 'anthropic-messages'
   if (stripped === 'anthropic.messages.stream') return 'anthropic-messages'
   if (stripped === 'anthropic.messages') return 'anthropic-messages'
+
+  // Gemini (Google's `google-genai` Python SDK and `@google/genai` JS SDK).
+  // Trace name is canonical snake_case across both stacks, matching the
+  // OpenAI / Anthropic convention.
+  if (stripped === 'gemini.models.generate_content') return 'gemini-chat'
+  if (stripped === 'gemini.models.generate_content_stream') return 'gemini-chat'
+  if (stripped === 'gemini.models') return 'gemini-chat'
 
   // Vercel AI: `vercel-ai.generateText` / `streamText` / `generateObject` / `streamObject`.
   if (stripped === 'vercel-ai.generateText') return 'vercel-ai-text'

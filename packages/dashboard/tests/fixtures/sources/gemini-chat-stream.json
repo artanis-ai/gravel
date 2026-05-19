@@ -1,0 +1,43 @@
+{
+  "name": "gemini.models.generate_content_stream",
+  "description": "Gemini streaming: the SDK patch tees the iterator of GenerateContentResponse chunks and persists the assembled output. Chunks are individually persisted under `metadata.states` so the dashboard's StreamObservations strip can surface chunk count + throughput; the consolidated candidates live at the top of `output` like a non-streamed call.",
+  "source": "gemini-chat",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "model": "gemini-2.0-flash",
+    "contents": [
+      {
+        "role": "user",
+        "parts": [{ "text": "Count down from 3, one per line." }]
+      }
+    ]
+  },
+  "output": {
+    "candidates": [
+      {
+        "content": {
+          "role": "model",
+          "parts": [{ "text": "3\n2\n1" }]
+        },
+        "finish_reason": "STOP",
+        "index": 0
+      }
+    ],
+    "usage_metadata": {
+      "prompt_token_count": 18,
+      "candidates_token_count": 5,
+      "total_token_count": 23
+    }
+  },
+  "metadata": {
+    "tokens_input": 18,
+    "tokens_output": 5,
+    "states": [
+      { "type": "chunk", "ts": 1715766000000, "delta": "3" },
+      { "type": "chunk", "ts": 1715766000060, "delta": "\n2" },
+      { "type": "chunk", "ts": 1715766000120, "delta": "\n1" },
+      { "type": "finish", "ts": 1715766000160, "finish_reason": "STOP" }
+    ]
+  }
+}

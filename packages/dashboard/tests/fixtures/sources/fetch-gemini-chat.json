@@ -1,0 +1,43 @@
+{
+  "name": "fetch:gemini.models.generate_content",
+  "description": "Raw-fetch wrap of a Gemini call (TS-side `tracing/fetch.ts` classifier matched the v1beta `/models/<name>:generateContent` URL pattern). Body shapes are the same as the SDK fixtures; the wrapper just adds the {url, method, body} / {status, body} envelope, unwrapped before the renderer sees the payload.",
+  "source": "gemini-chat",
+  "isFetch": true,
+  "status": "completed",
+  "input": {
+    "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+    "method": "POST",
+    "body": {
+      "model": "gemini-2.0-flash",
+      "contents": [
+        {
+          "role": "user",
+          "parts": [{ "text": "Hello in one word." }]
+        }
+      ]
+    }
+  },
+  "output": {
+    "status": 200,
+    "statusText": "OK",
+    "body": {
+      "candidates": [
+        {
+          "content": {
+            "role": "model",
+            "parts": [{ "text": "Hi." }]
+          },
+          "finishReason": "STOP",
+          "index": 0
+        }
+      ],
+      "usageMetadata": {
+        "promptTokenCount": 5,
+        "candidatesTokenCount": 2,
+        "totalTokenCount": 7
+      },
+      "modelVersion": "gemini-2.0-flash-001"
+    }
+  },
+  "metadata": { "tokens_input": 5, "tokens_output": 2 }
+}
