@@ -63,7 +63,14 @@ def create_gravel_router(config: GravelConfig, *, engine: Any = None) -> APIRout
         mount_path=mount_path,
     )
 
-    router = APIRouter()
+    # redirect_slashes=False — FastAPI's default 307-bounce to add /
+    # leaks the internal host (Olly #14). When the host app sits behind
+    # Next.js (which trailing-slash-strips by default), the upstream
+    # 307 emits an absolute http://127.0.0.1:<port>/admin/ai/ Location
+    # and breaks the proxy. Disabling it here means the wildcard
+    # handler matches both /admin/ai/foo AND /admin/ai/foo/ without a
+    # redirect ever firing.
+    router = APIRouter(redirect_slashes=False)
 
     async def _bridge(request: Request, sub_path: str) -> Response:
         """Single FastAPI handler that all routes delegate to. Sub_path

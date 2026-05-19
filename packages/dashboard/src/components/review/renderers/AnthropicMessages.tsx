@@ -326,21 +326,11 @@ function DocumentBlock({ block }: { block: Record<string, unknown> }): ReactNode
   }
 
   if (src) {
-    return (
-      <ClickablePdf
-        src={src}
-        title={title}
-        thumbnail={
-          <>
-            <span className="font-mono text-[10px] uppercase tracking-wide text-text-muted">
-              {mediaType?.includes('pdf') ? 'PDF' : 'DOC'}
-            </span>
-            <span className="font-medium text-text-dark">{title}</span>
-            <span className="text-[10px] text-text-muted">open</span>
-          </>
-        }
-      />
-    )
+    // Embedded inline preview by default (no `thumbnail` prop) — see
+    // ClickablePdf for the rationale: the previous button-only shape
+    // hid PDFs from domain experts who never thought to click into
+    // them. Enlarge button still pops the full-screen dialog.
+    return <ClickablePdf src={src} title={title} />
   }
 
   return (

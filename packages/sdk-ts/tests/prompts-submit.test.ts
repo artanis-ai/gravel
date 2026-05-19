@@ -12,9 +12,18 @@ vi.mock('../src/github/api.js', () => ({
 }))
 
 const createPullRequestSpy = vi.fn()
-vi.mock('../src/github/create-pr.js', () => ({
-  createPullRequest: (...args: unknown[]) => createPullRequestSpy(...args),
-}))
+vi.mock('../src/github/create-pr.js', async () => {
+  // Keep the real helpers (defaultPRTitle, describeManifestDiff,
+  // ManifestDiffEntry type) and only stub createPullRequest. The
+  // submit module imports `defaultPRTitle` to build the default PR
+  // title; mocking the whole module makes it undefined and the
+  // submit fails with TypeError → SubmitError('github_failed').
+  const actual = (await vi.importActual('../src/github/create-pr.js')) as Record<string, unknown>
+  return {
+    ...actual,
+    createPullRequest: (...args: unknown[]) => createPullRequestSpy(...args),
+  }
+})
 
 let workdir: string
 

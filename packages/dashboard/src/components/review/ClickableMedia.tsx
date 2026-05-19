@@ -10,7 +10,7 @@
  * `<Dialog>` (Escape + backdrop close) with the asset rendered at
  * its natural size, fit inside the viewport.
  */
-import { useState, type ReactNode } from 'react'
+import { useState, type MouseEvent, type ReactNode } from 'react'
 
 import { Dialog } from '../Dialog'
 
@@ -93,51 +93,106 @@ export function ClickablePdf({
   thumbnail,
 }: ClickablePdfProps): ReactNode {
   const [open, setOpen] = useState(false)
+
+  // Default rendering: an inline iframe preview the user can read
+  // directly in the input panel, plus an "Enlarge" affordance that
+  // opens the full-screen dialog. Yousef's dogfooding flagged the
+  // previous "tiny button → tiny preview" pattern as too easy to
+  // miss. The thumbnail-only shape (when an explicit thumbnail is
+  // passed) is preserved for compact contexts that opt in.
+  if (thumbnail) {
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="group inline-flex cursor-pointer items-center gap-2 rounded border border-warm bg-warm/30 px-3 py-1.5 text-xs transition hover:border-forest/50 hover:bg-warm/50"
+          aria-label={`open ${title}`}
+        >
+          {thumbnail}
+        </button>
+        <PdfDialog open={open} onClose={() => setOpen(false)} src={src} title={title} />
+      </>
+    )
+  }
+
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="group inline-flex cursor-pointer items-center gap-2 rounded border border-warm bg-warm/30 px-3 py-1.5 text-xs transition hover:border-forest/50 hover:bg-warm/50"
-        aria-label={`open ${title}`}
-      >
-        {thumbnail ?? (
-          <>
-            <span className="font-mono text-[10px] uppercase tracking-wide text-text-muted">
-              PDF
-            </span>
-            <span className="font-medium text-text-dark">{title}</span>
-            <span className="text-[10px] text-text-muted transition group-hover:text-forest">
-              open
-            </span>
-          </>
-        )}
-      </button>
-      <Dialog
-        open={open}
-        onClose={() => setOpen(false)}
-        ariaLabel={`${title} (enlarged)`}
-        size="centred"
-      >
-        <div className="flex h-full flex-col">
-          <header className="flex items-center justify-between border-b border-warm px-4 py-2 text-xs">
-            <span className="font-medium text-text-dark">{title}</span>
-            <a
-              href={src}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-text-muted underline hover:text-forest"
-            >
-              open in new tab
-            </a>
-          </header>
-          <iframe
-            src={src}
-            title={title}
-            className="flex-1 bg-white"
-          />
-        </div>
-      </Dialog>
-    </>
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <span className="font-medium text-text-dark">{title}</span>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="cursor-pointer rounded-md border border-warm bg-warm/30 px-2 py-1 text-[11px] text-text-mid hover:bg-warm/60 hover:text-text-dark"
+          aria-label={`enlarge ${title}`}
+        >
+          Enlarge
+        </button>
+      </div>
+      <iframe
+        src={src}
+        title={title}
+        className="h-64 w-full rounded-lg border border-warm bg-white"
+      />
+      <PdfDialog open={open} onClose={() => setOpen(false)} src={src} title={title} />
+    </div>
+  )
+}
+
+/**
+ * The full-screen enlarge dialog. Lifted out of ClickablePdf so both
+ * code paths (with + without an explicit thumbnail) share the same
+ * UX. "Open in new tab" converts a data URI to a blob URL on click —
+ * directly using a `data:` URI as the anchor's href opens about:blank
+ * in modern Chrome/Firefox by policy.
+ */
+function PdfDialog({
+  open,
+  onClose,
+  src,
+  title,
+}: {
+  open: boolean
+  onClose: () => void
+  src: string
+  title: string
+}) {
+  function openInNewTab(e: MouseEvent<HTMLAnchorElement>) {
+    if (!src.startsWith('data:')) return // plain URL — let the anchor work normally
+    e.preventDefault()
+    try {
+      const b64 = src.slice(src.indexOf(',') + 1)
+      const mediaType = src.slice(5, src.indexOf(';'))
+      const bin = atob(b64)
+      const buf = new Uint8Array(bin.length)
+      for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i)
+      const blob = new Blob([buf], { type: mediaType || 'application/pdf' })
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank', 'noopener,noreferrer')
+      // The blob URL is alive for the page lifetime. Revoke on next
+      // tick once the new tab has had a chance to load.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } catch {
+      window.open(src, '_blank')
+    }
+  }
+  return (
+    <Dialog open={open} onClose={onClose} ariaLabel={`${title} (enlarged)`} size="fullscreen">
+      <div className="flex h-full flex-col">
+        <header className="flex items-center justify-between border-b border-warm px-4 py-2 text-xs">
+          <span className="font-medium text-text-dark">{title}</span>
+          <a
+            href={src}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={openInNewTab}
+            className="cursor-pointer text-text-muted underline hover:text-forest"
+          >
+            open in new tab
+          </a>
+        </header>
+        <iframe src={src} title={title} className="flex-1 bg-white" />
+      </div>
+    </Dialog>
   )
 }

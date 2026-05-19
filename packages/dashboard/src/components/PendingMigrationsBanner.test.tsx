@@ -68,6 +68,6 @@ describe('PendingMigrationsBanner', () => {
     mockStatus({ pending: 2, dialect: 'sqlite', autoMigrate: false })
     window.__GRAVEL_RUNTIME__ = 'python'
     render(<PendingMigrationsBanner mountPath="/admin/ai" isAdmin={true} />)
-    expect(await screen.findByText('uvx artanis-gravel migrate')).toBeInTheDocument()
+    expect(await screen.findByText('uvx --from artanis-gravel gravel migrate')).toBeInTheDocument()
   })
 })

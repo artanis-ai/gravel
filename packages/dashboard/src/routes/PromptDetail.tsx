@@ -58,6 +58,12 @@ export function PromptDetail({ promptId }: { promptId: string }) {
   // auto-save effect can no-op when nothing changed since.
   const lastSavedTextRef = useRef<string | null>(null)
   const savedBadgeTimerRef = useRef<number | null>(null)
+  // Hoisted out of the conditional return block below: wouter's
+  // useLocation calls useSyncExternalStore, so it MUST run on every
+  // render or React throws "Rendered more hooks than during the
+  // previous render" once the data loads and the early-return paths
+  // stop firing.
+  const [, navigate] = useLocation()
 
   // Seed the editor once we know the current text + any existing draft.
   useEffect(() => {
@@ -174,7 +180,6 @@ export function PromptDetail({ promptId }: { promptId: string }) {
   // the bulk page's modal. Instead we signal the bulk page to
   // pulse-highlight its Submit button so the next click is obvious.
   const PULSE_SIGNAL_KEY = 'gravel:focus-submit-once'
-  const [, navigate] = useLocation()
   const goToSubmit = () => {
     try {
       sessionStorage.setItem(PULSE_SIGNAL_KEY, '1')
