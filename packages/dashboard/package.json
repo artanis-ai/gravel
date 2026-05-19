@@ -13,7 +13,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:visual": "playwright test --config tests/visual/playwright.config.ts",
+    "test:visual:update": "playwright test --config tests/visual/playwright.config.ts --update-snapshots"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.3",
