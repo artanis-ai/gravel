@@ -214,7 +214,7 @@ function WireTracingNote() {
   return (
     <DeveloperNote>
       No traces yet. Run{' '}
-      <CopyableCode>{gravelCommand('init --traces')}</CopyableCode>
+      <CopyableCode>{gravelCommand('traces --apply')}</CopyableCode>
       {' '}to wire them up then trigger any LLM call from your app.
     </DeveloperNote>
   )
@@ -370,7 +370,6 @@ function SamplesTable({
             <SortHeader label="When" col="started_at" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
             <th className="px-4 py-2 text-left font-medium">Name</th>
             <th className="px-4 py-2 text-left font-medium">Model</th>
-            <th className="px-4 py-2 text-left font-medium">Env</th>
             <SortHeader label="Tokens" col="tokens_in" sortBy={sortBy} sortDir={sortDir} onSort={onSort} align="right" />
             <SortHeader label="Duration" col="duration_ms" sortBy={sortBy} sortDir={sortDir} onSort={onSort} align="right" />
             <th className="px-4 py-2 text-left font-medium">Status</th>
@@ -455,7 +454,6 @@ function SampleRow({ sample, onClick }: { sample: SampleListItem; onClick: () =>
       <td className="whitespace-nowrap px-4 py-2 text-xs text-text-mid">{formatRelative(sample.started_at)}</td>
       <td className="px-4 py-2 font-mono text-xs text-text-dark">{sample.name}</td>
       <td className="px-4 py-2 font-mono text-xs text-text-mid">{sample.model ?? '—'}</td>
-      <td className="px-4 py-2 text-xs text-text-mid">{sample.environment ?? '—'}</td>
       <td className="whitespace-nowrap px-4 py-2 text-right font-mono text-xs text-text-mid">
         {formatTokens(sample.tokens_in)} / {formatTokens(sample.tokens_out)}
       </td>
@@ -655,12 +653,11 @@ function SampleDetailBody({ sampleId, showTitle = false }: { sampleId: string; s
           </h1>
         </div>
       )}
-      <div className="grid grid-cols-2 gap-3 text-xs text-text-mid sm:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 text-xs text-text-mid sm:grid-cols-4">
         <Stat label="Started" value={formatRelative(sample.started_at)} />
         <Stat label="Duration" value={formatDuration(sample.duration_ms)} />
         <Stat label="Model" value={sample.model ?? '—'} mono />
         <Stat label="Status" value={<StatusBadge status={sample.status} />} />
-        <Stat label="Env" value={sample.environment ?? '—'} />
       </div>
 
       <PayloadView label="Input" value={sample.input} />

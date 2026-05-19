@@ -42,14 +42,14 @@ describe('gravelCommand', () => {
   it('emits the uvx one-liner for python', () => {
     window.__GRAVEL_RUNTIME__ = 'python'
     expect(gravelCommand('manifest --update')).toBe(
-      'uvx artanis-gravel manifest --update',
+      'uvx --from artanis-gravel gravel manifest --update',
     )
   })
 
   it('matches the wizard-published install one-liner shape', () => {
     // Same shape Yousef used to install — universal, no project install required.
     window.__GRAVEL_RUNTIME__ = 'python'
-    expect(gravelCommand('init')).toBe('uvx artanis-gravel init')
+    expect(gravelCommand('init')).toBe('uvx --from artanis-gravel gravel init')
     window.__GRAVEL_RUNTIME__ = 'typescript'
     expect(gravelCommand('init')).toBe('npx @artanis-ai/gravel init')
   })
@@ -58,6 +58,6 @@ describe('gravelCommand', () => {
     window.__GRAVEL_RUNTIME__ = 'typescript'
     expect(gravelCommand('')).toBe('npx @artanis-ai/gravel')
     window.__GRAVEL_RUNTIME__ = 'python'
-    expect(gravelCommand('   ')).toBe('uvx artanis-gravel')
+    expect(gravelCommand('   ')).toBe('uvx --from artanis-gravel gravel')
   })
 })

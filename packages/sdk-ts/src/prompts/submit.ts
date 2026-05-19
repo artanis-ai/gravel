@@ -33,7 +33,13 @@ import {
 import { hashPrompt } from '../manifest/hash.js'
 import { codePointLength, sliceByCodePoints } from '../manifest/offsets.js'
 import { githubAPI } from '../github/api.js'
-import { createPullRequest, type PromptChange, type CreatePullRequestResult } from '../github/create-pr.js'
+import {
+  createPullRequest,
+  defaultPRTitle,
+  type PromptChange,
+  type CreatePullRequestResult,
+  type ManifestDiffEntry,
+} from '../github/create-pr.js'
 
 /** A single draft passed in from the dashboard's localStorage. */
 export interface DraftInput {
@@ -257,20 +263,87 @@ export async function submitDrafts(args: SubmitArgs): Promise<CreatePullRequestR
   const updatedManifest: Manifest = { ...manifest, prompts: updatedPrompts }
   changes.push({ path: MANIFEST_PATH, content: serializeManifest(updatedManifest) })
 
+  // Per-prompt-file title list: filter out the manifest itself so the
+  // PR title reflects the prompt edits, not the bookkeeping change.
+  const promptFilePaths = changes
+    .filter((c) => c.path !== MANIFEST_PATH)
+    .map((c) => c.path)
+  const manifestDiff = computeManifestDiffSummary(manifest, updatedManifest)
+
   try {
     return await createPullRequest({
       accessToken: args.accessToken,
       repoOwner: args.repoOwner,
       repoName: args.repoName,
       changes,
-      title: args.title ?? `[Gravel] Update ${resolved.length} prompt(s)`,
+      title: args.title ?? defaultPRTitle(promptFilePaths),
       description: args.description,
       deFirstName: args.deFirstName,
       branchName: args.draftBranch,
+      manifestDiff,
     })
   } catch (err) {
     throw new SubmitError('github_failed', 'Failed to open PR', err)
   }
+}
+
+/**
+ * Diff old vs new manifest and return one entry per observable change.
+ * The shapes line up 1:1 with the cases the PR-body explainer renders;
+ * see `describeManifestDiff` in github/create-pr.ts. Six cases:
+ *   - first_add: old manifest empty AND new has prompts (no prior state)
+ *   - added: id is new in next
+ *   - removed: id is gone from next
+ *   - edited: same id+path, hash changed
+ *   - renamed: same hash, different path
+ *   - anchors_changed: same embedded id, startsWith/endsWith updated
+ */
+export function computeManifestDiffSummary(
+  prev: Manifest,
+  next: Manifest,
+): ManifestDiffEntry[] {
+  if (prev.prompts.length === 0 && next.prompts.length > 0) {
+    return [{ kind: 'first_add' }]
+  }
+  const out: ManifestDiffEntry[] = []
+  const prevById = new Map(prev.prompts.map((p) => [p.id, p]))
+  const nextById = new Map(next.prompts.map((p) => [p.id, p]))
+  for (const [id, np] of nextById) {
+    const op = prevById.get(id)
+    if (!op) {
+      out.push({ kind: 'added', promptId: id, path: np.path })
+      continue
+    }
+    if (op.path !== np.path) {
+      if (op.hash === np.hash) {
+        out.push({ kind: 'renamed', promptId: id, oldPath: op.path, path: np.path })
+      } else {
+        // Path moved AND content changed — surface as edited; the
+        // path move alone shows up in the file diff.
+        out.push({ kind: 'edited', promptId: id, path: np.path })
+      }
+      continue
+    }
+    if (op.hash !== np.hash) {
+      out.push({ kind: 'edited', promptId: id, path: np.path })
+      continue
+    }
+    // Path + hash unchanged; check whether the embedded prompt's
+    // resolved offsets shifted (surrounding code edited around it).
+    if (
+      op.type === 'embedded' &&
+      np.type === 'embedded' &&
+      (op.lineStart !== np.lineStart || op.charStart !== np.charStart)
+    ) {
+      out.push({ kind: 'anchors_changed', promptId: id, path: np.path })
+    }
+  }
+  for (const [id, op] of prevById) {
+    if (!nextById.has(id)) {
+      out.push({ kind: 'removed', promptId: id, path: op.path })
+    }
+  }
+  return out
 }
 
 /**

@@ -89,6 +89,21 @@ class GravelTimestamp(TypeDecorator):
                 except ValueError:
                     return value
             return value
+        # Non-sqlite (Postgres): columns are TIMESTAMPTZ. The default
+        # factory `_now_utc_ms()` returns int(ms) — Postgres rejects
+        # that with "column 'created_at' is of type timestamp with time
+        # zone but expression is of type bigint" (Olly #19 / v0.6.2
+        # silent zero-row bug). Convert int(ms) → tz-aware datetime so
+        # the persister stays dialect-free.
+        if isinstance(value, (int, float)):
+            return datetime.fromtimestamp(value / 1000, tz=timezone.utc)
+        if isinstance(value, str):
+            # Dashboard filter params (YYYY-MM-DD / ISO) — parse to
+            # datetime so the WHERE clause compares apples to apples.
+            try:
+                return datetime.fromisoformat(value)
+            except ValueError:
+                return value
         return value
 
     def process_result_value(self, value: Any, dialect: Any) -> Any:

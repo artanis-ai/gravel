@@ -46,6 +46,24 @@ def test_with_tracing_disabled_isolated_to_block() -> None:
     assert gravel_context_singleton.is_tracing_disabled() is False
 
 
+def test_run_with_fetch_tracing_disabled_isolated_to_callable() -> None:
+    """Anthropic double-record (Olly's v0.6.2 #20): the SDK patch wraps
+    the underlying httpx call via run_with_fetch_tracing_disabled so
+    fetch_patch sees is_fetch_tracing_disabled() == True and bails. Pin
+    that flag toggle as a contract."""
+    assert gravel_context_singleton.is_fetch_tracing_disabled() is False
+    inside_seen: list[bool] = []
+
+    def inner() -> str:
+        inside_seen.append(gravel_context_singleton.is_fetch_tracing_disabled())
+        return "ok"
+
+    got = gravel_context_singleton.run_with_fetch_tracing_disabled(inner)
+    assert got == "ok"
+    assert inside_seen == [True]
+    assert gravel_context_singleton.is_fetch_tracing_disabled() is False
+
+
 def test_gravel_context_manager_yields_singleton() -> None:
     with gravel_context({"x": 1}) as ctx:
         assert ctx.get_metadata() == {"x": 1}

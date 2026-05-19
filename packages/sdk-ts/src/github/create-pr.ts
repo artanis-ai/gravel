@@ -29,6 +29,33 @@ export interface CreatePullRequestArgs {
    * `gravel/draft-<YYYY-MM-DD>-<slug>`.
    */
   branchName?: string
+  /**
+   * Manifest diff summary. When present, the PR body explains the
+   * `.gravel/manifest.json` change so reviewers without context don't
+   * dismiss it as "weird JSON file Gravel added". See
+   * {@link ManifestDiffEntry}. Pass an empty array to skip the
+   * explanation (e.g. when only prompt files changed, not the
+   * manifest's bookkeeping fields).
+   */
+  manifestDiff?: ManifestDiffEntry[]
+}
+
+/**
+ * One line item in the manifest's diff summary. The PR body explains
+ * each entry to reviewers — the six cases come straight out of the
+ * dogfooding feedback list. Tests in create-pr.test.ts pin each shape.
+ */
+export interface ManifestDiffEntry {
+  kind:
+    | 'first_add' // manifest didn't exist before; just-added
+    | 'added' // new prompt entered the manifest (new file or new inline)
+    | 'edited' // same id + path, hash changed (content edit)
+    | 'removed' // id no longer in the manifest
+    | 'renamed' // same hash, different path (file moved)
+    | 'anchors_changed' // embedded prompt's startsWith / endsWith updated
+  promptId?: string
+  path?: string
+  oldPath?: string
 }
 
 export interface CreatePullRequestResult {
@@ -106,7 +133,15 @@ export async function createPullRequest(args: CreatePullRequestArgs): Promise<Cr
         title,
         head: branchName,
         base: defaultBranch,
-        body: composeBody({ description, deFirstName, changes }),
+        body: composeBody({
+          description,
+          deFirstName,
+          changes,
+          manifestDiff: args.manifestDiff,
+          repoOwner,
+          repoName,
+          branchName,
+        }),
       }),
     },
   )
@@ -120,7 +155,15 @@ function defaultBranchName(deFirstName?: string): string {
   return `gravel/draft-${date}-${slug}-${Math.random().toString(36).slice(2, 6)}`
 }
 
-function composeBody(opts: { description?: string; deFirstName?: string; changes: PromptChange[] }): string {
+function composeBody(opts: {
+  description?: string
+  deFirstName?: string
+  changes: PromptChange[]
+  manifestDiff?: ManifestDiffEntry[]
+  repoOwner: string
+  repoName: string
+  branchName: string
+}): string {
   const lines: string[] = []
   if (opts.deFirstName) {
     lines.push(`On behalf of ${opts.deFirstName}.`)
@@ -128,14 +171,99 @@ function composeBody(opts: { description?: string; deFirstName?: string; changes
   if (opts.description?.trim()) {
     lines.push('', opts.description.trim())
   }
-  if (opts.changes.length > 1) {
-    lines.push('', `**Files changed (${opts.changes.length}):**`)
-    for (const c of opts.changes) {
+  // Filter out the manifest itself from the human-facing "Files
+  // changed" — it always changes alongside prompt edits and reviewers
+  // get a dedicated explanation below.
+  const promptChanges = opts.changes.filter((c) => c.path !== '.gravel/manifest.json')
+  if (promptChanges.length > 1) {
+    lines.push('', `**Files changed (${promptChanges.length}):**`)
+    for (const c of promptChanges) {
       lines.push(`- \`${c.path}\``)
     }
   }
-  lines.push('', '---', '<sub>PR created via [Gravel](https://gravel.artanis.ai).</sub>')
+  const manifestLines = describeManifestDiff(opts.manifestDiff ?? [])
+  if (manifestLines.length > 0) {
+    lines.push('', ...manifestLines)
+  }
+  // Footer: link to Gravel + feedback link prefilled with repo + branch
+  // so Yousef can see the install context if the DE clicks through.
+  const feedbackUrl =
+    `https://gravel.artanis.ai/feedback?repo=` +
+    encodeURIComponent(`${opts.repoOwner}/${opts.repoName}`) +
+    `&branch=` +
+    encodeURIComponent(opts.branchName)
+  lines.push(
+    '',
+    '---',
+    `<sub>PR created via [Gravel](https://gravel.artanis.ai). [Send feedback →](${feedbackUrl})</sub>`,
+  )
   return lines.join('\n').trimStart()
+}
+
+/**
+ * Build human-readable PR-body bullets explaining each manifest-diff
+ * entry. `first_add` collapses to a single paragraph so reviewers get
+ * the "what is this file?" answer once; other cases enumerate per
+ * entry. Each line stands on its own; the caller chooses how to space.
+ */
+export function describeManifestDiff(diffs: ManifestDiffEntry[]): string[] {
+  if (diffs.length === 0) return []
+  if (diffs.some((d) => d.kind === 'first_add')) {
+    return [
+      '**About `.gravel/manifest.json`:** this PR also adds the Gravel manifest. It tracks which prompts in this repo are managed by the embedded dashboard — your team edits these files in-app and Gravel opens a PR like this one when they hit Submit. Keep the file in the repo; future updates need it to know what lives where.',
+    ]
+  }
+  const lines: string[] = ['**Manifest changes** (`.gravel/manifest.json`):']
+  for (const d of diffs) {
+    switch (d.kind) {
+      case 'added':
+        lines.push(
+          `- Added prompt \`${d.path}\` (id \`${d.promptId}\`). New entry tracked by the manifest.`,
+        )
+        break
+      case 'edited':
+        lines.push(
+          `- Updated prompt at \`${d.path}\` (id \`${d.promptId}\`). The content hash changed — that's the actual edit you're reviewing.`,
+        )
+        break
+      case 'removed':
+        lines.push(
+          `- Removed prompt \`${d.path}\` (id \`${d.promptId}\`). The manifest no longer tracks this file.`,
+        )
+        break
+      case 'renamed':
+        lines.push(
+          `- Renamed: \`${d.oldPath}\` → \`${d.path}\` (id \`${d.promptId}\`). Same content (same hash); the manifest follows the move.`,
+        )
+        break
+      case 'anchors_changed':
+        lines.push(
+          `- Updated inline-prompt anchors for \`${d.path}\` (id \`${d.promptId}\`). The surrounding code shifted; the start/end markers moved with it.`,
+        )
+        break
+    }
+  }
+  return lines
+}
+
+/**
+ * Build the default PR title from the list of changed prompt file
+ * paths. No LLM call — just basename joining. Software-default;
+ * deterministic; never embarrassing if a model would otherwise overfit.
+ *
+ * 1 file:  `Update judge.txt`
+ * 2:        `Update judge.txt and rewrite.txt`
+ * 3:        `Update judge.txt, rewrite.txt and triage.md`
+ * 4+:       `Update judge.txt, rewrite.txt and 3 others`
+ */
+export function defaultPRTitle(paths: string[]): string {
+  const names = paths.map((p) => p.split('/').pop() ?? p).filter((s) => s.length > 0)
+  if (names.length === 0) return 'Update prompts'
+  if (names.length === 1) return `Update ${names[0]}`
+  if (names.length === 2) return `Update ${names[0]} and ${names[1]}`
+  if (names.length === 3) return `Update ${names[0]}, ${names[1]} and ${names[2]}`
+  const remaining = names.length - 2
+  return `Update ${names[0]}, ${names[1]} and ${remaining} others`
 }
 
 /**

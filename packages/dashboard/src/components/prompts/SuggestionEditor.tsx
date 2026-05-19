@@ -54,10 +54,47 @@ import {
  * `markdown.getMarkdown()` helper, but its package doesn't declare a
  * matching `Storage` augmentation. Cast through the runtime shape to
  * keep tsc happy without lying about the wider Storage type.
+ *
+ * Post-processes the serialiser's output:
+ *
+ * 1. **Un-escape dashes / underscores / asterisks / hashes that aren't
+ *    load-bearing for prompts.** The default markdown-it serialiser is
+ *    conservative — it sees `--- ORIGINAL OUTPUT ---` and worries that
+ *    a CommonMark reader might mis-parse it as a horizontal rule, so it
+ *    emits `\--- ORIGINAL OUTPUT \---`. For prompt files this is hostile:
+ *    every round-trip introduces a phantom diff and prompts that aren't
+ *    rendered to HTML never actually need the escapes. We strip them.
+ *
+ * 2. **Preserve single newlines.** With tiptap-markdown's default
+ *    parser, `header\ncontent` round-trips as `header content` because
+ *    the soft break is dropped. We pair this with `breaks: true` on the
+ *    parser side; together, single newlines in the source become hard
+ *    breaks in the doc and survive a round-trip unchanged.
+ *
+ * Bug surfaced by Yousef's PR #247 review on de_platform — opening an
+ * unedited prompt showed +5/-2 diff stats from the editor alone, which
+ * frightens domain experts into thinking they accidentally edited.
  */
 function getMarkdown(editor: Editor): string {
   const storage = editor.storage as { markdown?: { getMarkdown: () => string } }
-  return storage.markdown?.getMarkdown() ?? editor.getText()
+  const raw = storage.markdown?.getMarkdown() ?? editor.getText()
+  return undoConservativeEscapes(raw)
+}
+
+/**
+ * Undo the over-zealous backslash escapes tiptap-markdown emits to
+ * defend against CommonMark mis-parses. Prompts are read by LLMs, not
+ * markdown renderers; the escapes are pure noise and bite the diff.
+ *
+ * Conservative: only strips a `\` when it precedes one of `-_*#` AND
+ * the resulting text wouldn't change meaning under normal prompt usage.
+ * We don't touch `\\` (literal backslash), `\\``, or escapes inside
+ * fenced code blocks (which we can't easily detect here; the upstream
+ * editor doesn't pass that context, so we accept the risk for code
+ * spans, which are exceedingly rare in prompts).
+ */
+export function undoConservativeEscapes(md: string): string {
+  return md.replace(/\\([-_*#])/g, '$1')
 }
 
 /**
@@ -201,7 +238,13 @@ export function SuggestionEditor({
         html: false,
         tightLists: true,
         linkify: false,
-        breaks: false,
+        // Treat newlines in the source as hard breaks. Prompts are not
+        // rendered to HTML; the user writes line-by-line and expects
+        // each newline to survive a round-trip. With `breaks: false`
+        // (the markdown-it default), `header\ncontent` collapses to
+        // `header content` on serialise. See PR #247 on de_platform
+        // for the regression that drove this change.
+        breaks: true,
         transformPastedText: true,
       }),
       SuggestionDiff,

@@ -45,7 +45,13 @@ export function gravelRuntime(): GravelRuntime {
 export function gravelCommand(args: string): string {
   const trimmed = args.trim()
   if (gravelRuntime() === 'python') {
-    return trimmed ? `uvx artanis-gravel ${trimmed}` : 'uvx artanis-gravel'
+    // `uvx artanis-gravel` doesn't auto-resolve because the PyPI
+    // package name (`artanis-gravel`) differs from the bin name
+    // (`gravel`). Use `--from <pkg> gravel` so uvx fetches the
+    // package and runs its `gravel` entrypoint. Surfaced by Olly's
+    // de_platform install report — `uvx artanis-gravel ...` was the
+    // hint we used to print, and it failed before doing anything.
+    return trimmed ? `uvx --from artanis-gravel gravel ${trimmed}` : 'uvx --from artanis-gravel gravel'
   }
   return trimmed ? `npx @artanis-ai/gravel ${trimmed}` : 'npx @artanis-ai/gravel'
 }

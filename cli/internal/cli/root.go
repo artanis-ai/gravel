@@ -26,6 +26,11 @@ func NewRoot() *cobra.Command {
 	root.AddCommand(newInitCmd())
 	root.AddCommand(newManifestCmd())
 	root.AddCommand(newMigrateCmd())
+	// Agent-driven install: per-pillar subcommands with --plan / --apply.
+	root.AddCommand(newDetectCmd())
+	root.AddCommand(newMountCmd())
+	root.AddCommand(newPromptsCmd())
+	root.AddCommand(newTracesCmd())
 	return root
 }
 

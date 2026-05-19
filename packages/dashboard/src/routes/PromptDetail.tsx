@@ -12,7 +12,7 @@
  *
  */
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'wouter'
+import { Link, useLocation } from 'wouter'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { SkeletonText } from '../components/Skeleton'
@@ -166,6 +166,25 @@ export function PromptDetail({ promptId }: { promptId: string }) {
     if (existingDraft) discard.mutate()
   }
 
+  // "Submit →" sends the user back to the prompt library where the
+  // bulk-submit button lives. We don't open a per-prompt submit
+  // dialog here because the wizard / dashboard model is "one PR with
+  // every draft" — submitting from inside the editor would either
+  // submit only this prompt (confusing partial state) or duplicate
+  // the bulk page's modal. Instead we signal the bulk page to
+  // pulse-highlight its Submit button so the next click is obvious.
+  const PULSE_SIGNAL_KEY = 'gravel:focus-submit-once'
+  const [, navigate] = useLocation()
+  const goToSubmit = () => {
+    try {
+      sessionStorage.setItem(PULSE_SIGNAL_KEY, '1')
+    } catch {
+      /* Safari private mode etc. — the navigation still works, just
+         without the pulse. */
+    }
+    navigate('/prompts')
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -189,20 +208,40 @@ export function PromptDetail({ promptId }: { promptId: string }) {
               <span className="text-primary-dark">−{stats.deletions}</span>
             </span>
           )}
+          {/* Persistent "Saved" indicator: stays visible as long as a
+              draft exists. Tells the DE their work is safe AND that the
+              next step is to open the Prompts page to submit. The
+              transient version inside the editor toolbar still flashes
+              on each auto-save; this one is the at-rest state. */}
+          {existingDraft && (
+            <Badge tone="good">Saved · not yet submitted</Badge>
+          )}
           {(dirty || existingDraft) && (
-            <button
-              type="button"
-              disabled={discard.isPending}
-              className={cx(
-                'rounded-lg border px-2 py-1 text-xs font-medium',
-                discard.isPending
-                  ? 'cursor-not-allowed border-warm text-text-muted'
-                  : 'cursor-pointer border-warm text-text-mid hover:bg-warm/40 hover:text-text-dark',
+            <>
+              <button
+                type="button"
+                disabled={discard.isPending}
+                className={cx(
+                  'rounded-lg border px-2 py-1 text-xs font-medium',
+                  discard.isPending
+                    ? 'cursor-not-allowed border-warm text-text-muted'
+                    : 'cursor-pointer border-warm text-text-mid hover:bg-warm/40 hover:text-text-dark',
+                )}
+                onClick={resetAndDiscard}
+              >
+                {discard.isPending ? 'Discarding…' : 'Reset'}
+              </button>
+              {existingDraft && (
+                <button
+                  type="button"
+                  className="cursor-pointer rounded-lg bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primary-dark"
+                  onClick={goToSubmit}
+                  data-testid="prompt-detail-submit"
+                >
+                  Submit →
+                </button>
               )}
-              onClick={resetAndDiscard}
-            >
-              {discard.isPending ? 'Discarding…' : 'Reset'}
-            </button>
+            </>
           )}
         </div>
       </div>

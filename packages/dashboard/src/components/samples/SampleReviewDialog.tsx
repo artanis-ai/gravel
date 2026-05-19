@@ -361,12 +361,19 @@ function FeedbackPanel({
   const [reason, setReason] = useState('')
   const [showReason, setShowReason] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Set once a feedback submit succeeds. Keeps the user on the same
+  // sample (no auto-advance) so they can verify what landed; the Skip
+  // button relabels to "Next →" so the next-sample action is still
+  // one click away. Per Yousef's dogfooding: auto-advance felt like
+  // their feedback got lost.
+  const [justSubmitted, setJustSubmitted] = useState(false)
 
   // Reset local state when navigating samples.
   useEffect(() => {
     setReason('')
     setShowReason(false)
     setError(null)
+    setJustSubmitted(false)
   }, [sampleId])
 
   const submit = useMutation<unknown, Error, { score: 'positive' | 'negative'; comment: string | null }>({
@@ -379,7 +386,12 @@ function FeedbackPanel({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sample', sampleId] })
       queryClient.invalidateQueries({ queryKey: ['samples'] })
-      onAdvance()
+      setJustSubmitted(true)
+      setShowReason(false)
+      setReason('')
+      // No auto-advance here. User confirms via the "Next →" button
+      // (formerly "Skip") to move on, OR submits more feedback on the
+      // same sample first.
     },
     onError: (err) => setError(err.message),
   })
@@ -429,6 +441,15 @@ function FeedbackPanel({
   return (
     <section className="border-t border-warm bg-warm/20 px-4 py-3">
       {feedback.length > 0 && <ExistingFeedback items={feedback} />}
+      {justSubmitted && (
+        <p
+          className="mb-2 rounded-md border border-forest/30 bg-forest/5 px-3 py-1.5 text-center text-sm text-forest"
+          role="status"
+          data-testid="feedback-recorded"
+        >
+          ✓ Feedback recorded · add more or click Next →
+        </p>
+      )}
       {!showReason ? (
         <div className="flex items-center justify-center gap-3">
           <FeedbackButton tone="correct" shortcut="C" onClick={approve} disabled={submit.isPending}>
@@ -438,7 +459,7 @@ function FeedbackPanel({
             ✕ Wrong
           </FeedbackButton>
           <FeedbackButton tone="skip" shortcut="S" onClick={skip} disabled={submit.isPending}>
-            ↷ Skip
+            {justSubmitted ? 'Next →' : '↷ Skip'}
           </FeedbackButton>
         </div>
       ) : (

@@ -7,7 +7,7 @@
  *
  * prompt" button + empty-state copy), §6 (GitHub OAuth gating), §9 (search).
  */
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'wouter'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { api, ApiError } from '../lib/api'
@@ -19,6 +19,7 @@ import { Spinner } from '../components/Spinner'
 import { SkeletonText } from '../components/Skeleton'
 import { PromptBadge } from '../components/prompts/PromptBadge'
 import { SubmitModal, type SubmitDraftEntry } from '../components/prompts/SubmitModal'
+import { SubmitSuccessDialog } from '../components/prompts/SubmitSuccessDialog'
 import { GithubNotConnectedDialog } from '../components/prompts/GithubNotConnectedDialog'
 import { listDrafts, type LocalDraft } from '../lib/drafts'
 import { gravelCommand } from '../lib/runtime'
@@ -41,6 +42,29 @@ function PromptsList() {
   const [submitOpen, setSubmitOpen] = useState(false)
   const [needsGithubOpen, setNeedsGithubOpen] = useState(false)
   const [submittedPrUrl, setSubmittedPrUrl] = useState<string | null>(null)
+  // Set briefly when the user arrives here from PromptDetail's
+  // "Submit →" button. The bulk-submit pulses for 2.5s to teach the
+  // user where to click next.
+  const [pulseSubmit, setPulseSubmit] = useState(false)
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem('gravel:focus-submit-once') === '1') {
+        sessionStorage.removeItem('gravel:focus-submit-once')
+        setPulseSubmit(true)
+        // Scroll the button into view + remove the pulse class after
+        // the animation cycle so subsequent visits don't keep pulsing.
+        requestAnimationFrame(() => {
+          document
+            .querySelector('[data-testid="submit-changes"]')
+            ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        })
+        const t = window.setTimeout(() => setPulseSubmit(false), 2500)
+        return () => window.clearTimeout(t)
+      }
+    } catch {
+      /* sessionStorage unavailable (private mode etc.) */
+    }
+  }, [])
   const queryClient = useQueryClient()
   const userId = useCurrentUser()?.id ?? null
 
@@ -119,7 +143,10 @@ function PromptsList() {
         {hasDrafts && (
           <button
             type="button"
-            className="shrink-0 cursor-pointer rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary-dark"
+            className={
+              'shrink-0 cursor-pointer rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary-dark' +
+              (pulseSubmit ? ' gravel-submit-pulse' : '')
+            }
             data-testid="submit-changes"
             onClick={() => {
               // Without a connected repo we have nowhere to open the PR;
@@ -134,20 +161,10 @@ function PromptsList() {
         )}
       </header>
 
-      {submittedPrUrl && (
-        <div className="rounded-2xl border border-forest/30 bg-forest/5 p-3 text-sm text-forest">
-          Your changes are in for review —{' '}
-          <a
-            href={submittedPrUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="cursor-pointer underline"
-          >
-            view on GitHub
-          </a>
-          .
-        </div>
-      )}
+      <SubmitSuccessDialog
+        prUrl={submittedPrUrl}
+        onClose={() => setSubmittedPrUrl(null)}
+      />
 
       {promptsQ.isLoading ? (
         <div className="rounded-2xl border border-warm bg-cream p-4">
