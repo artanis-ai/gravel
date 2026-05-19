@@ -1,6 +1,6 @@
 {
   "name": "gemini.models.generate_content",
-  "description": "Gemini with function calling. Tools are declared as `config.tools[].function_declarations[]` with name/description/parameters JSON-schema. The model's tool call comes back as a part `function_call: {name, args}` (args is a dict, NOT a JSON-encoded string — different from OpenAI). Renderer treats it the same visual way as OpenAI's tool_call.",
+  "description": "Gemini with function calling. Shape grounded in a real `gemini-flash-latest` capture (2026-05-19). The `function_call` part includes the SDK-assigned `id` (used by Gemini to bind the next-turn function_response). Args is a dict, NOT a JSON-encoded string (unlike OpenAI). Every part carries `thought_signature` in v1beta — required when echoing the function_call back in the next turn or the API rejects the call. Renderer treats this visually like OpenAI's tool_call.",
   "source": "gemini-chat",
   "isFetch": false,
   "status": "completed",
@@ -41,8 +41,10 @@
             {
               "function_call": {
                 "name": "get_weather",
-                "args": { "city": "Tokyo" }
-              }
+                "args": { "city": "Tokyo" },
+                "id": "7xpjoffz"
+              },
+              "thought_signature": "AAAA-captured-real-call-truncated"
             }
           ]
         },
@@ -51,10 +53,15 @@
       }
     ],
     "usage_metadata": {
-      "prompt_token_count": 41,
-      "candidates_token_count": 9,
-      "total_token_count": 50
-    }
+      "prompt_token_count": 63,
+      "candidates_token_count": 16,
+      "total_token_count": 134,
+      "prompt_tokens_details": [{ "modality": "TEXT", "token_count": 63 }],
+      "thoughts_token_count": 55,
+      "service_tier": "standard"
+    },
+    "model_version": "gemini-2.0-flash-001",
+    "response_id": "captured-real-response-id"
   },
-  "metadata": { "tokens_input": 41, "tokens_output": 9 }
+  "metadata": { "tokens_input": 63, "tokens_output": 16 }
 }

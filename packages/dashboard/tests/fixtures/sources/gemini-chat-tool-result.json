@@ -1,6 +1,6 @@
 {
   "name": "gemini.models.generate_content",
-  "description": "Gemini follow-up turn after a function_call. The previous turn produced a `function_call` part; this turn replies with a `function_response` part inside a `role: 'user'` content block, carrying the tool's actual result. Renderer pairs the call with its response visually.",
+  "description": "Gemini follow-up turn after a function_call. Shape grounded in a real `gemini-flash-latest` round-trip captured 2026-05-19. CRITICAL: the prior-turn `function_call` part MUST be echoed back with its original `thought_signature`, or Gemini rejects the request with INVALID_ARGUMENT. After the function_response is supplied, the final text reply has no thought_signature (deterministic answer needs no extra reasoning). Renderer pairs the call with its response visually.",
   "source": "gemini-chat",
   "isFetch": false,
   "status": "completed",
@@ -17,8 +17,10 @@
           {
             "function_call": {
               "name": "get_weather",
-              "args": { "city": "Tokyo" }
-            }
+              "args": { "city": "Tokyo" },
+              "id": "7xpjoffz"
+            },
+            "thought_signature": "AAAA-required-by-gemini-v1beta"
           }
         ]
       },
@@ -58,7 +60,7 @@
         "content": {
           "role": "model",
           "parts": [
-            { "text": "It's 14°C and clear in Tokyo right now." }
+            { "text": "It's currently clear in Tokyo with a temperature of 14°C." }
           ]
         },
         "finish_reason": "STOP",
@@ -66,10 +68,14 @@
       }
     ],
     "usage_metadata": {
-      "prompt_token_count": 92,
-      "candidates_token_count": 12,
-      "total_token_count": 104
-    }
+      "prompt_token_count": 148,
+      "candidates_token_count": 17,
+      "total_token_count": 165,
+      "prompt_tokens_details": [{ "modality": "TEXT", "token_count": 148 }],
+      "service_tier": "standard"
+    },
+    "model_version": "gemini-2.0-flash-001",
+    "response_id": "captured-real-response-id"
   },
-  "metadata": { "tokens_input": 92, "tokens_output": 12 }
+  "metadata": { "tokens_input": 148, "tokens_output": 17 }
 }

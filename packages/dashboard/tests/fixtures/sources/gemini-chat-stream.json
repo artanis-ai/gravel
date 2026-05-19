@@ -1,6 +1,6 @@
 {
   "name": "gemini.models.generate_content_stream",
-  "description": "Gemini streaming: the SDK patch tees the iterator of GenerateContentResponse chunks and persists the assembled output. Chunks are individually persisted under `metadata.states` so the dashboard's StreamObservations strip can surface chunk count + throughput; the consolidated candidates live at the top of `output` like a non-streamed call.",
+  "description": "Gemini streaming. Captured 2026-05-19 from a real `gemini-flash-latest` stream of 'Count down from 3' — the live stream returned 2 chunks (first chunk: full text '3\\n2\\n1', second chunk: usage_metadata + responseId). The SDK patch tees the iterator and persists the assembled output. Chunks are individually persisted under `metadata.states` so the dashboard's StreamObservations strip surfaces chunk count + throughput; the consolidated candidates live at the top of `output` like a non-streamed call.",
   "source": "gemini-chat",
   "isFetch": false,
   "status": "completed",
@@ -9,7 +9,7 @@
     "contents": [
       {
         "role": "user",
-        "parts": [{ "text": "Count down from 3, one per line." }]
+        "parts": [{ "text": "Count down from 3, one number per line." }]
       }
     ]
   },
@@ -25,19 +25,22 @@
       }
     ],
     "usage_metadata": {
-      "prompt_token_count": 18,
+      "prompt_token_count": 12,
       "candidates_token_count": 5,
-      "total_token_count": 23
-    }
+      "total_token_count": 102,
+      "prompt_tokens_details": [{ "modality": "TEXT", "token_count": 12 }],
+      "thoughts_token_count": 85,
+      "service_tier": "standard"
+    },
+    "model_version": "gemini-2.0-flash-001",
+    "response_id": "captured-real-response-id"
   },
   "metadata": {
-    "tokens_input": 18,
+    "tokens_input": 12,
     "tokens_output": 5,
     "states": [
-      { "type": "chunk", "ts": 1715766000000, "delta": "3" },
-      { "type": "chunk", "ts": 1715766000060, "delta": "\n2" },
-      { "type": "chunk", "ts": 1715766000120, "delta": "\n1" },
-      { "type": "finish", "ts": 1715766000160, "finish_reason": "STOP" }
+      { "type": "chunk", "ts": 1715766000000, "delta": "3\n2\n1" },
+      { "type": "finish", "ts": 1715766001296, "finish_reason": "STOP" }
     ]
   }
 }

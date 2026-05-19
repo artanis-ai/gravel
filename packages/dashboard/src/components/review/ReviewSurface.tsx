@@ -115,10 +115,15 @@ function Pane({ label, children }: { label: string; children: ReactNode }): Reac
 
 function extractUsage(output: unknown): unknown {
   if (!isPlainObject(output)) return null
+  // OpenAI / Anthropic / Vercel-AI: `output.usage`.
   if (isPlainObject(output.usage)) return output.usage
+  // LangChain: nested under `llm_output.token_usage`.
   if (isPlainObject(output.llm_output) && isPlainObject(output.llm_output.token_usage)) {
     return output.llm_output.token_usage
   }
+  // Gemini: `usage_metadata` (Python snake_case) / `usageMetadata` (TS).
+  if (isPlainObject(output.usage_metadata)) return output.usage_metadata
+  if (isPlainObject(output.usageMetadata)) return output.usageMetadata
   return null
 }
 

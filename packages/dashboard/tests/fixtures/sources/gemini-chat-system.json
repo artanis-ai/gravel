@@ -1,6 +1,6 @@
 {
   "name": "gemini.models.generate_content",
-  "description": "Gemini call with a system instruction. Unlike OpenAI Chat (where system is just role='system' in messages[]), Gemini puts the system instruction in `config.system_instruction` (separate from the conversation). Renderer surfaces it as a collapsed system message above the contents.",
+  "description": "Gemini call with `config.system_instruction`. Shape grounded in a real `gemini-flash-latest` capture (2026-05-19) — every text part carries `thought_signature` in v1beta, and `usage_metadata` includes `thoughts_token_count` / `service_tier` / `prompt_tokens_details`. Renderer surfaces system_instruction as a collapsed system message above the contents.",
   "source": "gemini-chat",
   "isFetch": false,
   "status": "completed",
@@ -22,17 +22,27 @@
       {
         "content": {
           "role": "model",
-          "parts": [{ "text": "Bonjour." }]
+          "parts": [
+            {
+              "text": "Bonjour",
+              "thought_signature": "AAAA-captured-real-call-truncated"
+            }
+          ]
         },
         "finish_reason": "STOP",
         "index": 0
       }
     ],
     "usage_metadata": {
-      "prompt_token_count": 28,
-      "candidates_token_count": 3,
-      "total_token_count": 31
-    }
+      "prompt_token_count": 27,
+      "candidates_token_count": 1,
+      "total_token_count": 79,
+      "prompt_tokens_details": [{ "modality": "TEXT", "token_count": 27 }],
+      "thoughts_token_count": 51,
+      "service_tier": "standard"
+    },
+    "model_version": "gemini-2.0-flash-001",
+    "response_id": "captured-real-response-id"
   },
-  "metadata": { "tokens_input": 28, "tokens_output": 3 }
+  "metadata": { "tokens_input": 27, "tokens_output": 1 }
 }

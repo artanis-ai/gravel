@@ -1,6 +1,6 @@
 {
   "name": "gemini.models.generate_content",
-  "description": "Gemini multimodal: an image-bearing part. `inline_data: {mime_type, data}` where `data` is base64 (truncated here for fixture readability). Renderer shows the image as a clickable thumbnail (via ClickableImage). PDF and audio land here too with their respective mime types.",
+  "description": "Gemini multimodal: an image-bearing input part. `inline_data: {mime_type, data}` where `data` is base64. Shape grounded in a real `gemini-flash-latest` capture (2026-05-19) — multimodal responses look identical to text ones (text part + thought_signature). Renderer shows the image as a clickable thumbnail (via ClickableImage). PDF and audio land here too with their respective mime types.",
   "source": "gemini-chat",
   "isFetch": false,
   "status": "completed",
@@ -26,7 +26,12 @@
       {
         "content": {
           "role": "model",
-          "parts": [{ "text": "A single black pixel on a transparent background." }]
+          "parts": [
+            {
+              "text": "A single black pixel on a transparent background.",
+              "thought_signature": "AAAA-captured-real-call-truncated"
+            }
+          ]
         },
         "finish_reason": "STOP",
         "index": 0
@@ -35,8 +40,13 @@
     "usage_metadata": {
       "prompt_token_count": 264,
       "candidates_token_count": 10,
-      "total_token_count": 274
-    }
+      "total_token_count": 326,
+      "prompt_tokens_details": [{ "modality": "TEXT", "token_count": 8 }, { "modality": "IMAGE", "token_count": 256 }],
+      "thoughts_token_count": 52,
+      "service_tier": "standard"
+    },
+    "model_version": "gemini-2.0-flash-001",
+    "response_id": "captured-real-response-id"
   },
   "metadata": { "tokens_input": 264, "tokens_output": 10 }
 }

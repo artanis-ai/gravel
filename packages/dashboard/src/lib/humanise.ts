@@ -114,11 +114,15 @@ export function looksLikeUrl(s: string): boolean {
 }
 
 /** Tally common token-usage keys from a `usage` object across
- *  providers. Returns null if no recognisable tokens are present. */
+ *  providers. Returns null if no recognisable tokens are present.
+ *  Reasoning/thinking tokens (Gemini `thoughts_token_count`, OpenAI
+ *  `reasoning_tokens`) are surfaced separately since customers pay for
+ *  them even though they're invisible in the model's text output. */
 export function tokensFromUsage(usage: unknown): {
   input: number | null
   output: number | null
   total: number | null
+  reasoning: number | null
 } | null {
   if (!isPlainObject(usage)) return null
   const input =
@@ -149,8 +153,18 @@ export function tokensFromUsage(usage: unknown): {
       'total_token_count',
       'totalTokenCount',
     ]) ?? null
-  if (input === null && output === null && total === null) return null
-  return { input, output, total }
+  // Reasoning/thinking tokens. Surfaced separately because the user pays
+  // for them but they're not part of the visible response. Gemini calls
+  // these "thoughts"; OpenAI o-series calls them "reasoning".
+  const reasoning =
+    pickNumber(usage, [
+      'thoughts_token_count',
+      'thoughtsTokenCount',
+      'reasoning_tokens',
+      'reasoningTokens',
+    ]) ?? null
+  if (input === null && output === null && total === null && reasoning === null) return null
+  return { input, output, total, reasoning }
 }
 
 function pickNumber(obj: Record<string, unknown>, keys: string[]): number | undefined {

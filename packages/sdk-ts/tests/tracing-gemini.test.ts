@@ -12,8 +12,22 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 
 // ---- Mocks ---------------------------------------------------------------
 
+// Mirror the real @google/genai v1 shape: public `generateContent` /
+// `generateContentStream` are own-property arrow fns assigned in the
+// constructor; the actual work lives on `*Internal` prototype methods.
+// The auto-patch wraps the prototype methods (own properties can't be
+// patched once-at-import — they don't exist yet). The public methods
+// keep working because they delegate to `*Internal`.
 class FakeModels {
-  async generateContent(params: any) {
+  generateContent: (params: any) => Promise<any>
+  generateContentStream: (params: any) => Promise<any>
+
+  constructor() {
+    this.generateContent = (params) => this.generateContentInternal(params)
+    this.generateContentStream = (params) => this.generateContentStreamInternal(params)
+  }
+
+  async generateContentInternal(params: any) {
     if (params?.__shouldThrow) {
       throw new Error('boom-from-gemini')
     }
@@ -34,7 +48,7 @@ class FakeModels {
     }
   }
 
-  async generateContentStream(_params: any) {
+  async generateContentStreamInternal(_params: any) {
     return makeFakeStream(['Hello ', 'world'])
   }
 }

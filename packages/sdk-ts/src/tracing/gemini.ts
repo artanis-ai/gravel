@@ -44,15 +44,21 @@ async function patchGemini(): Promise<void> {
   if (!Models || (Models as any)[PATCHED]) return
   ;(Models as any)[PATCHED] = true
 
-  if (Models.prototype?.generateContent) {
-    wrapCall(Models.prototype, 'generateContent', {
+  // @google/genai assigns the public `generateContent` / `generateContentStream`
+  // as own properties on the instance (auto-bound arrow functions that delegate
+  // to `*Internal` on the prototype). The own-property assignment means
+  // `Models.prototype.generateContent` is `undefined`. We instead wrap the
+  // prototype-level `*Internal` methods — they're what the public methods
+  // ultimately invoke — and report the public canonical name to the trace.
+  if (Models.prototype?.generateContentInternal) {
+    wrapCall(Models.prototype, 'generateContentInternal', {
       name: 'gemini.models.generate_content',
       provider: 'gemini',
       isStream: false,
     })
   }
-  if (Models.prototype?.generateContentStream) {
-    wrapCall(Models.prototype, 'generateContentStream', {
+  if (Models.prototype?.generateContentStreamInternal) {
+    wrapCall(Models.prototype, 'generateContentStreamInternal', {
       name: 'gemini.models.generate_content_stream',
       provider: 'gemini',
       isStream: true,

@@ -1,6 +1,6 @@
 {
   "name": "fetch:gemini.models.generate_content",
-  "description": "Raw-fetch wrap of a Gemini call (TS-side `tracing/fetch.ts` classifier matched the v1beta `/models/<name>:generateContent` URL pattern). Body shapes are the same as the SDK fixtures; the wrapper just adds the {url, method, body} / {status, body} envelope, unwrapped before the renderer sees the payload.",
+  "description": "Raw-fetch wrap of a Gemini call (TS-side `tracing/fetch.ts` classifier matched the v1beta `/models/<name>:generateContent` URL pattern). Output shape grounded in a real `gemini-flash-latest` capture (2026-05-19) — note the camelCase here because the raw HTTP envelope preserves the wire format (Python snake_case only appears when the @google-genai SDK has serialised the object).",
   "source": "gemini-chat",
   "isFetch": true,
   "status": "completed",
@@ -25,7 +25,12 @@
         {
           "content": {
             "role": "model",
-            "parts": [{ "text": "Hi." }]
+            "parts": [
+              {
+                "text": "Hi.",
+                "thoughtSignature": "AAAA-captured-real-call-truncated"
+              }
+            ]
           },
           "finishReason": "STOP",
           "index": 0
@@ -34,9 +39,13 @@
       "usageMetadata": {
         "promptTokenCount": 5,
         "candidatesTokenCount": 2,
-        "totalTokenCount": 7
+        "totalTokenCount": 47,
+        "promptTokensDetails": [{ "modality": "TEXT", "tokenCount": 5 }],
+        "thoughtsTokenCount": 40,
+        "serviceTier": "standard"
       },
-      "modelVersion": "gemini-2.0-flash-001"
+      "modelVersion": "gemini-2.0-flash-001",
+      "responseId": "captured-real-response-id"
     }
   },
   "metadata": { "tokens_input": 5, "tokens_output": 2 }

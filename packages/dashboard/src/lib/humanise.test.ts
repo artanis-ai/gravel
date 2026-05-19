@@ -97,19 +97,20 @@ describe('tokensFromUsage', () => {
   it('reads OpenAI snake_case', () => {
     expect(
       tokensFromUsage({ prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 }),
-    ).toEqual({ input: 12, output: 8, total: 20 })
+    ).toEqual({ input: 12, output: 8, total: 20, reasoning: null })
   })
   it('reads Anthropic snake_case', () => {
     expect(tokensFromUsage({ input_tokens: 5, output_tokens: 9 })).toEqual({
       input: 5,
       output: 9,
       total: null,
+      reasoning: null,
     })
   })
   it('reads Vercel AI v4+ camelCase', () => {
     expect(
       tokensFromUsage({ inputTokens: 3, outputTokens: 4, totalTokens: 7 }),
-    ).toEqual({ input: 3, output: 4, total: 7 })
+    ).toEqual({ input: 3, output: 4, total: 7, reasoning: null })
   })
   it('reads Gemini Python snake_case', () => {
     expect(
@@ -118,7 +119,7 @@ describe('tokensFromUsage', () => {
         candidates_token_count: 3,
         total_token_count: 15,
       }),
-    ).toEqual({ input: 12, output: 3, total: 15 })
+    ).toEqual({ input: 12, output: 3, total: 15, reasoning: null })
   })
   it('reads Gemini TS camelCase', () => {
     expect(
@@ -127,7 +128,29 @@ describe('tokensFromUsage', () => {
         candidatesTokenCount: 2,
         totalTokenCount: 7,
       }),
-    ).toEqual({ input: 5, output: 2, total: 7 })
+    ).toEqual({ input: 5, output: 2, total: 7, reasoning: null })
+  })
+  it('reads Gemini reasoning tokens (`thoughts_token_count`)', () => {
+    // Captured shape from a real `gemini-flash-latest` call 2026-05-19.
+    expect(
+      tokensFromUsage({
+        prompt_token_count: 7,
+        candidates_token_count: 1,
+        total_token_count: 66,
+        thoughts_token_count: 58,
+        service_tier: 'standard',
+      }),
+    ).toEqual({ input: 7, output: 1, total: 66, reasoning: 58 })
+  })
+  it('reads OpenAI o-series reasoning tokens (`reasoning_tokens`)', () => {
+    expect(
+      tokensFromUsage({
+        prompt_tokens: 20,
+        completion_tokens: 15,
+        total_tokens: 75,
+        reasoning_tokens: 40,
+      }),
+    ).toEqual({ input: 20, output: 15, total: 75, reasoning: 40 })
   })
   it('returns null when no recognisable keys are present', () => {
     expect(tokensFromUsage({ foo: 1 })).toBeNull()

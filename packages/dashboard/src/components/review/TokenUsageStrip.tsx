@@ -22,6 +22,9 @@ export function TokenUsageStrip({ usage }: TokenUsageStripProps): ReactNode {
   const parts: ReactNode[] = []
   if (t.input !== null) parts.push(<Stat key="in" label="in" value={t.input} />)
   if (t.output !== null) parts.push(<Stat key="out" label="out" value={t.output} />)
+  if (t.reasoning !== null && t.reasoning > 0) {
+    parts.push(<Stat key="reasoning" label="thinking" value={t.reasoning} />)
+  }
   if (t.total !== null) parts.push(<Stat key="total" label="total" value={t.total} />)
   if (parts.length === 0) return null
   return (

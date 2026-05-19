@@ -1,6 +1,6 @@
 {
   "name": "@artanis-ai/gravel",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Embedded prompt management, tracing, and evals for AI engineering teams.",
   "license": "Apache-2.0",
   "homepage": "https://gravel.artanis.ai",
@@ -82,6 +82,7 @@
   },
   "peerDependencies": {
     "@anthropic-ai/sdk": "*",
+    "@google/genai": "*",
     "@langchain/core": "*",
     "ai": "*",
     "better-sqlite3": "*",
@@ -90,6 +91,9 @@
   },
   "peerDependenciesMeta": {
     "@anthropic-ai/sdk": {
+      "optional": true
+    },
+    "@google/genai": {
       "optional": true
     },
     "@langchain/core": {

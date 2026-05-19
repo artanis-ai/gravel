@@ -1,6 +1,6 @@
 {
   "name": "gemini.models.generate_content",
-  "description": "Gemini safety-blocked response. Distinct from an errored call — the API returns a 200 with `finish_reason: 'SAFETY'`, an empty or partial parts list, and `safety_ratings[]` containing the categories that tripped. Renderer surfaces the finish_reason as a caption pill AND shows a safety panel with the non-NEGLIGIBLE category breakdown.",
+  "description": "Gemini safety-blocked response — SYNTHESISED edge case. Real captures against `gemini-flash-latest` (2026-05-19) against deliberately-unsafe prompts return finish_reason=STOP with a polite text refusal instead of finish_reason=SAFETY. The `safety_ratings[]` + finish=SAFETY shape comes from older Gemini v1 docs and likely still surfaces from Vertex AI with safety_settings configured. Renderer handles both paths: this fixture exercises the legacy structured-block path so the UI is ready when it fires.",
   "source": "gemini-chat",
   "isFetch": false,
   "status": "completed",

@@ -43,7 +43,7 @@ describe('GeminiChatRenderer', () => {
       <RenderBoth renderer={GeminiChatRenderer} input={f.input} output={f.output} isFetch={false} />,
     )
     expect(container.textContent).toContain('professional French translator')
-    expect(container.textContent).toContain('Bonjour.')
+    expect(container.textContent).toContain('Bonjour')
   })
 
   it('with tools: renders Tool call block with function_call name + args', () => {
@@ -69,7 +69,7 @@ describe('GeminiChatRenderer', () => {
     expect(container.textContent).toMatch(/Temp C|temp_c/i)
     expect(container.textContent).toContain('clear')
     // Final model reply
-    expect(container.textContent).toContain("14°C and clear")
+    expect(container.textContent).toContain('14°C')
   })
 
   it('multimodal: renders inline_data image as a clickable thumbnail', () => {
