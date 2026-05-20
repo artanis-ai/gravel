@@ -95,29 +95,6 @@ class CreatePullRequestResult:
 _REPO_RE = re.compile(r"^[\w.-]+$")
 
 
-def _compose_body(
-    *,
-    description: str | None,
-    de_first_name: str | None,
-    changes: list[PromptChange],
-) -> str:
-    lines: list[str] = []
-    if de_first_name:
-        lines.append(f"On behalf of {de_first_name}.")
-    if description and description.strip():
-        lines.append("")
-        lines.append(description.strip())
-    if len(changes) > 1:
-        lines.append("")
-        lines.append(f"**Files changed ({len(changes)}):**")
-        for c in changes:
-            lines.append(f"- `{c.path}`")
-    lines.append("")
-    lines.append("---")
-    lines.append("<sub>PR created via [Gravel](https://gravel.artanis.ai).</sub>")
-    return "\n".join(lines).lstrip()
-
-
 def _base64_utf8(s: str) -> str:
     return base64.b64encode(s.encode("utf-8")).decode("ascii")
 
@@ -132,6 +109,7 @@ def create_pull_request(
     description: str | None,
     de_first_name: str | None,
     branch_name: str,
+    manifest_diff: list[Any] | None = None,
 ) -> CreatePullRequestResult:
     """Open a PR with `changes` against the repo's default branch.
 
@@ -194,6 +172,10 @@ def create_pull_request(
             body=put_body,
         )
 
+    # Import here to dodge the cycle (`_pr_body` references the
+    # PromptChange dataclass defined in this module).
+    from ._pr_body import compose_pr_body
+
     pr = github_api(
         f"/repos/{repo_owner}/{repo_name}/pulls",
         access_token,
@@ -202,10 +184,14 @@ def create_pull_request(
             "title": title,
             "head": branch_name,
             "base": default_branch,
-            "body": _compose_body(
+            "body": compose_pr_body(
                 description=description,
                 de_first_name=de_first_name,
                 changes=changes,
+                manifest_diff=manifest_diff,
+                repo_owner=repo_owner,
+                repo_name=repo_name,
+                branch_name=branch_name,
             ),
         },
     )

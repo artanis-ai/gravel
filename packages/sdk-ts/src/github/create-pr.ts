@@ -155,7 +155,7 @@ function defaultBranchName(deFirstName?: string): string {
   return `gravel/draft-${date}-${slug}-${Math.random().toString(36).slice(2, 6)}`
 }
 
-function composeBody(opts: {
+export function composeBody(opts: {
   description?: string
   deFirstName?: string
   changes: PromptChange[]

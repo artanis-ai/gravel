@@ -1,0 +1,107 @@
+{
+  "$schema_note": "Cross-stack PR-body equivalence fixture. The TS test in packages/sdk-ts/tests/pr-body-cross-stack.test.ts AND the Python test in python/gravel/tests/test_pr_body_cross_stack.py both load this file, feed `input` into their composeBody / compose_pr_body implementation, and assert the rendered string is byte-equal to `expectedBody`. Olly's de_platform PR #249 (2026-05-20) shipped without the manifest explainer + feedback link because the Python stack had a stub _compose_body that pre-dated v0.8.0 — these fixtures are now the cross-stack canary.",
+  "cases": [
+    {
+      "name": "minimal — one edited file, no description, no deFirstName",
+      "input": {
+        "description": null,
+        "deFirstName": null,
+        "changes": [
+          { "path": "prompts/judge.txt", "content": "edited body" },
+          { "path": ".gravel/manifest.json", "content": "{...}" }
+        ],
+        "manifestDiff": [
+          { "kind": "edited", "promptId": "p_judge", "path": "prompts/judge.txt" }
+        ],
+        "repoOwner": "artanis-ai",
+        "repoName": "de_platform",
+        "branchName": "gravel/draft-2026-05-20-olly"
+      },
+      "expectedBody": "**Manifest changes** (`.gravel/manifest.json`):\n- Updated prompt at `prompts/judge.txt` (id `p_judge`). The content hash changed — that's the actual edit you're reviewing.\n\n---\n<sub>PR created via [Gravel](https://gravel.artanis.ai). [Send feedback →](https://gravel.artanis.ai/feedback?repo=artanis-ai%2Fde_platform&branch=gravel%2Fdraft-2026-05-20-olly)</sub>"
+    },
+    {
+      "name": "full — deFirstName + description + two prompt files + manifest diff",
+      "input": {
+        "description": "Tighten the policy enforcement copy.",
+        "deFirstName": "Olly",
+        "changes": [
+          { "path": "prompts/judge.txt", "content": "edited" },
+          { "path": "prompts/rewrite.txt", "content": "edited" },
+          { "path": ".gravel/manifest.json", "content": "{...}" }
+        ],
+        "manifestDiff": [
+          { "kind": "edited", "promptId": "p_judge", "path": "prompts/judge.txt" },
+          { "kind": "edited", "promptId": "p_rewrite", "path": "prompts/rewrite.txt" }
+        ],
+        "repoOwner": "artanis-ai",
+        "repoName": "de_platform",
+        "branchName": "gravel/draft-2026-05-20-olly"
+      },
+      "expectedBody": "On behalf of Olly.\n\nTighten the policy enforcement copy.\n\n**Files changed (2):**\n- `prompts/judge.txt`\n- `prompts/rewrite.txt`\n\n**Manifest changes** (`.gravel/manifest.json`):\n- Updated prompt at `prompts/judge.txt` (id `p_judge`). The content hash changed — that's the actual edit you're reviewing.\n- Updated prompt at `prompts/rewrite.txt` (id `p_rewrite`). The content hash changed — that's the actual edit you're reviewing.\n\n---\n<sub>PR created via [Gravel](https://gravel.artanis.ai). [Send feedback →](https://gravel.artanis.ai/feedback?repo=artanis-ai%2Fde_platform&branch=gravel%2Fdraft-2026-05-20-olly)</sub>"
+    },
+    {
+      "name": "first_add — manifest didn't exist, single added file",
+      "input": {
+        "description": null,
+        "deFirstName": "Olly",
+        "changes": [
+          { "path": "prompts/triage.md", "content": "fresh" },
+          { "path": ".gravel/manifest.json", "content": "{...}" }
+        ],
+        "manifestDiff": [{ "kind": "first_add" }],
+        "repoOwner": "artanis-ai",
+        "repoName": "de_platform",
+        "branchName": "gravel/draft-2026-05-20-olly"
+      },
+      "expectedBody": "On behalf of Olly.\n\n**About `.gravel/manifest.json`:** this PR also adds the Gravel manifest. It tracks which prompts in this repo are managed by the embedded dashboard — your team edits these files in-app and Gravel opens a PR like this one when they hit Submit. Keep the file in the repo; future updates need it to know what lives where.\n\n---\n<sub>PR created via [Gravel](https://gravel.artanis.ai). [Send feedback →](https://gravel.artanis.ai/feedback?repo=artanis-ai%2Fde_platform&branch=gravel%2Fdraft-2026-05-20-olly)</sub>"
+    },
+    {
+      "name": "all six diff kinds in a single submit",
+      "input": {
+        "description": null,
+        "deFirstName": null,
+        "changes": [
+          { "path": "prompts/a.md", "content": "x" },
+          { "path": ".gravel/manifest.json", "content": "{...}" }
+        ],
+        "manifestDiff": [
+          { "kind": "added", "promptId": "p_a", "path": "prompts/a.md" },
+          { "kind": "edited", "promptId": "p_b", "path": "prompts/b.md" },
+          { "kind": "removed", "promptId": "p_c", "path": "prompts/c.md" },
+          { "kind": "renamed", "promptId": "p_d", "oldPath": "old/d.md", "path": "prompts/d.md" },
+          { "kind": "anchors_changed", "promptId": "p_e", "path": "src/agent.py" }
+        ],
+        "repoOwner": "artanis-ai",
+        "repoName": "de_platform",
+        "branchName": "gravel/draft-2026-05-20-olly"
+      },
+      "expectedBody": "**Manifest changes** (`.gravel/manifest.json`):\n- Added prompt `prompts/a.md` (id `p_a`). New entry tracked by the manifest.\n- Updated prompt at `prompts/b.md` (id `p_b`). The content hash changed — that's the actual edit you're reviewing.\n- Removed prompt `prompts/c.md` (id `p_c`). The manifest no longer tracks this file.\n- Renamed: `old/d.md` → `prompts/d.md` (id `p_d`). Same content (same hash); the manifest follows the move.\n- Updated inline-prompt anchors for `src/agent.py` (id `p_e`). The surrounding code shifted; the start/end markers moved with it.\n\n---\n<sub>PR created via [Gravel](https://gravel.artanis.ai). [Send feedback →](https://gravel.artanis.ai/feedback?repo=artanis-ai%2Fde_platform&branch=gravel%2Fdraft-2026-05-20-olly)</sub>"
+    },
+    {
+      "name": "no manifest diff supplied (legacy caller) — body still gets feedback link",
+      "input": {
+        "description": "Small fix.",
+        "deFirstName": null,
+        "changes": [{ "path": "prompts/judge.txt", "content": "x" }],
+        "manifestDiff": null,
+        "repoOwner": "artanis-ai",
+        "repoName": "de_platform",
+        "branchName": "gravel/draft-2026-05-20"
+      },
+      "expectedBody": "Small fix.\n\n---\n<sub>PR created via [Gravel](https://gravel.artanis.ai). [Send feedback →](https://gravel.artanis.ai/feedback?repo=artanis-ai%2Fde_platform&branch=gravel%2Fdraft-2026-05-20)</sub>"
+    },
+    {
+      "name": "branch name with spaces — URL-encoded in feedback link",
+      "input": {
+        "description": null,
+        "deFirstName": null,
+        "changes": [{ "path": "prompts/x.txt", "content": "x" }],
+        "manifestDiff": [{ "kind": "edited", "promptId": "p_x", "path": "prompts/x.txt" }],
+        "repoOwner": "artanis-ai",
+        "repoName": "de_platform",
+        "branchName": "gravel/draft 2026 05 20"
+      },
+      "expectedBody": "**Manifest changes** (`.gravel/manifest.json`):\n- Updated prompt at `prompts/x.txt` (id `p_x`). The content hash changed — that's the actual edit you're reviewing.\n\n---\n<sub>PR created via [Gravel](https://gravel.artanis.ai). [Send feedback →](https://gravel.artanis.ai/feedback?repo=artanis-ai%2Fde_platform&branch=gravel%2Fdraft%202026%2005%2020)</sub>"
+    }
+  ]
+}

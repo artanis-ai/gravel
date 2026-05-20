@@ -27,6 +27,7 @@ from ._github_api import (
     create_pull_request,
     github_api,
 )
+from ._pr_body import compute_manifest_diff_summary, default_pr_title
 from .manifest.hash import hash_prompt
 from .manifest.io import _prompt_to_dict, read_manifest
 from .manifest.types import (
@@ -297,16 +298,29 @@ def submit_drafts(args: SubmitArgs) -> CreatePullRequestResult:
     )
     changes.append(PromptChange(path=MANIFEST_PATH, content=_serialize_manifest(updated_manifest)))
 
+    # Compute the manifest diff so the PR body can explain what
+    # changed in `.gravel/manifest.json` — the v0.8.0 wave shipped
+    # this for TS; Olly's dogfooding (de_platform PR #249) caught the
+    # Python stack never received it.
+    manifest_diff = compute_manifest_diff_summary(manifest, updated_manifest)
+
+    # Software-default title from the prompt basenames. Matches the
+    # TS `defaultPRTitle` byte-for-byte (dashboard prefill also
+    # mirrors this format; users can still override via args.title).
+    prompt_paths = sorted({r.entry.path for r in resolved})
+    fallback_title = default_pr_title(prompt_paths)
+
     try:
         return create_pull_request(
             access_token=args.access_token,
             repo_owner=args.repo_owner,
             repo_name=args.repo_name,
             changes=changes,
-            title=args.title or f"[Gravel] Update {len(resolved)} prompt(s)",
+            title=args.title or fallback_title,
             description=args.description,
             de_first_name=args.de_first_name,
             branch_name=args.draft_branch,
+            manifest_diff=manifest_diff,
         )
     except GitHubAPIError as e:
         raise SubmitError("github_failed", "Failed to open PR", str(e)) from e
