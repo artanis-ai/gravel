@@ -107,7 +107,7 @@ jobs:
         run: pip install uv
       - name: Sync deps
         working-directory: python/gravel
-        run: uv sync --extra dev --extra fastapi --extra django --extra asgi --extra flask
+        run: uv sync --extra dev --extra fastapi --extra django --extra asgi --extra flask --extra tracing-openai --extra tracing-anthropic --extra tracing-langchain --extra google-genai
       - name: Lint
         working-directory: python/gravel
         run: uv run ruff check src
