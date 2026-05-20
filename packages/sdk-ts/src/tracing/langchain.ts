@@ -295,12 +295,30 @@ async function patchLangchain(): Promise<void> {
     return (origChatStart as any)(...args)
   }
 
-  // Modern API: setGlobalCallbackHandler. Older / stripped builds may not
-  // export it; we just attach via the global env-var fallback (no-op then).
+  // Expose the handler instance globally so users on @langchain/core
+  // v1+ (where setGlobalCallbackHandler was removed) can attach it
+  // manually via `chain.withConfig({ callbacks: [gravelLangchainHandler] })`.
+  ;(globalThis as any).gravelLangchainHandler = handler
+
+  // Legacy auto-registration: @langchain/core v0.x exposed
+  // `setGlobalCallbackHandler` / `CallbackManager.setGlobalHandler`. v1+
+  // removed both (handlers must be passed per-config via RunnableConfig).
+  // We try the legacy hook for backwards compat and warn once when it's
+  // missing so v1+ users know they need to attach the exported handler
+  // themselves.
   const setGlobal =
     manager.setGlobalCallbackHandler ?? manager.CallbackManager?.setGlobalHandler
   if (typeof setGlobal === 'function') {
     setGlobal(handler)
+  } else if (!(globalThis as any)[Symbol.for('@artanis-ai/gravel/lc-warned')]) {
+    ;(globalThis as any)[Symbol.for('@artanis-ai/gravel/lc-warned')] = true
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[gravel] @langchain/core v1+ detected: no global callback hook available. ' +
+        'Attach the handler manually: ' +
+        '`chain.withConfig({ callbacks: [globalThis.gravelLangchainHandler] }).invoke(input)`. ' +
+        'See https://gravel.artanis.ai for the v1+ integration guide.',
+    )
   }
 }
 
