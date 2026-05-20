@@ -28,7 +28,17 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-postgres = ["psycopg[binary]>=3.1"]
+# `psycopg2-binary` (NOT `psycopg[binary]`). SQLAlchemy's bare
+# `postgresql://` URL dispatches to psycopg2 by default; pre-v0.9.1
+# we declared `psycopg[binary]>=3.1` here which gave customers
+# psycopg3 instead — and SQLAlchemy crashed at create_engine with a
+# bewildering "No module named 'psycopg2'" because the bare URL
+# scheme doesn't load psycopg3. Either rewrite the URL to
+# `postgresql+psycopg://` OR declare psycopg2-binary; we picked the
+# latter for backward compat with the v0.9.0 wizard which also
+# auto-adds psycopg2-binary (NeedsPsycopg2 in pillars.go).
+# Claude's de_platform install (2026-05-20) was the canonical case.
+postgres = ["psycopg2-binary>=2.9"]
 sqlite = []
 fastapi = ["fastapi>=0.100"]
 django = ["django>=4.2"]

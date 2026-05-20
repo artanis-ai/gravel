@@ -24,7 +24,7 @@ from ._handler import (
     dispatch_request,
 )
 from .dashboard_assets import find_dashboard_dist
-from .db import open_database
+from .db import try_open_database
 from .tracing import install_auto_tracing
 from .types import GravelConfig, resolve_config
 
@@ -44,7 +44,10 @@ def create_gravel_router(config: GravelConfig, *, engine: Any = None) -> APIRout
     if engine is None:
         db_url = resolved.database.get("url", "") if resolved.database else ""
         if db_url:
-            engine = open_database(db_url)
+            # try_open_database degrades to None on driver / URL
+            # errors so a broken DATABASE_URL doesn't take down the
+            # whole FastAPI app at import time.
+            engine = try_open_database(db_url)
     # Auto-tracing wiring lives here so the wizard-emitted gravel_route.py
     # picks it up just by importing the SDK — no extra line in the host's
     # entry. Skips cleanly on the prompts-only install (engine is None).
