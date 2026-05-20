@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { alignWhitespace, computeDiffStats, undoConservativeEscapes } from './SuggestionEditor'
+import {
+  alignWhitespace,
+  computeDiffStats,
+  decodeHtmlEntities,
+  preserveTrailingNewline,
+  undoConservativeEscapes,
+} from './SuggestionEditor'
 
 describe('computeDiffStats (word-level)', () => {
   it('reports zeros when texts match', () => {
@@ -48,11 +54,12 @@ describe('computeDiffStats (word-level)', () => {
   })
 })
 
-describe('undoConservativeEscapes (PR #247 round-trip)', () => {
+describe('undoConservativeEscapes (PR #247 + Olly 2026-05-20)', () => {
   // tiptap-markdown's default serialiser is conservative and escapes
   // structural chars to defend against CommonMark mis-parses. Prompts
   // never go through a markdown renderer, so we strip these to keep
-  // the diff clean on round-trip.
+  // the diff clean on round-trip. v0.9.0 went nuclear — strips all
+  // backslash-escapes except `\\` (literal backslash, preserved).
   it('strips backslash before dashes (---ORIGINAL OUTPUT--- case)', () => {
     expect(undoConservativeEscapes('\\--- ORIGINAL OUTPUT \\---')).toBe('--- ORIGINAL OUTPUT ---')
   })
@@ -65,25 +72,112 @@ describe('undoConservativeEscapes (PR #247 round-trip)', () => {
   it('strips backslash before hashes (template-var sigils stay literal)', () => {
     expect(undoConservativeEscapes('\\#tag')).toBe('#tag')
   })
-  it('leaves non-escape backslashes alone', () => {
+  it('strips backslash before square brackets (Olly v0.9.0 case)', () => {
+    expect(undoConservativeEscapes('see \\[user.name\\] for details')).toBe(
+      'see [user.name] for details',
+    )
+  })
+  it('strips backslash before round + curly brackets', () => {
+    expect(undoConservativeEscapes('call f\\(x\\) → return \\{result\\}')).toBe(
+      'call f(x) → return {result}',
+    )
+  })
+  it('strips backslash before angle brackets (`\\<input\\>`)', () => {
+    expect(undoConservativeEscapes('insert \\<input\\> here')).toBe('insert <input> here')
+  })
+  it('strips backslash before exclamation + period + comma + colon + semicolon', () => {
+    expect(undoConservativeEscapes('hi\\! \\,\\. \\:\\;')).toBe('hi! ,. :;')
+  })
+  it('strips backslash before backtick', () => {
+    expect(undoConservativeEscapes('\\`literal backticks\\`')).toBe('`literal backticks`')
+  })
+  it('strips backslash before newlines (CommonMark hard-break syntax)', () => {
+    expect(undoConservativeEscapes('line one\\\nline two\\\nline three')).toBe(
+      'line one\nline two\nline three',
+    )
+  })
+  it('preserves literal backslash followed by alpha (no escape was emitted)', () => {
+    // \n in source survives because `n` isn't escapable punctuation.
     expect(undoConservativeEscapes('path\\to\\file')).toBe('path\\to\\file')
+  })
+  it('PRESERVES `\\\\` as literal backslash (Olly\'s `\\\\n` case)', () => {
+    // Source has TWO backslashes followed by `n` — the literal
+    // 3-char sequence "\\n" (escaped backslash + n char). Must NOT
+    // collapse to `\n`. Round-trip parity with the source.
+    expect(undoConservativeEscapes('\\\\n')).toBe('\\\\n')
+    expect(undoConservativeEscapes('a\\\\b')).toBe('a\\\\b')
+  })
+  it('handles a mix: literal `\\\\` adjacent to escaped punctuation', () => {
+    // `path \\ to \[file\]` — the `\\` stays as `\\`, the `\[` and
+    // `\]` get stripped.
+    expect(undoConservativeEscapes('path \\\\ to \\[file\\]')).toBe('path \\\\ to [file]')
   })
   it('idempotent over already-clean text', () => {
     const clean = 'Standard prompt content with no escapes.'
     expect(undoConservativeEscapes(clean)).toBe(clean)
   })
-  it('strips backslash before newlines (CommonMark hard-break syntax)', () => {
-    // breaks:true + tiptap-markdown emits `\<newline>` for each hard
-    // break. Source had plain `\n`. Without this strip, every newline
-    // in a prompt adds a phantom +1/-0 to the diff.
-    expect(undoConservativeEscapes('line one\\\nline two\\\nline three')).toBe(
-      'line one\nline two\nline three',
+})
+
+describe('decodeHtmlEntities (Olly 2026-05-20)', () => {
+  // tiptap-markdown's serialiser HTML-encodes `&`, `<`, `>`, `"`,
+  // `'` on round-trip. Prompts aren't HTML, so the entity form is
+  // hostile — we decode them back to the literal characters.
+  it('decodes &amp; → &', () => {
+    expect(decodeHtmlEntities('&amp;')).toBe('&')
+  })
+  it('decodes &lt; / &gt;', () => {
+    expect(decodeHtmlEntities('&lt;input&gt;')).toBe('<input>')
+  })
+  it('decodes &quot; / &apos;', () => {
+    expect(decodeHtmlEntities('&quot;hi&quot; &apos;there&apos;')).toBe('"hi" \'there\'')
+  })
+  it('decodes numeric decimal entities (&#39; → \')', () => {
+    expect(decodeHtmlEntities('it&#39;s')).toBe("it's")
+  })
+  it('decodes numeric hex entities (&#x27; → \')', () => {
+    expect(decodeHtmlEntities('it&#x27;s')).toBe("it's")
+  })
+  it('decodes &amp; LAST so &amp;amp; only unwinds one level', () => {
+    // Source had the literal 5-char sequence "&amp;" (e.g. a prompt
+    // teaching about HTML escaping). tiptap-markdown re-encodes it as
+    // "&amp;amp;" — we must unwind ONE level so the round-trip
+    // matches the user's literal source.
+    expect(decodeHtmlEntities('&amp;amp;')).toBe('&amp;')
+  })
+  it('idempotent over already-clean text', () => {
+    const clean = 'Standard prompt content without entities.'
+    expect(decodeHtmlEntities(clean)).toBe(clean)
+  })
+  it('passes through unknown entities unchanged (no over-decode)', () => {
+    // `&nbsp;` isn't on our decode list — leave it alone rather than
+    // crash or corrupt.
+    expect(decodeHtmlEntities('&nbsp;hello&nbsp;')).toBe('&nbsp;hello&nbsp;')
+  })
+})
+
+describe('preserveTrailingNewline (Olly 2026-05-20)', () => {
+  // POSIX text files end with `\n`. CommonMark serialisers drop it.
+  // Without this, every load of a POSIX-conformant prompt injects a
+  // phantom -1 diff. v0.9.0 fix.
+  it('restores trailing newline when original had one and candidate doesn\'t', () => {
+    expect(preserveTrailingNewline('hello\n', 'hello')).toBe('hello\n')
+  })
+  it('strips trailing newlines the serialiser added but the source didn\'t have', () => {
+    expect(preserveTrailingNewline('hello', 'hello\n')).toBe('hello')
+    expect(preserveTrailingNewline('hello', 'hello\n\n')).toBe('hello')
+  })
+  it('passes through when both ends agree', () => {
+    expect(preserveTrailingNewline('hello\n', 'hello\n')).toBe('hello\n')
+    expect(preserveTrailingNewline('hello', 'hello')).toBe('hello')
+  })
+  it('handles multi-line content', () => {
+    expect(preserveTrailingNewline('line 1\nline 2\n', 'line 1\nline 2')).toBe(
+      'line 1\nline 2\n',
     )
   })
-  it('preserves literal backslash sequences', () => {
-    // `\\` (escaped backslash) shouldn't get over-collapsed. Real
-    // path strings like `path\\to\\file` survive intact.
-    expect(undoConservativeEscapes('path\\to\\file')).toBe('path\\to\\file')
+  it('handles empty strings safely', () => {
+    expect(preserveTrailingNewline('', '')).toBe('')
+    expect(preserveTrailingNewline('\n', '')).toBe('\n')
   })
 })
 

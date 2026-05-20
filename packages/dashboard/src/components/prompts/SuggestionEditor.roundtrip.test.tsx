@@ -133,4 +133,64 @@ describe('SuggestionEditor round-trip stability (no spurious diff)', () => {
     const stats = await mountAndGetStats(src)
     expect(stats).toEqual({ insertions: 0, deletions: 0 })
   })
+
+  // Olly's dogfooding bug classes (2026-05-20). Each one of these
+  // shipped phantom diffs on the de_platform install. v0.9.0 went
+  // nuclear on the escape-stripping + added HTML-entity decoding +
+  // trailing-newline preservation.
+  it('square-bracket template variables survive round-trip', async () => {
+    // Source has `[user.name]` (a template variable in the prompt).
+    // Tiptap-markdown was escaping these as `\[user.name\]`. Our
+    // post-process must unwind that.
+    const src =
+      'Greet the user by name.\n' +
+      'Use [user.name] (or "there" if missing) and reference [user.locale].'
+    const stats = await mountAndGetStats(src)
+    expect(stats).toEqual({ insertions: 0, deletions: 0 })
+  })
+
+  it('HTML-entity-prone characters (&, <, >) survive', async () => {
+    // Source has literal `&`, `<`, `>`. Tiptap-markdown's HTML rules
+    // were encoding them as `&amp;`, `&lt;`, `&gt;`. Our entity-decode
+    // pass restores the literals.
+    const src =
+      'Compare the candidate to the rubric.\n' +
+      'If <input> matches "ham & eggs" (case-insensitive), return YES.'
+    const stats = await mountAndGetStats(src)
+    expect(stats).toEqual({ insertions: 0, deletions: 0 })
+  })
+
+  it('literal escaped backslash (\\\\n) survives round-trip', async () => {
+    // Source has literal `\\n` (two chars: backslash + n) — a common
+    // pattern in prompts that teach an LLM to emit JSON-style escape
+    // sequences. The escape-stripping must protect the literal
+    // backslash and NOT collapse to `\n`.
+    const src = 'Output JSON with newlines escaped as the 2-char sequence \\\\n.'
+    const stats = await mountAndGetStats(src)
+    expect(stats).toEqual({ insertions: 0, deletions: 0 })
+  })
+
+  it('prompt with trailing newline (POSIX text file) survives', async () => {
+    // POSIX convention: text files end with `\n`. CommonMark
+    // serialisers drop it; our preserveTrailingNewline restores.
+    const src = 'You are a careful assistant.\n'
+    const stats = await mountAndGetStats(src)
+    expect(stats).toEqual({ insertions: 0, deletions: 0 })
+  })
+
+  it('prompt with NO trailing newline stays without one', async () => {
+    // Inverse: the source ends without `\n`; we must not add one.
+    const src = 'You are a careful assistant.'
+    const stats = await mountAndGetStats(src)
+    expect(stats).toEqual({ insertions: 0, deletions: 0 })
+  })
+
+  it('parenthesis + exclamation + dot escapes all unwind', async () => {
+    // Smoke for the wider escape-strip set: each of the punctuation
+    // chars on CommonMark's escapable list must round-trip clean.
+    const src =
+      'Important! When the user says (literal text), reply with the exact words: "ack."'
+    const stats = await mountAndGetStats(src)
+    expect(stats).toEqual({ insertions: 0, deletions: 0 })
+  })
 })
