@@ -56,6 +56,7 @@ FS_FALLBACK_IGNORE_DIRS = {
     ".git",
     ".venv",
     "venv",
+    ".env",
     "__pycache__",
     "dist",
     "build",

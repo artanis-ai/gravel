@@ -66,6 +66,7 @@ const FS_FALLBACK_IGNORE_DIRS = new Set([
   '.git',
   '.venv',
   'venv',
+  '.env',
   '__pycache__',
   'dist',
   'build',
