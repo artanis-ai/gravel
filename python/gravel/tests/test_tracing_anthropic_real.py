@@ -178,7 +178,7 @@ def test_messages_parse_records_exactly_one_row(
 def test_create_and_parse_dont_double_record(
     engine_with_tracing: Engine, mock_anthropic_client: anthropic.Anthropic
 ) -> None:
-    """Sequential .create + .parse → exactly two rows, one each.
+    """Sequential .create + .parse: exactly two rows, one each.
     Cross-method canary that fetch_tracing_disabled isn't leaking
     between calls."""
     mock_anthropic_client.messages.create(
@@ -207,5 +207,106 @@ def test_create_and_parse_dont_double_record(
     assert names.count("anthropic.messages.parse") == 1
     # And no spurious fetch rows from either call.
     assert "fetch:anthropic.messages" not in names, (
-        f"fetch_tracing_disabled regression — fetch row leaked: {rows}"
+        f"fetch_tracing_disabled regression: fetch row leaked: {rows}"
+    )
+
+
+def test_messages_stream_records_exactly_one_row(
+    engine_with_tracing: Engine, monkeypatch
+) -> None:
+    """`client.messages.stream(...)` is the context-manager streaming
+    helper. Pre-v0.9.2 this was un-patched on Python (TS had it from
+    earlier), so streaming-via-helper users silently got zero rows.
+
+    The mock streams an `event-stream` body shaped like a real
+    Anthropic SSE response: a `message_start`, one
+    `content_block_delta`, then `message_stop`. Our patch records on
+    `__exit__` of the inner MessageStream via class-level wraps on
+    `MessageStreamManager.__enter__` + `MessageStream.__exit__`."""
+    sse_body = (
+        "event: message_start\n"
+        "data: " + _msg_start_json() + "\n\n"
+        "event: content_block_start\n"
+        "data: " + _content_block_start_json() + "\n\n"
+        "event: content_block_delta\n"
+        "data: " + _content_block_delta_json() + "\n\n"
+        "event: content_block_stop\n"
+        "data: " + _content_block_stop_json() + "\n\n"
+        "event: message_delta\n"
+        "data: " + _message_delta_json() + "\n\n"
+        "event: message_stop\n"
+        "data: {\"type\":\"message_stop\"}\n\n"
+    )
+
+    def fake_handle(self, request):
+        return httpx.Response(
+            200,
+            content=sse_body.encode("utf-8"),
+            request=request,
+            headers={"content-type": "text/event-stream"},
+        )
+
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", fake_handle)
+    client = anthropic.Anthropic(api_key="sk-test")
+
+    with client.messages.stream(
+        model="claude-sonnet-4-5",
+        max_tokens=10,
+        messages=[{"role": "user", "content": "stream me"}],
+    ) as stream:
+        # Iterate so `get_final_message()` has a consolidated payload
+        # to return.
+        for _event in stream:
+            pass
+
+    rows = _persisted_rows(engine_with_tracing)
+    assert len(rows) == 1, f"expected exactly one stream row, got: {rows}"
+    assert rows[0][0] == "anthropic.messages.stream", (
+        f"trace name drifted from canonical: {rows}"
+    )
+    # make_record normalises status="ok" → "completed" (persistence
+    # column). Same convention as create/parse rows.
+    assert rows[0][1] == "completed", f"stream status not completed: {rows}"
+    # No spurious fetch row should accompany — fetch_tracing_disabled
+    # is in effect for the whole stream lifecycle via _wrap_stream.
+    names = [r[0] for r in rows]
+    assert "fetch:anthropic.messages" not in names, (
+        f"stream leaked a fetch row: {rows}"
+    )
+
+
+def _msg_start_json() -> str:
+    """The opening message_start event payload that anthropic's SSE
+    parser expects. Realistic shape (id/role/model/usage)."""
+    return (
+        '{"type":"message_start","message":{"id":"msg_stream",'
+        '"type":"message","role":"assistant","content":[],'
+        '"model":"claude-sonnet-4-5","stop_reason":null,'
+        '"stop_sequence":null,'
+        '"usage":{"input_tokens":3,"output_tokens":0}}}'
+    )
+
+
+def _content_block_start_json() -> str:
+    return (
+        '{"type":"content_block_start","index":0,'
+        '"content_block":{"type":"text","text":""}}'
+    )
+
+
+def _content_block_delta_json() -> str:
+    return (
+        '{"type":"content_block_delta","index":0,'
+        '"delta":{"type":"text_delta","text":"streamed hello"}}'
+    )
+
+
+def _content_block_stop_json() -> str:
+    return '{"type":"content_block_stop","index":0}'
+
+
+def _message_delta_json() -> str:
+    return (
+        '{"type":"message_delta","delta":{"stop_reason":"end_turn",'
+        '"stop_sequence":null},"usage":{"output_tokens":4}}'
     )

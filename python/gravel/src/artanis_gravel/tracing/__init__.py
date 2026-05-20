@@ -153,7 +153,7 @@ class _GravelContext:
             _state.reset(token)
 
     def run_with_fetch_tracing_disabled(self, fn: Callable[[], T]) -> T:
-        """Internal — used by SDK patches (openai / anthropic /
+        """Internal: used by SDK patches (openai / anthropic /
         langchain) to suppress the raw-fetch patch's recording of the
         underlying httpx / aiohttp call. Mirrors TS
         `gravelContext.runWithFetchTracingDisabled`."""
@@ -169,6 +169,26 @@ class _GravelContext:
             return fn()
         finally:
             _state.reset(token)
+
+    def push_fetch_tracing_disabled(self) -> Any:
+        """Push `fetch_tracing_disabled = True` and return a token.
+        Caller MUST pass the token to `pop_fetch_tracing_disabled()`
+        to restore. Use this when the suppression needs to span an
+        enter/exit pair (e.g. anthropic `Messages.stream` whose
+        underlying HTTP fires inside the user's `with` block, after
+        the SDK-level patch wrapper has already returned). For a
+        single synchronous call use the `run_with_*` form instead."""
+        prev = _current_state()
+        new = _ContextState(
+            metadata=dict(prev.metadata),
+            tracing_disabled=prev.tracing_disabled,
+            fetch_tracing_disabled=True,
+            sdk_tracing_disabled=prev.sdk_tracing_disabled,
+        )
+        return _state.set(new)
+
+    def pop_fetch_tracing_disabled(self, token: Any) -> None:
+        _state.reset(token)
 
 
 gravel_context_singleton = _GravelContext()
