@@ -189,6 +189,80 @@ func buildAddCommand(pm stack.PackageManager, pkg string) []string {
 // dependencies / devDependencies block?) so we don't have to
 // implement TOML parsing for pyproject.toml — a substring match on
 // the right key suffices for the common shapes.
+// EnsureDepResult mirrors SDKInstallResult but for an arbitrary
+// package the wizard needs to add (e.g. psycopg2-binary when the
+// traces pillar detects Python + postgres). Same kind enum.
+type EnsureDepResult struct {
+	Package string
+	Kind    SDKInstallKind
+	Command string
+	Stderr  string
+}
+
+// EnsureDepInstalled is the generic sibling of EnsureSDKInstalled.
+// Adds `pkg` via the project's package manager unless it's already
+// declared. Used by the traces pillar for psycopg2-binary on
+// hybrid Python+postgres stacks (Olly's #10 from the v0.6.2
+// dogfooding; bites again every time someone's frontend ORM in
+// Next.js sets DATABASE_URL but the Python side never grew a
+// driver).
+func EnsureDepInstalled(ctx context.Context, d Detection, pkg string) EnsureDepResult {
+	command := buildAddCommand(d.PackageManager, pkg)
+	result := EnsureDepResult{Package: pkg, Command: strings.Join(command, " ")}
+
+	manifestPath := manifestPathFor(d)
+	if !pathExists(manifestPath) {
+		result.Kind = SDKSkippedNoManifest
+		return result
+	}
+	present, _ := alreadyDeclares(manifestPath, pkg, d.Language)
+	if present {
+		result.Kind = SDKAlreadyPresent
+		return result
+	}
+	cmd := exec.CommandContext(ctx, command[0], command[1:]...)
+	cmd.Dir = d.CWD
+	cmd.Stdout = os.Stderr
+	var stderrBuf strings.Builder
+	cmd.Stderr = &stderrBuf
+	if err := cmd.Run(); err != nil {
+		result.Kind = SDKFailed
+		result.Stderr = stderrBuf.String()
+		return result
+	}
+	result.Kind = SDKAdded
+	return result
+}
+
+// NeedsPsycopg2 returns true when the host stack is Python with a
+// postgres DATABASE_URL but pyproject.toml doesn't yet declare
+// either psycopg2 or psycopg2-binary. Pre-flight check used by
+// PlanTraces so the action plan + agent narration mention the
+// driver before --apply touches the install.
+func NeedsPsycopg2(d Detection) bool {
+	if d.Language != stack.LanguagePython {
+		return false
+	}
+	if d.DBDriver != DBPostgres {
+		return false
+	}
+	manifestPath := manifestPathFor(d)
+	if !pathExists(manifestPath) {
+		// No pyproject.toml — we'd skip the install entirely; nothing
+		// to announce. The traces pillar will surface the missing
+		// manifest separately.
+		return false
+	}
+	// Either psycopg2 OR psycopg2-binary satisfies SQLAlchemy's
+	// driver lookup; treat both as "already wired".
+	for _, candidate := range []string{"psycopg2-binary", "psycopg2"} {
+		if present, _ := alreadyDeclares(manifestPath, candidate, d.Language); present {
+			return false
+		}
+	}
+	return true
+}
+
 func alreadyDeclares(manifestPath, pkg string, lang stack.Language) (bool, error) {
 	body, err := os.ReadFile(manifestPath)
 	if err != nil {

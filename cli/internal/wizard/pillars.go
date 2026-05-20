@@ -308,6 +308,18 @@ func PlanTraces(ctx context.Context, opts TracesPillarOptions) PillarPlan {
 			Summary: fmt.Sprintf("Confirmed %s reachable via DATABASE_URL.", probe.Dialect),
 		})
 	}
+	// Hybrid Next.js + FastAPI stacks routinely set DATABASE_URL for
+	// the JS-side ORM (Drizzle/Prisma) without ever adding a Python
+	// driver. SQLAlchemy crashes at create_engine with
+	// "ModuleNotFoundError: psycopg2" — same bite as Olly v0.6.2 #10.
+	// Surface the install in the plan so the agent can narrate it.
+	if NeedsPsycopg2(d) {
+		plan.Actions = append(plan.Actions, PillarAction{
+			Kind:    ActionInstallDep,
+			Path:    "pyproject.toml",
+			Summary: "Add `psycopg2-binary` to your Python deps so SQLAlchemy can talk to the detected Postgres DATABASE_URL.",
+		})
+	}
 	already, _ := migrate.TablesAlreadyExist(ctx, probe.URL, probe.Dialect)
 	if already {
 		plan.Warnings = append(plan.Warnings, "gravel_samples + gravel_feedback already exist in this DB; CREATE TABLE step will be a no-op.")
@@ -336,6 +348,10 @@ func PlanTraces(ctx context.Context, opts TracesPillarOptions) PillarPlan {
 type TracesApplyResult struct {
 	DBProbe        DBProbeResult
 	MigrateApplied bool
+	// PsycopgInstall is populated when the hybrid-postgres detection
+	// added (or attempted to add) psycopg2-binary. Zero value means
+	// the driver was already present or not needed.
+	PsycopgInstall EnsureDepResult
 }
 
 // ApplyTraces probes the DB, creates the tables, wires instrumentation,
@@ -346,6 +362,12 @@ func ApplyTraces(ctx context.Context, opts TracesPillarOptions) (TracesApplyResu
 	result := TracesApplyResult{DBProbe: probe}
 	if probe.Kind != ProbeOK {
 		return result, fmt.Errorf("DB probe failed: %s", probe.Message)
+	}
+	// Add psycopg2-binary first so the migrate step's later
+	// `create_engine` call has a driver. Surfaced via PsycopgInstall
+	// on the result so the wizard's summary line can report it.
+	if NeedsPsycopg2(d) {
+		result.PsycopgInstall = EnsureDepInstalled(ctx, d, "psycopg2-binary")
 	}
 	already, _ := migrate.TablesAlreadyExist(ctx, probe.URL, probe.Dialect)
 	if !already {

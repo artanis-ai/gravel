@@ -48,6 +48,105 @@ func TestParseLatestTag(t *testing.T) {
 	}
 }
 
+// InstallHint maps the detected stack to a copy-pasteable upgrade
+// command. The agent contract in llms.txt Step 0 promises this exact
+// shape, so each stack/manager combo is pinned here. The `latest`
+// pointer drives the version floor in the constraint; nil falls back
+// to the dist-tag form.
+func TestInstallHint(t *testing.T) {
+	latest := "v0.9.0"
+	cases := []struct {
+		name    string
+		stack   stack.Stack
+		latest  *string
+		want    string
+	}{
+		{
+			"uv with latest pin",
+			stack.Stack{Language: stack.LanguagePython, PackageManager: stack.PackageManagerUV},
+			&latest,
+			"uv add 'artanis-gravel>=0.9.0' --upgrade-package artanis-gravel",
+		},
+		{
+			"uv without latest",
+			stack.Stack{Language: stack.LanguagePython, PackageManager: stack.PackageManagerUV},
+			nil,
+			"uv add 'artanis-gravel' --upgrade-package artanis-gravel",
+		},
+		{
+			"poetry with latest pin",
+			stack.Stack{Language: stack.LanguagePython, PackageManager: stack.PackageManagerPoetry},
+			&latest,
+			"poetry add 'artanis-gravel@>=0.9.0'",
+		},
+		{
+			"pip",
+			stack.Stack{Language: stack.LanguagePython, PackageManager: stack.PackageManagerPip},
+			&latest,
+			"pip install -U artanis-gravel",
+		},
+		{
+			"pipenv",
+			stack.Stack{Language: stack.LanguagePython, PackageManager: stack.PackageManagerPipenv},
+			&latest,
+			"pipenv install --upgrade artanis-gravel",
+		},
+		{
+			"pnpm",
+			stack.Stack{Language: stack.LanguageTS, PackageManager: stack.PackageManagerPNPM},
+			&latest,
+			"pnpm add @artanis-ai/gravel@latest",
+		},
+		{
+			"npm",
+			stack.Stack{Language: stack.LanguageTS, PackageManager: stack.PackageManagerNPM},
+			&latest,
+			"npm install @artanis-ai/gravel@latest",
+		},
+		{
+			"yarn",
+			stack.Stack{Language: stack.LanguageTS, PackageManager: stack.PackageManagerYarn},
+			&latest,
+			"yarn add @artanis-ai/gravel@latest",
+		},
+		{
+			"bun",
+			stack.Stack{Language: stack.LanguageTS, PackageManager: stack.PackageManagerBun},
+			&latest,
+			"bun add @artanis-ai/gravel@latest",
+		},
+		{
+			"unknown stack falls back to curl|sh",
+			stack.Stack{Language: stack.Language(""), PackageManager: stack.PackageManager("")},
+			&latest,
+			InstallCommand(),
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := InstallHint(tc.stack, tc.latest); got != tc.want {
+				t.Errorf("InstallHint(%v, %v) = %q, want %q", tc.stack, tc.latest, got, tc.want)
+			}
+		})
+	}
+}
+
+// GetVersionInfo must populate the installHint field so the JSON
+// payload llms.txt step 0 consumes contains the upgrade command.
+func TestGetVersionInfo_IncludesInstallHint(t *testing.T) {
+	fetcher := func(context.Context) (string, error) { return "v0.9.0", nil }
+	info := GetVersionInfo(context.Background(),
+		stack.Stack{Language: stack.LanguagePython, PackageManager: stack.PackageManagerUV},
+		"0.8.4", fetcher)
+	want := "uv add 'artanis-gravel>=0.9.0' --upgrade-package artanis-gravel"
+	if info.InstallHint != want {
+		t.Errorf("InstallHint = %q, want %q", info.InstallHint, want)
+	}
+	if !info.HasUpdate {
+		t.Errorf("expected HasUpdate=true for 0.8.4 → 0.9.0")
+	}
+}
+
 func TestInstallCommand(t *testing.T) {
 	got := InstallCommand()
 	// We don't pin the exact URL in the assertion (DESIGN doc owns it),

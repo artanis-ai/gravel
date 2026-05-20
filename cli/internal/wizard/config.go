@@ -149,15 +149,18 @@ func pythonConfig(d Detection, opts ConfigOptions) string {
 	// uvicorn is launched in a way that bypasses our config import.
 	//
 	// The `database` key is ALWAYS emitted (Python's GravelConfig
-	// dataclass declares it required). When the user opts out of the
-	// traces pillar, we still need a URL the SDK can open without
-	// crashing — published `artanis-gravel<=0.5.2` calls
-	// `open_database(url)` unconditionally and raises ValueError on
-	// the empty string. We write a stub local SQLite URL pointing at
-	// `.gravel/dev.db`; the SDK opens it (empty file), no gravel_*
-	// tables exist, sample routes degrade to empty pages, the
-	// dashboard SPA still renders. The user can later swap in a real
-	// DATABASE_URL by re-running with `--traces`.
+	// dataclass declares it required), but on a no-traces install it
+	// holds an EMPTY url. The SDK's `create_gravel_router` checks
+	// `if db_url: engine = open_database(db_url)` — empty URL leaves
+	// engine=None, samples routes degrade to empty pages, the
+	// dashboard SPA still renders. No SQLite file is created.
+	//
+	// Pre-v0.9.0 we wrote a stub `file:.gravel/dev.db` URL because
+	// older SDKs (<=0.5.2) raised ValueError on the empty string. With
+	// v0.5.3+ that's been fixed and the stub URL caused a real bug:
+	// Olly's dogfooding (2026-05-20) saw a spurious `.gravel/dev.db`
+	// (or top-level `gravel.db`) get created on every install, even
+	// when traces weren't enabled. Dropping the stub closes that.
 	//
 	// The file also auto-loads `.env.local` / `.env` at import time
 	// so `uv run …` / `python -m uvicorn …` / `gunicorn` all pick up
@@ -168,10 +171,7 @@ func pythonConfig(d Detection, opts ConfigOptions) string {
 	if envVar == "" {
 		envVar = "DATABASE_URL"
 	}
-	// Stub URL for the no-traces case. Resolved relative to the
-	// config file's own directory so the path is stable regardless
-	// of where uvicorn is invoked from.
-	urlExpr := "f'file:{Path(__file__).resolve().parent}/.gravel/dev.db'"
+	urlExpr := "''"
 	if opts.WithDatabase {
 		urlExpr = fmt.Sprintf("os.environ.get('%s', '')", envVar)
 	}

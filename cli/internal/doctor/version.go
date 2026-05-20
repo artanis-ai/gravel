@@ -53,12 +53,20 @@ const (
 // consume this struct. So we keep the shape CLI-focused.
 //
 // JSON tags use camelCase for consistency with other Gravel JSON APIs.
+//
+// `installHint` is the package-manager-specific upgrade command, e.g.
+// `uv add 'artanis-gravel>=0.9.0' --upgrade` for uv or `pnpm add
+// @artanis-ai/gravel@latest` for pnpm. Falls back to the `curl | sh`
+// binary install when the host stack is unrecognised. Step 0 in
+// llms.txt instructs the installing agent to run this exact string
+// after asking the user.
 type VersionInfo struct {
 	Current        string               `json:"current"`
 	Latest         *string              `json:"latest"`
 	HasUpdate      bool                 `json:"hasUpdate"`
 	Language       stack.Language       `json:"language"`
 	PackageManager stack.PackageManager `json:"packageManager"`
+	InstallHint    string               `json:"installHint"`
 }
 
 // Fetcher abstracts the registry HTTP call so tests can drive the
@@ -182,7 +190,56 @@ func GetVersionInfo(ctx context.Context, s stack.Stack, current string, fetch Fe
 		HasUpdate:      hasUpdate,
 		Language:       s.Language,
 		PackageManager: s.PackageManager,
+		InstallHint:    InstallHint(s, latest),
 	}
+}
+
+// InstallHint returns the package-manager-specific upgrade command the
+// agent should run after the user confirms an upgrade. Falls back to
+// the binary `curl | sh` line when the stack isn't recognised.
+//
+// When `latest` is known we pin the floor in the version constraint —
+// for uv / poetry this is the recommended form ("at least the latest")
+// and avoids drift between repo runs. For npm / pnpm / yarn / bun the
+// `@latest` dist-tag is canonical.
+func InstallHint(s stack.Stack, latest *string) string {
+	latestVer := ""
+	if latest != nil {
+		latestVer = strings.TrimPrefix(*latest, "v")
+	}
+	switch s.Language {
+	case stack.LanguagePython:
+		switch s.PackageManager {
+		case stack.PackageManagerUV:
+			if latestVer != "" {
+				return fmt.Sprintf("uv add 'artanis-gravel>=%s' --upgrade-package artanis-gravel", latestVer)
+			}
+			return "uv add 'artanis-gravel' --upgrade-package artanis-gravel"
+		case stack.PackageManagerPoetry:
+			if latestVer != "" {
+				return fmt.Sprintf("poetry add 'artanis-gravel@>=%s'", latestVer)
+			}
+			return "poetry add artanis-gravel"
+		case stack.PackageManagerPip:
+			return "pip install -U artanis-gravel"
+		case stack.PackageManagerPipenv:
+			return "pipenv install --upgrade artanis-gravel"
+		}
+	case stack.LanguageTS:
+		switch s.PackageManager {
+		case stack.PackageManagerPNPM:
+			return "pnpm add @artanis-ai/gravel@latest"
+		case stack.PackageManagerNPM:
+			return "npm install @artanis-ai/gravel@latest"
+		case stack.PackageManagerYarn:
+			return "yarn add @artanis-ai/gravel@latest"
+		case stack.PackageManagerBun:
+			return "bun add @artanis-ai/gravel@latest"
+		}
+	}
+	// Unknown stack — fall back to the canonical binary install. Same
+	// command works as upgrade because install.sh overwrites.
+	return InstallCommand()
 }
 
 // InstallCommand returns the single canonical install / upgrade line.

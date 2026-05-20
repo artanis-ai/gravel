@@ -260,13 +260,14 @@ func TestGenerateConfig_TSNextAuthMissingHelper(t *testing.T) {
 // running the wizard against the released SDK got a server that
 // failed to import.
 //
-// Fix: when WithDatabase=false, write a stub local SQLite URL
-// pointing at `<config-dir>/.gravel/dev.db`. The SDK opens this
-// empty file, sees no gravel_* tables, returns empty pages from
-// sample routes, and the dashboard SPA renders cleanly. Result:
-// the wizard's prompts-only contract works without requiring a
-// new SDK release.
-func TestGenerateConfig_PythonNoDatabase_WritesStubSqliteUrl(t *testing.T) {
+// v0.9.0: when WithDatabase=false, emit an EMPTY database URL.
+// Pre-v0.9.0 we wrote a stub `file:.gravel/dev.db` because
+// artanis-gravel<=0.5.2 crashed on empty URLs; with v0.5.3+ that's
+// fixed and the stub URL caused a real bug — Olly's dogfooding
+// (2026-05-20) saw a spurious SQLite file get created on every
+// install, even when traces weren't enabled. Empty URL means
+// `create_gravel_router` leaves engine=None and no file is created.
+func TestGenerateConfig_PythonNoDatabase_WritesEmptyUrl(t *testing.T) {
 	dir := t.TempDir()
 	d := Detection{
 		CWD:      dir,
@@ -280,10 +281,8 @@ func TestGenerateConfig_PythonNoDatabase_WritesStubSqliteUrl(t *testing.T) {
 	}
 	body, _ := os.ReadFile(path)
 	got := string(body)
-	// Stub URL must reference `.gravel/dev.db` relative to the config
-	// file's resolved directory. Path() is part of the env-loader
-	// preamble so we don't need to re-import.
-	mustContain(t, got, ".gravel/dev.db")
+	// Empty URL — no SQLite file gets created.
+	mustContain(t, got, "database={'url': ''}")
 	// No env-var lookup for DATABASE_URL when traces is skipped.
 	if strings.Contains(got, "os.environ['DATABASE_URL']") {
 		t.Errorf("config reads DATABASE_URL with bracket syntax (KeyError-prone):\n%s", got)
@@ -291,14 +290,14 @@ func TestGenerateConfig_PythonNoDatabase_WritesStubSqliteUrl(t *testing.T) {
 	if strings.Contains(got, "os.environ.get('DATABASE_URL'") {
 		t.Errorf("WithDatabase=false should NOT lookup DATABASE_URL at all:\n%s", got)
 	}
-	// Empty URL would crash the published SDK — make sure we never
-	// emit it.
-	if strings.Contains(got, "database={'url': ''}") {
-		t.Errorf("regression: empty database URL would crash artanis-gravel<=0.5.2:\n%s", got)
+	// Stub sqlite path must NOT appear (Olly bug).
+	if strings.Contains(got, ".gravel/dev.db") {
+		t.Errorf("regression: WithDatabase=false must NOT emit a stub SQLite URL:\n%s", got)
 	}
 	mustContain(t, got, "mount_path='/admin/ai'")
 	mustContain(t, got, "'default_password': os.environ.get('GRAVEL_ADMIN_PASSWORD', '')")
-	// .gravel/ directory must be created so the SDK can write dev.db.
+	// .gravel/ directory still created (for manifest etc.); it just
+	// stays empty on a no-traces install.
 	if _, err := os.Stat(filepath.Join(dir, ".gravel")); err != nil {
 		t.Errorf(".gravel/ directory not created: %v", err)
 	}
@@ -369,8 +368,8 @@ func TestGenerateConfig_PythonUsesGetForEnvLookups(t *testing.T) {
 
 func TestGenerateConfig_PythonDjangoNoDatabase(t *testing.T) {
 	// Django path generates its own auth block. WithDatabase=false
-	// emits the same stub-sqlite URL as the no-Django path so the
-	// SDK doesn't crash on import.
+	// emits the empty database URL (v0.9.0 behaviour — no spurious
+	// SQLite file).
 	dir := t.TempDir()
 	d := Detection{
 		CWD:      dir,
@@ -381,7 +380,10 @@ func TestGenerateConfig_PythonDjangoNoDatabase(t *testing.T) {
 	path, _ := GenerateConfig(d, ConfigOptions{MountPath: "/admin/ai", WithDatabase: false})
 	body, _ := os.ReadFile(path)
 	got := string(body)
-	mustContain(t, got, ".gravel/dev.db")
+	mustContain(t, got, "database={'url': ''}")
+	if strings.Contains(got, ".gravel/dev.db") {
+		t.Errorf("Django + WithDatabase=false must NOT emit stub SQLite URL:\n%s", got)
+	}
 	if strings.Contains(got, "os.environ.get('DATABASE_URL'") {
 		t.Errorf("Django + WithDatabase=false should NOT lookup DATABASE_URL:\n%s", got)
 	}

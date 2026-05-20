@@ -13,19 +13,23 @@ import (
 
 func newPromptsCmd() *cobra.Command {
 	var (
-		plan         bool
-		apply        bool
-		noDeepScan   bool
-		noHook       bool
-		acceptAll    bool
+		plan       bool
+		apply      bool
+		noDeepScan bool
+		withHook   bool
+		acceptAll  bool
 	)
 	cmd := &cobra.Command{
 		Use:   "prompts",
-		Short: "Install only the prompts pillar (manifest + optional pre-commit hook).",
-		Long: `The Prompts pillar: regex-scans conventional prompt dirs (prompts/,
-templates/, etc.), writes .gravel/manifest.json indexing each prompt
-by id/path/hash, and (by default, when .git is present) installs a
-pre-commit hook so the manifest stays in sync.
+		Short: "Install only the prompts pillar (manifest; pre-commit hook is opt-in).",
+		Long: `The Prompts pillar: walks the repo (` + "`git ls-files`" + ` when available;
+a .gitignore-respecting filesystem walk otherwise) and indexes every
+.md / .markdown / .txt / .mdx / .mdc file as a prompt entry in
+.gravel/manifest.json, keyed by id/path/hash.
+
+The pre-commit hook is **opt-in** (pass --with-hook). When installed,
+it runs ` + "`gravel manifest check`" + ` before each commit so the manifest stays
+in sync with the source files.
 
 Agents: --plan emits a JSON action list; --apply does the work. Pass
 --no-deep-scan to skip the "did I find everything?" loop in non-TTY
@@ -43,7 +47,7 @@ verify loop entirely.`,
 			opts := wizard.PromptsPillarOptions{
 				Detection:    d,
 				SkipDeepScan: noDeepScan,
-				InstallHook:  !noHook,
+				InstallHook:  withHook,
 				Prompter:     wizard.DefaultsPrompter{},
 			}
 			if !acceptAll && !plan {
@@ -73,7 +77,7 @@ verify loop entirely.`,
 	cmd.Flags().BoolVar(&plan, "plan", false, "Emit a JSON action plan without writing anything.")
 	cmd.Flags().BoolVar(&apply, "apply", false, "Execute the scan + write the manifest (default).")
 	cmd.Flags().BoolVar(&noDeepScan, "no-deep-scan", false, "Skip the LLM-assisted 'did I find everything?' second pass.")
-	cmd.Flags().BoolVar(&noHook, "no-hook", false, "Don't install the pre-commit hook.")
+	cmd.Flags().BoolVar(&withHook, "with-hook", false, "Also install a pre-commit hook (default off; opt-in per Olly's dogfooding).")
 	cmd.Flags().BoolVar(&acceptAll, "accept-all", false, "Accept every prompt the scanner finds (agent flow).")
 	return cmd
 }
