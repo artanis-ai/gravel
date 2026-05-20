@@ -154,23 +154,26 @@ func TestRunScanAndVerify_AllRejected_WritesEmptyManifest(t *testing.T) {
 
 func TestRunScanAndVerify_ManualEntry_WholeFile(t *testing.T) {
 	silenceUI(t)
+	// `.hbs` is intentionally outside the v0.9.0 allowlist
+	// (.md/.markdown/.txt/.mdx/.mdc). Whole-file manual entry is the
+	// path for non-standard prompt formats — Handlebars templates,
+	// Jinja, etc.
 	dir := newFixture(t, map[string]string{
-		"custom/my-prompt.txt": "manual prompt content\n",
-		// No prompts/ dir so fast-scan finds nothing.
+		"custom/my-prompt.hbs": "manual prompt content\n",
 	})
 	// "Did I find everything?" no  →  menu choice "m" (manual)
-	//   path → "custom/my-prompt.txt", whole-file? yes
+	//   path → "custom/my-prompt.hbs", whole-file? yes
 	// → manifest written; loop asks "Did I find everything?" again
 	// → yes this time.
 	p := &scriptedPrompter{
 		yesNo: []bool{false /* did-i-find-everything */, true /* whole file */, true /* did-i-find-everything? */},
-		text:  []string{"m" /* menu */, "custom/my-prompt.txt"},
+		text:  []string{"m" /* menu */, "custom/my-prompt.hbs"},
 	}
 	m, err := RunScanAndVerify(context.Background(), dir, p, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(m.Prompts) != 1 || m.Prompts[0].Path != "custom/my-prompt.txt" {
+	if len(m.Prompts) != 1 || m.Prompts[0].Path != "custom/my-prompt.hbs" {
 		t.Errorf("manual entry not added; got %+v", m.Prompts)
 	}
 	if m.Prompts[0].Type != manifest.PromptFile {

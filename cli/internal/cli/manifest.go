@@ -49,8 +49,15 @@ manifest plus new .md / .txt / .prompt files in conventional directories.`,
 			if err != nil {
 				return err
 			}
-			extraRoots := readPromptScanRoots(cwd)
-			res, err := manifest.FastScanWithRoots(cwd, current, extraRoots)
+			if hasPromptScanRootsField(cwd) {
+				// v0.9.0 deprecation: the scanner now walks the entire
+				// repo respecting .gitignore, so the per-project
+				// override is no longer needed. One-line warning to
+				// stderr; we still do the scan correctly.
+				fmt.Fprintln(cmd.ErrOrStderr(),
+					"Gravel (deprecation): `promptScanRoots` in your gravel_config is ignored as of v0.9.0 — the scanner now walks the full repo respecting .gitignore. Safe to remove the field.")
+			}
+			res, err := manifest.FastScan(cwd, current)
 			if err != nil {
 				return err
 			}
@@ -112,35 +119,21 @@ func runList(cmd *cobra.Command, res manifest.FastScanResult) error {
 	return nil
 }
 
-// readPromptScanRoots reads optional `promptScanRoots` from the
-// project's gravel_config.{ts,py}. Returns nil on any failure — the
-// scanner falls back to the conventional default list.
-//
-// Cheap regex parse rather than a full TS/Python evaluator: the field
-// is a single literal array of strings; if the user writes something
-// fancy they can re-run with the path baked into the conventional
-// dirs. Olly's #15 was the canonical case (api/py/prompts/).
-func readPromptScanRoots(cwd string) []string {
+// hasPromptScanRootsField returns true when the project's
+// gravel_config.{ts,py} still defines the deprecated `promptScanRoots`
+// / `prompt_scan_roots` field. v0.9.0 dropped it (scanner now walks
+// the full repo respecting .gitignore); detecting it on disk lets us
+// nudge the user to remove the field without errors.
+func hasPromptScanRootsField(cwd string) bool {
 	for _, name := range []string{"gravel.config.ts", "gravel_config.py"} {
 		body, err := os.ReadFile(filepath.Join(cwd, name))
 		if err != nil {
 			continue
 		}
-		text := string(body)
-		// Match: `promptScanRoots: ["foo", "bar"]` (TS) or
-		//        `prompt_scan_roots=['foo', 'bar']` (Python).
-		re := regexp.MustCompile(`(?i)prompt[_]?scan[_]?roots\s*[:=]\s*\[([^\]]*)\]`)
-		m := re.FindStringSubmatch(text)
-		if m == nil {
-			continue
+		re := regexp.MustCompile(`(?i)prompt[_]?scan[_]?roots\s*[:=]\s*\[`)
+		if re.Match(body) {
+			return true
 		}
-		inner := m[1]
-		strRe := regexp.MustCompile(`['"]([^'"]+)['"]`)
-		var roots []string
-		for _, s := range strRe.FindAllStringSubmatch(inner, -1) {
-			roots = append(roots, s[1])
-		}
-		return roots
 	}
-	return nil
+	return false
 }

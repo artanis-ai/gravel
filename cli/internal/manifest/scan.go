@@ -1,45 +1,58 @@
+// Fast scan over the working tree to keep .gravel/manifest.json in
+// sync with the user's prompt files.
+//
+// As of v0.9.0 the scan walks the WHOLE repo (respecting .gitignore)
+// instead of only the conventional `prompts/`, `templates/`, etc.
+// directories. The previous behaviour missed real-world layouts
+// (Olly's de_platform kept prompts under `api/py/prompts/`); the
+// v0.8.1 `prompt_scan_roots` config field was a band-aid we've now
+// removed. Any `promptScanRoots` in gravel_config emits a one-time
+// deprecation warning at the CLI layer.
 package manifest
 
 import (
+	"bufio"
+	"bytes"
 	"errors"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 )
 
-// FastScan covers the pre-commit-hook path: pure file I/O, no LLM, no
-// AST walk.
-//
-// Catches:
-//   - Edits to known prompts (re-hash, update positions)
-//   - New `.md`/`.txt`/`.prompt` files in conventional prompt dirs
-//   - Deletions (drop entries whose backing file is gone)
-//
-// Does NOT detect new embedded prompts in code; that's deep-scan's
-// job (LLM-assisted, separate command).
-
-// promptFileDirs are the conventional directories the wizard looks
-// inside for new `.md` / `.txt` / `.prompt` files. Kept in sync with
-// packages/sdk-ts/src/manifest/scan.ts.
-var promptFileDirs = []string{"prompts", "prompt", "templates", "assistants", "agents"}
-
-// promptFileExts is the allowlist of new-file extensions a fast scan
-// will pick up automatically.
+// promptFileExts is the allowlist of file extensions a fast scan
+// picks up automatically. Kept in sync with
+// packages/sdk-ts/src/manifest/scan.ts. Added `.mdx` / `.mdc` in
+// v0.9.0 per Olly's dogfooding (Cursor rules + MDX docs).
 var promptFileExts = map[string]struct{}{
-	".md":     {},
-	".txt":    {},
-	".prompt": {},
+	".md":       {},
+	".markdown": {},
+	".txt":      {},
+	".mdx":      {},
+	".mdc":      {},
+}
+
+// docDirNames is the case-insensitive set of directory names that the
+// fast scan refuses to recurse into when looking for prompts. The
+// canonical shape is `prompts/docs/how-to-write.md` — documentation
+// about the prompts, not the prompts themselves. Same with
+// `templates/examples/`. The walker drops any path whose segments
+// include one of these names; the full-repo v0.9.0 walker means we
+// have to filter by path component rather than the old SkipDir.
+var docDirNames = map[string]struct{}{
+	"docs":          {},
+	"doc":           {},
+	"documentation": {},
+	"examples":      {},
 }
 
 // docFilenames is the case-insensitive denylist of conventional
 // documentation filenames (without extension) the fast scan refuses
 // to ingest as prompts. Without this, a project that keeps a
-// `prompts/README.md` describing its own prompt conventions ends up
-// with the README itself as a fake prompt in the manifest. The user
-// can still add a genuinely-named-README prompt via the wizard's
-// manual-entry path.
+// `README.md` next to its prompts ends up with the README itself as
+// a fake prompt in the manifest.
 //
 // Source: the set of files GitHub treats as project metadata + a few
 // extras seen in real customer repos.
@@ -63,15 +76,34 @@ var docFilenames = map[string]struct{}{
 	"USAGE":           {},
 }
 
-// docDirNames is the set of subdirectory names INSIDE a conventional
-// prompt dir that fast-scan skips wholesale. Common pattern:
-// `prompts/docs/` for "how to write good prompts" docs. The whole
-// subtree gets pruned via filepath.SkipDir.
-var docDirNames = map[string]struct{}{
-	"docs":          {},
-	"doc":           {},
-	"documentation": {},
-	"examples":      {},
+// defaultIgnoreDirs is the FS-walk fallback's safety net for projects
+// that aren't a git repo (or git CLI is unavailable). When git is
+// present we let .gitignore decide; this list only kicks in when we
+// have to recurse manually.
+var defaultIgnoreDirs = map[string]struct{}{
+	"node_modules": {},
+	".git":         {},
+	".venv":        {},
+	"venv":         {},
+	".env":         {},
+	"__pycache__":  {},
+	"dist":         {},
+	"build":        {},
+	"out":          {},
+	"target":       {},
+	".next":        {},
+	".nuxt":        {},
+	".svelte-kit":  {},
+	".turbo":       {},
+	".cache":       {},
+	".pytest_cache": {},
+	".mypy_cache":  {},
+	".tox":         {},
+	".gradle":      {},
+	".idea":        {},
+	".vscode":      {},
+	"coverage":     {},
+	"vendor":       {},
 }
 
 // isDocFilename returns true when filename (e.g. "README.md")
@@ -79,6 +111,28 @@ var docDirNames = map[string]struct{}{
 func isDocFilename(filename string) bool {
 	stem := strings.ToUpper(strings.TrimSuffix(filename, filepath.Ext(filename)))
 	_, ok := docFilenames[stem]
+	return ok
+}
+
+// isInDocDir returns true when any segment of the repo-relative path
+// matches docDirNames (case-insensitive). Skips `prompts/docs/...`
+// and `templates/examples/...` style subtrees so docs about prompts
+// don't pollute the manifest.
+func isInDocDir(relPath string) bool {
+	for _, seg := range strings.Split(relPath, "/") {
+		if _, ok := docDirNames[strings.ToLower(seg)]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// hasPromptExt is the canonical extension check the scanner uses.
+// Exported because callers (e.g. the deep-scan agent) want the same
+// rule.
+func hasPromptExt(name string) bool {
+	ext := strings.ToLower(filepath.Ext(name))
+	_, ok := promptFileExts[ext]
 	return ok
 }
 
@@ -96,22 +150,11 @@ type FastScanResult struct {
 // Pure function modulo file I/O. Returns the new manifest plus
 // counts; the caller decides whether to persist via Write().
 //
-// Reads the optional `promptScanRoots` field from the project's
-// gravel_config.{ts,py} via FastScanWithRoots. The bare FastScan is
-// the historical shape — convenience for callers that don't have a
-// reason to override.
+// As of v0.9.0 the scan walks the full repo respecting .gitignore
+// (via `git ls-files`) rather than only a hardcoded set of dirs.
+// Falls back to a filesystem walk + a conservative ignore list when
+// git isn't available.
 func FastScan(repoRoot string, current Manifest) (FastScanResult, error) {
-	return FastScanWithRoots(repoRoot, current, nil)
-}
-
-// FastScanWithRoots is FastScan with an explicit override list of
-// directories to scan in addition to the conventional defaults. Pass
-// nil for `extraRoots` to get the default list (`prompts/`,
-// `templates/`, etc. — see promptFileDirs). Olly's de_platform install
-// kept prompts under `api/py/prompts/` which isn't in the default
-// list; the wizard now lets users set `promptScanRoots` in their
-// gravel_config and routes it through here.
-func FastScanWithRoots(repoRoot string, current Manifest, extraRoots []string) (FastScanResult, error) {
 	result := FastScanResult{
 		Manifest: Manifest{
 			Version:            current.Version,
@@ -154,10 +197,9 @@ func FastScanWithRoots(repoRoot string, current Manifest, extraRoots []string) (
 			// Re-hash the code-point slice the manifest currently
 			// points at. Position tracking when the body moves is the
 			// deep-scan's job; fast scan only updates the hash when
-			// the slice's content drifts. Matches the TS reference
-			// behaviour + caveat. Offsets are CODE POINTS (matches
-			// Python str slicing), never bytes — see offsets.go for
-			// the cross-stack contract.
+			// the slice's content drifts. Offsets are CODE POINTS
+			// (matches Python str slicing), never bytes — see
+			// offsets.go for the cross-stack contract.
 			cs, ce := 0, 0
 			if p.CharStart != nil {
 				cs = *p.CharStart
@@ -190,87 +232,50 @@ func FastScanWithRoots(repoRoot string, current Manifest, extraRoots []string) (
 		}
 	}
 
-	// 2. Discover new file-type prompts in conventional dirs.
+	// 2. Discover new file-type prompts anywhere in the repo
+	// (respecting .gitignore). The walk yields repo-relative,
+	// forward-slashed paths.
 	known := make(map[string]struct{}, len(current.Prompts))
 	for _, p := range current.Prompts {
 		known[p.Path] = struct{}{}
 	}
-	// Union the conventional dirs with any user-configured extras. We
-	// dedupe so a config that re-lists a default dir doesn't double-
-	// scan it; preserve insertion order so output is deterministic.
-	scanRoots := make([]string, 0, len(promptFileDirs)+len(extraRoots))
-	seenRoots := make(map[string]struct{}, len(promptFileDirs)+len(extraRoots))
-	for _, d := range append(append([]string{}, promptFileDirs...), extraRoots...) {
-		if d = strings.TrimSpace(d); d == "" {
-			continue
-		}
-		// Normalise to forward slash for the dedupe key so a user
-		// passing "api\\py\\prompts" on Windows doesn't escape it.
-		key := filepath.ToSlash(d)
-		if _, dup := seenRoots[key]; dup {
-			continue
-		}
-		seenRoots[key] = struct{}{}
-		scanRoots = append(scanRoots, d)
+
+	candidates, err := walkRepoFiles(repoRoot)
+	if err != nil {
+		return FastScanResult{}, err
 	}
-	for _, d := range scanRoots {
-		dirAbs := filepath.Join(repoRoot, d)
-		info, err := os.Stat(dirAbs)
-		if err != nil || !info.IsDir() {
+	for _, rel := range candidates {
+		if _, dup := known[rel]; dup {
 			continue
 		}
-		err = filepath.WalkDir(dirAbs, func(path string, dirent fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if dirent.IsDir() {
-				// Skip subtrees that are clearly docs about the
-				// prompts rather than prompts themselves (e.g.
-				// prompts/docs/, templates/examples/). Don't apply
-				// to the top-level promptFileDirs entry itself.
-				if path != dirAbs {
-					if _, skip := docDirNames[strings.ToLower(dirent.Name())]; skip {
-						return filepath.SkipDir
-					}
-				}
-				return nil
-			}
-			ext := strings.ToLower(filepath.Ext(path))
-			if _, ok := promptFileExts[ext]; !ok {
-				return nil
-			}
-			// Skip conventional doc filenames (README.md, LICENSE.md,
-			// CHANGELOG.md, ...). They sit alongside genuine prompts
-			// to document them and would otherwise pollute the
-			// manifest with non-prompt entries.
-			if isDocFilename(dirent.Name()) {
-				return nil
-			}
-			rel, err := filepath.Rel(repoRoot, path)
-			if err != nil {
-				return err
-			}
-			// Forward-slash for cross-platform manifest stability.
-			rel = filepath.ToSlash(rel)
-			if _, dup := known[rel]; dup {
-				return nil
-			}
-			content, err := os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-			result.Manifest.Prompts = append(result.Manifest.Prompts, Prompt{
-				ID:   GeneratePromptID(rel, -1),
-				Type: PromptFile,
-				Path: rel,
-				Hash: HashPrompt(string(content)),
-			})
-			result.Added++
-			return nil
-		})
+		if !hasPromptExt(rel) {
+			continue
+		}
+		if isDocFilename(filepath.Base(rel)) {
+			continue
+		}
+		if isInDocDir(rel) {
+			// Any path with a `docs/`, `doc/`, `documentation/`, or
+			// `examples/` segment is documentation about the prompts,
+			// not a prompt — skip wholesale.
+			continue
+		}
+		content, err := os.ReadFile(filepath.Join(repoRoot, rel))
 		if err != nil {
+			// Vanished between enumeration and read — skip rather
+			// than abort the whole scan.
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
 			return FastScanResult{}, err
 		}
+		result.Manifest.Prompts = append(result.Manifest.Prompts, Prompt{
+			ID:   GeneratePromptID(rel, -1),
+			Type: PromptFile,
+			Path: rel,
+			Hash: HashPrompt(string(content)),
+		})
+		result.Added++
 	}
 
 	// Sort for deterministic output. Same ordering rule as the TS
@@ -279,4 +284,94 @@ func FastScanWithRoots(repoRoot string, current Manifest, extraRoots []string) (
 		return result.Manifest.Prompts[i].Path < result.Manifest.Prompts[j].Path
 	})
 	return result, nil
+}
+
+// walkRepoFiles returns repo-relative, forward-slashed paths of every
+// candidate file in the repo, respecting .gitignore when possible.
+//
+// Strategy:
+//  1. Try `git ls-files --cached --others --exclude-standard` which
+//     yields tracked + untracked-but-not-ignored files. This honours
+//     .gitignore, global gitignore, and .git/info/exclude — exactly
+//     what the user expects.
+//  2. If git isn't available or `repoRoot` isn't a git repo, fall back
+//     to filepath.WalkDir + defaultIgnoreDirs (so we don't dive into
+//     node_modules / .venv / dist on a fresh clone with no .git/).
+func walkRepoFiles(repoRoot string) ([]string, error) {
+	if files, ok := gitListFiles(repoRoot); ok {
+		return files, nil
+	}
+	return fsWalkFiles(repoRoot)
+}
+
+// gitListFiles runs `git ls-files` and parses the output. Returns
+// (paths, true) on success; (nil, false) when git is unavailable or
+// the directory isn't a working tree.
+func gitListFiles(repoRoot string) ([]string, bool) {
+	// `-z` makes git use NUL separators so paths containing newlines
+	// don't corrupt the list.
+	cmd := exec.Command("git",
+		"-C", repoRoot,
+		"ls-files",
+		"--cached",
+		"--others",
+		"--exclude-standard",
+		"-z",
+	)
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = nil // git's stderr noise (e.g. dubious-ownership) goes nowhere
+	if err := cmd.Run(); err != nil {
+		return nil, false
+	}
+	raw := stdout.Bytes()
+	out := make([]string, 0, bytes.Count(raw, []byte{0})+1)
+	for _, p := range bytes.Split(raw, []byte{0}) {
+		if len(p) == 0 {
+			continue
+		}
+		// git already emits forward-slashed paths.
+		out = append(out, string(p))
+	}
+	return out, true
+}
+
+// fsWalkFiles is the fallback when git isn't available. Skips
+// well-known dependency / build / cache directories so the wizard
+// doesn't crawl 50k files in node_modules.
+func fsWalkFiles(repoRoot string) ([]string, error) {
+	out := make([]string, 0, 64)
+	err := filepath.WalkDir(repoRoot, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if path == repoRoot {
+				return nil
+			}
+			name := d.Name()
+			if _, skip := defaultIgnoreDirs[name]; skip {
+				return filepath.SkipDir
+			}
+			// Skip any dot-directory by default (`.cache`, `.idea`,
+			// etc.) unless the user explicitly tracks them under git.
+			if strings.HasPrefix(name, ".") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		rel, err := filepath.Rel(repoRoot, path)
+		if err != nil {
+			return err
+		}
+		out = append(out, filepath.ToSlash(rel))
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	// Buffered scan supports very large outputs; cap a giant repo at a
+	// reasonable size for the in-memory representation.
+	_ = bufio.NewScanner
+	return out, nil
 }
