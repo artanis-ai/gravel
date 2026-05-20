@@ -18,7 +18,7 @@ Before v0.6.0 the dashboard had two tolerant generic functions
 (`extractMessages` / `extractOutput` in `src/lib/messages.ts`) that
 tried to recognise common chat shapes and fell back to a JSON dump
 for anything they didn't. That fallback fired far more often than we
-expected — the audit that found this was prompted by a customer
+expected; the audit that found this was prompted by a customer
 seeing `{"is_greeting": true}` rendered as a wall of quoted JSON in
 the Review tab.
 
@@ -30,7 +30,7 @@ test, and Playwright visual baseline.
 ## Catalogue
 
 Every entry below maps to a fixture in `tests/fixtures/sources/`.
-The fixture is the canonical input/output/metadata shape — real
+The fixture is the canonical input/output/metadata shape: real
 captures where available (extracted from `landlord-ai`'s
 `gravel.db` or from the SDK's own `tracing-*.test.ts` suite), and
 provider-doc-aligned mocks where not.
@@ -52,8 +52,8 @@ Notable nuances:
   `prompt_tokens_details.{cached_tokens, audio_tokens}`,
   `completion_tokens_details.{reasoning_tokens, audio_tokens,
   accepted_prediction_tokens, rejected_prediction_tokens}`.
-- **Refusal** is `output.choices[0].message.refusal: string|null` — not
-  the same as a content block; the renderer surfaces it distinctly.
+- **Refusal** is `output.choices[0].message.refusal: string|null` (not
+  the same as a content block); the renderer surfaces it distinctly.
 - **logprobs** at `output.choices[0].logprobs` is currently dropped
   by the dashboard; renderer should offer an opt-in details disclosure.
 - **Streaming**: when `stream: true`, the SDK persists `chunks` in
@@ -73,7 +73,7 @@ Notable nuances:
 
 Notable nuances:
 - **Top-level `system`** field on the request (string OR array of
-  text/image blocks). Not a message — surfaced as a system message
+  text/image blocks). Not a message; surfaced as a system message
   at the top of the conversation.
 - **`stop_reason`** at `output.stop_reason`: `end_turn` /
   `max_tokens` / `stop_sequence` / `tool_use` / `pause_turn` /
@@ -85,7 +85,7 @@ Notable nuances:
   shapes (tool_result lives on a `user` role message).
 - **Citation blocks** (`{type: 'text', citations: [...]}`) and
   **`web_search_tool_result`** / **`server_tool_use`** blocks are
-  newer (2026-Q1) — renderer should at least pass through
+  newer (2026-Q1); renderer should at least pass through
   `HumanValue` if not rendered specifically.
 
 ### Gemini
@@ -103,15 +103,15 @@ Notable nuances:
 - **`system_instruction` is NOT in the conversation**. It lives at `config.system_instruction` (separate field). Renderer surfaces it as a collapsed System message above the contents.
 - **Part taxonomy**: `text` (string), `inline_data: {mime_type, data}` (base64 image/audio/PDF), `file_data: {mime_type, file_uri}` (URI-referenced file), `function_call: {name, args}` (tool call), `function_response: {name, response}` (tool result), plus less-common `executable_code` / `code_execution_result` (fall through to HumanValue).
 - **Snake_case vs camelCase**: Python SDK uses snake_case attributes (`finish_reason`, `usage_metadata`, `inline_data`); JS SDK uses camelCase (`finishReason`, `usageMetadata`, `inlineData`). Renderer accepts both via `pickField`.
-- **Token usage** at `output.usage_metadata` (Python) / `output.usageMetadata` (TS): `prompt_token_count` / `promptTokenCount`, `candidates_token_count` / `candidatesTokenCount`, `total_token_count` / `totalTokenCount`, plus `thoughts_token_count` / `thoughtsTokenCount` (the "thinking" budget customers pay for but never see in the text — surfaced as the THINKING pill in TokenUsageStrip), `prompt_tokens_details` (modality breakdown for multimodal calls), `service_tier` (`standard` / `flex` / `paid`), and `cached_content_token_count` for prompt-caching. `ReviewSurface.extractUsage` recognises both `usage_metadata` and `usageMetadata` (a v0.7.1 fix — v0.7.0 silently dropped the strip on Gemini).
-- **`thought_signature`** appears on every response part in v1beta — text parts AND function_call parts. When echoing a `function_call` back in a multi-turn conversation, you MUST preserve its original `thought_signature` or Gemini returns INVALID_ARGUMENT. Renderer treats the signature as opaque and ignores it.
+- **Token usage** at `output.usage_metadata` (Python) / `output.usageMetadata` (TS): `prompt_token_count` / `promptTokenCount`, `candidates_token_count` / `candidatesTokenCount`, `total_token_count` / `totalTokenCount`, plus `thoughts_token_count` / `thoughtsTokenCount` (the "thinking" budget customers pay for but never see in the text, surfaced as the THINKING pill in TokenUsageStrip), `prompt_tokens_details` (modality breakdown for multimodal calls), `service_tier` (`standard` / `flex` / `paid`), and `cached_content_token_count` for prompt-caching. `ReviewSurface.extractUsage` recognises both `usage_metadata` and `usageMetadata` (a v0.7.1 fix; v0.7.0 silently dropped the strip on Gemini).
+- **`thought_signature`** appears on every response part in v1beta: text parts AND function_call parts. When echoing a `function_call` back in a multi-turn conversation, you MUST preserve its original `thought_signature` or Gemini returns INVALID_ARGUMENT. Renderer treats the signature as opaque and ignores it.
 - **`finish_reason`** taxonomy: `STOP` / `MAX_TOKENS` / `SAFETY` / `RECITATION` / `LANGUAGE` / `OTHER`. Renderer surfaces non-`STOP` as a caption pill.
-- **`safety_ratings[]`** are NOT a default field in v1beta responses anymore (real captures against `gemini-flash-latest` 2026-05-19 returned just `finishReason: STOP` and a polite text refusal for clearly-unsafe prompts). The structured-block shape — `finish_reason: SAFETY` + `safety_ratings[]` with `blocked: true` — still surfaces from Vertex AI when `safety_settings` is configured. Renderer hides the all-`NEGLIGIBLE` case and surfaces a disclosure when any rating is `LOW` / `MEDIUM` / `HIGH` or `blocked: true`.
+- **`safety_ratings[]`** are NOT a default field in v1beta responses anymore (real captures against `gemini-flash-latest` 2026-05-19 returned just `finishReason: STOP` and a polite text refusal for clearly-unsafe prompts). The structured-block shape (`finish_reason: SAFETY` + `safety_ratings[]` with `blocked: true`) still surfaces from Vertex AI when `safety_settings` is configured. Renderer hides the all-`NEGLIGIBLE` case and surfaces a disclosure when any rating is `LOW` / `MEDIUM` / `HIGH` or `blocked: true`.
 - **Structured output**: `config.response_mime_type: 'application/json'` (+ optional `response_schema`) makes the model emit `parts[0].text` as a JSON-encoded string. Renderer parses via `tryParseStructuredString` and renders the value, not the raw JSON.
-- **`function_call.args`** is a dict (NOT a JSON-encoded string — different from OpenAI's `tool_call.function.arguments`). Renderer passes straight to HumanValue.
+- **`function_call.args`** is a dict (NOT a JSON-encoded string, different from OpenAI's `tool_call.function.arguments`). Renderer passes straight to HumanValue.
 - **Async**: `client.aio.models.generate_content(...)` exists on a separate `AsyncModels` class in Python; sync tracing is what ships today. Async parity is on the roadmap alongside async OpenAI / Anthropic.
-- **TS patch gotcha** (was a real bug in v0.7.0): the `@google/genai` SDK assigns `generateContent` / `generateContentStream` as own-property arrow functions on each `Models` instance (delegating to `generateContentInternal` / `generateContentStreamInternal` on the prototype). `Models.prototype.generateContent` is `undefined` — patching it is a no-op. The patch wraps the prototype-level `*Internal` methods instead.
-- **Vertex AI** is the same SDK with `genai.Client(vertexai=True, project=..., location=...)` — the patch covers it transparently.
+- **TS patch gotcha** (was a real bug in v0.7.0): the `@google/genai` SDK assigns `generateContent` / `generateContentStream` as own-property arrow functions on each `Models` instance (delegating to `generateContentInternal` / `generateContentStreamInternal` on the prototype). `Models.prototype.generateContent` is `undefined`; patching it is a no-op. The patch wraps the prototype-level `*Internal` methods instead.
+- **Vertex AI** is the same SDK with `genai.Client(vertexai=True, project=..., location=...)`; the patch covers it transparently.
 
 ### Vercel AI (TS only)
 
@@ -166,12 +166,12 @@ Notable nuances:
   `{tool_calls: [...]}`) and `response_metadata` (token_usage,
   model_name, finish_reason, system_fingerprint). Renderer folds
   these into the message rather than rendering them as separate keys.
-- LC chain `inputs` is open-shape — could be a list of messages, a
+- LC chain `inputs` is open-shape: could be a list of messages, a
   dict with a `messages` field, a dict of template variables, or a
   single LC message. Renderer handles each by detection.
-- LC `LLMResult.generations` is `Array<Array<Generation>>` —
-  outer array is per-input, inner is per-completion. Renderer
-  surfaces multi-prompt batches distinctly from `n>1` completions.
+- LC `LLMResult.generations` is `Array<Array<Generation>>`: outer
+  array is per-input, inner is per-completion. Renderer surfaces
+  multi-prompt batches distinctly from `n>1` completions.
 
 ### Raw fetch fallback
 
@@ -185,7 +185,7 @@ Notable nuances:
 Notable nuances:
 - Input wrapped as `{url, method, headers, body: <provider request>}`.
   Renderer must NOT lose the URL/method (surfaced as a small header
-  strip above the chat) — this is the only way to distinguish a
+  strip above the chat); this is the only way to distinguish a
   customer's direct HTTP call from an SDK call.
 - Output wrapped as `{status, body: <provider response>}`.
   Non-2xx `status` flips into the error renderer path.
@@ -194,23 +194,23 @@ Notable nuances:
 
 These are not source-specific but apply across all renderers:
 
-1. **State observations** (`metadata.states`) — streaming chunk
+1. **State observations** (`metadata.states`): streaming chunk
    summaries, intermediate steps. Fixture: `state-observations.json`.
    Renderer: a collapsible "Stream chunks: 27" section under the
    output, with the chunk list available on expand.
 2. **Error observations** (`metadata.error: {message, type}`,
-   `status: 'errored'`) — fixture: `error-observation.json`.
+   `status: 'errored'`): fixture: `error-observation.json`.
    Renderer: red-tinted panel above the (often empty) output, with
    the error message + type + stack if present.
-3. **Custom user metadata** (set via `with_gravel_metadata({...})`)
-   — fixture: `custom-metadata.json`. Renderer: surfaces
+3. **Custom user metadata** (set via `with_gravel_metadata({...})`):
+   fixture: `custom-metadata.json`. Renderer: surfaces
    user-provided keys above the SDK-provided ones in the metadata
    strip.
-4. **Multi-step traces** (`sample.group_id` non-null) — fixture:
+4. **Multi-step traces** (`sample.group_id` non-null): fixture:
    `multi-step-trace.json` plus the `related` array on the detail
    response. Renderer: a "Trace: 3 steps" navigator at the top of
    the dialog letting the reviewer hop between samples in the trace.
-5. **Feedback rendering** — feedback rows with `correction` text
+5. **Feedback rendering**: feedback rows with `correction` text
    should render the correction as the same kind of rich content as
    the assistant message it corrects (not as raw text).
 
@@ -260,7 +260,7 @@ Each renderer:
 - Composes the small primitives (`<ChatBubble>`, `<TokenStrip>`,
   `<ErrorPanel>`, `<HumanValue>`).
 - Renders an empty/missing field as the matching empty-state copy
-  (`<EmptyState kind="output" />`) — never `(none)` or `null`.
+  (`<EmptyState kind="output" />`); never `(none)` or `null`.
 - Never falls through to a `<pre>` JSON dump for ANY value. If a
   shape isn't recognised, descend into `<HumanValue>` (which itself
   has zero JSON fallbacks).

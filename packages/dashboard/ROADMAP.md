@@ -11,7 +11,7 @@
 
 These are payload shapes the providers document but we don't yet have
 fixtures for. Each one currently falls through to the `HumanValue`
-fallback renderer — which is human-readable but suboptimal — instead
+fallback renderer (human-readable but suboptimal) instead
 of getting a dedicated render path. None of them are critical for the
 v0.6.0 launch; add them as customer usage drives prioritisation.
 
@@ -42,7 +42,7 @@ The rest:
 
 - `reasoning` item (o-series / gpt-5 default output) with
   `summary[].summary_text`, optional `content[].reasoning_text`,
-  optional `encrypted_content`, `status` — **highest priority
+  optional `encrypted_content`, `status`. **Highest priority
   follow-up** because every reasoning-model trace hits this
 - `web_search_call` item + accompanying `url_citation` annotations
   on `output_text`
@@ -69,7 +69,7 @@ The rest:
 ### OpenAI Embeddings
 
 - `encoding_format: 'base64'` (data is a base64 string, not float
-  array — current renderer would mishandle)
+  array, current renderer would mishandle)
 - `dimensions` parameter (shortened embedding arrays)
 - Array-of-token-arrays input (batched pre-tokenized)
 
@@ -84,15 +84,15 @@ The rest:
   `thinking.type: 'adaptive'` (Opus 4.7); streaming `thinking_delta`
   and `signature_delta` events
 - **Built-in tools**: `tool_use` of type `bash_20250124` /
-  `text_editor_20250728` / `computer_20251124` — **HumanValue
+  `text_editor_20250728` / `computer_20251124`. **HumanValue
   fallback acceptable** (rare in our customer base today)
 - **Server tools**: `server_tool_use` block, `web_search_tool_result`
   (success with `web_search_result` content + error with
   `web_search_tool_result_error`), `code_execution_tool_result` +
   `bash_code_execution_tool_result` +
   `text_editor_code_execution_tool_result`, MCP connector
-  (`mcp_tool_use` / `mcp_tool_result`, `mcp_servers` request field)
-  — **HumanValue fallback acceptable**
+  (`mcp_tool_use` / `mcp_tool_result`, `mcp_servers` request field).
+  **HumanValue fallback acceptable**
 - Citation types: `page_location`, `content_block_location`,
   `web_search_result_location`, `search_result_location` (we only
   render `char_location` today)
@@ -108,7 +108,7 @@ The rest:
 - Top-level `service_tier`, `metadata.user_id`, `container` fields
 - Streaming events: `input_json_delta`, `citations_delta`, `ping`,
   inline `error` events
-- **Messages Batches API** (`POST /v1/messages/batches`) —
+- **Messages Batches API** (`POST /v1/messages/batches`).
   **HumanValue fallback acceptable** (no Gravel customer uses this
   today)
 
@@ -155,7 +155,7 @@ The rest:
   serialisations, but the canonical fixture should use the flat form.
 - `invalid_tool_calls: [{name, args, id, error, type:
   'invalid_tool_call'}]`
-- New trace kinds — currently dropped at the SDK callback handler.
+- New trace kinds: currently dropped at the SDK callback handler.
   See "SDK capture bugs" below.
 - LangGraph node runs: inputs/outputs are the state dict directly,
   not wrapped in `{state: dict}`
@@ -164,7 +164,7 @@ The rest:
   `additional_kwargs.parsed`
 - JS callback variants (camelCase: `additionalKwargs`,
   `responseMetadata`, `toolCalls`, `toolCallId`, `usageMetadata`)
-- `batch([...])` Runnable input — multiple parallel chain runs in
+- `batch([...])` Runnable input: multiple parallel chain runs in
   the outer dimension
 - `usage_metadata` detail subobjects: `input_token_details:
   {audio, cache_read, cache_creation}`, `output_token_details:
@@ -177,8 +177,8 @@ The rest:
 ## SDK capture bugs surfaced by the audit
 
 These are bugs (the SDK is silently losing data the provider sent),
-not just missing fixtures. None blocks the v0.6.0 release — the
-fields that DO get captured render correctly — but each one means
+not just missing fixtures. None blocks the v0.6.0 release (the
+fields that DO get captured render correctly) but each one means
 some customer trace is missing context the reviewer would want.
 
 1. **LangChain handler is missing `on_tool_*` and `on_retriever_*`
@@ -207,7 +207,7 @@ some customer trace is missing context the reviewer would want.
 
 4. **Anthropic streaming `input_json_delta` and `citations_delta`
    events.** The Python SDK does capture every chunk (`_safe_dump`
-   over the iterator), so these aren't dropped today — but TS
+   over the iterator), so these aren't dropped today; but TS
    collapses the chunk list into `{text, chunk_count}` and loses
    them. Fix as part of #2.
 
@@ -230,20 +230,20 @@ LiteLLM proxies) via the path-based fetch tracer. Direct patches do
 not exist for:
 
 - **Google Gemini** (`google-generativeai` Python /
-  `@google/generative-ai` TS / Vertex AI SDK) — top priority
+  `@google/generative-ai` TS / Vertex AI SDK): top priority
 - **AWS Bedrock** (`boto3.client('bedrock-runtime')` /
   `@aws-sdk/client-bedrock-runtime`)
 - **Ollama** (`ollama` SDK / direct HTTP) in native mode
-  (`/api/chat`, `/api/generate`) — caught in OpenAI-compat mode
+  (`/api/chat`, `/api/generate`); caught in OpenAI-compat mode
 - **Cohere** (`cohere` SDK)
-- **Mistral** (`mistralai`) — partial via fetch tracer (caught as
+- **Mistral** (`mistralai`): partial via fetch tracer (caught as
   `fetch:openai.chat.completions` but Mistral-specific fields like
   `safe_prompt` are lost)
 - **Replicate** (`replicate` SDK)
-- **LlamaIndex** (Python + TS) — second-biggest RAG framework
-- **DSPy** — growing fast in research/eval
-- **CrewAI** / **AutoGen** — multi-agent space
-- **Haystack** — enterprise RAG
+- **LlamaIndex** (Python + TS): second-biggest RAG framework
+- **DSPy**: growing fast in research/eval
+- **CrewAI** / **AutoGen**: multi-agent space
+- **Haystack**: enterprise RAG
 
 Recommended prioritisation (in order): Gemini, Bedrock, Ollama,
 LlamaIndex. Cohere/Mistral are nice-to-have. The rest are watch-list.
@@ -252,7 +252,7 @@ LlamaIndex. Cohere/Mistral are nice-to-have. The rest are watch-list.
 
 - **MCP / computer-use / image-generation / code-interpreter /
   Anthropic Batches API**: catalogued but not handled with dedicated
-  renderers — HumanValue fallback is acceptable until customer
+  renderers. HumanValue fallback is acceptable until customer
   usage justifies the work.
 - **Vercel AI v3 / camelCase naming back-compat**: dropped. We
   haven't shipped v0.6.0 yet so there is no installed-customer base
