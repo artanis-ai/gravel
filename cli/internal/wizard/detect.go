@@ -92,6 +92,15 @@ type Detection struct {
 	ExistingTracers    []string
 	LLMLibs            []LLMLib
 	HasGit             bool
+	// Polyglot signals: populated on a Python-primary detection when
+	// the repo ALSO has a package.json (hybrid Next.js + FastAPI is
+	// the canonical shape — Claude's de_platform install, 2026-05-20).
+	// The host-wiring planner consults these alongside the primary
+	// fields so the dashboard gets the Next.config / Clerk
+	// publicRoutes / vercel.json patches even though the install
+	// targets the Python side.
+	PolyglotNextFramework Framework
+	PolyglotAuth          AuthProvider
 }
 
 // Detect inspects cwd and returns a deterministic Detection. Returns
@@ -115,8 +124,91 @@ func Detect(cwd string) Detection {
 		fillTS(&d, cwd)
 	} else {
 		fillPython(&d, cwd)
+		// Polyglot scan (v0.9.1): hybrid Next.js + FastAPI repos
+		// detect as Python-primary, which would skip the
+		// next.config / Clerk / Vercel patches the mount pillar
+		// emits. Claude's de_platform install hit this — dashboard
+		// worked locally via FastAPI direct, broke on the Vercel
+		// deploy. fillPolyglotTSSignals re-runs the package.json
+		// scan to pick up TS-stack signals (Next.js framework
+		// markers, Clerk auth, Vercel AI SDK, etc.) WITHOUT
+		// changing the primary language.
+		if pathExists(filepath.Join(cwd, "package.json")) {
+			fillPolyglotTSSignals(&d, cwd)
+		}
 	}
 	return d
+}
+
+// fillPolyglotTSSignals augments a Python-primary Detection with
+// TS-side signals from package.json. Used when the repo has both a
+// pyproject.toml AND a package.json (hybrid Next.js + FastAPI is the
+// canonical shape). Sets only fields the Python scan didn't populate;
+// never overrides primary-language values.
+//
+// What it can set:
+//   - PolyglotNextFramework + NextAppDir + NextHasBothRouters
+//   - PolyglotAuth (Clerk / NextAuth / etc.)
+//   - LLMLibs (merges TS-side libs like @anthropic-ai/sdk when the
+//     Python scan didn't find them via pyproject.toml)
+//
+// What it deliberately leaves alone:
+//   - Language (stays python — primary stack the install targets)
+//   - Framework (stays fastapi/django/etc.)
+//   - PackageManager (the install runs against the Python pm; TS-side
+//     gets its own commands via PolyglotPMs)
+func fillPolyglotTSSignals(d *Detection, cwd string) {
+	pkgBytes, err := os.ReadFile(filepath.Join(cwd, "package.json"))
+	if err != nil {
+		return
+	}
+	var pkg struct {
+		Dependencies    map[string]string `json:"dependencies"`
+		DevDependencies map[string]string `json:"devDependencies"`
+	}
+	if err := json.Unmarshal(pkgBytes, &pkg); err != nil {
+		return
+	}
+	deps := make(map[string]bool, len(pkg.Dependencies)+len(pkg.DevDependencies))
+	for k := range pkg.Dependencies {
+		deps[k] = true
+	}
+	for k := range pkg.DevDependencies {
+		deps[k] = true
+	}
+
+	// Next.js framework markers — sets PolyglotNextFramework + NextAppDir
+	// so the host-wiring planner can detect the Next presence
+	// regardless of d.Framework being fastapi.
+	if deps["next"] {
+		hasAppRoot := pathExists(filepath.Join(cwd, "app"))
+		hasAppSrc := pathExists(filepath.Join(cwd, "src", "app"))
+		hasPagesRoot := pathExists(filepath.Join(cwd, "pages"))
+		hasPagesSrc := pathExists(filepath.Join(cwd, "src", "pages"))
+		switch {
+		case hasAppRoot:
+			d.NextAppDir = "app"
+		case hasAppSrc:
+			d.NextAppDir = "src/app"
+		}
+		if d.NextAppDir != "" {
+			d.PolyglotNextFramework = FrameworkNextAppRouter
+		} else {
+			d.PolyglotNextFramework = FrameworkNextPagesRouter
+		}
+		d.NextHasBothRouters = d.NextAppDir != "" && (hasPagesRoot || hasPagesSrc)
+	}
+
+	// Auth — only set Polyglot variant; primary Auth stays as the
+	// Python detection set it. If both detect auth, the planner will
+	// patch both surfaces (e.g. publicRoutes in Clerk middleware AND
+	// degrade the password to optional in gravel_config.py).
+	switch {
+	case deps["@clerk/nextjs"], deps["@clerk/clerk-js"]:
+		d.PolyglotAuth = AuthClerk
+	case deps["next-auth"]:
+		d.PolyglotAuth = AuthNextAuth
+	}
 }
 
 func fillTS(d *Detection, cwd string) {

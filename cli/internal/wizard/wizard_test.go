@@ -620,7 +620,7 @@ func TestInstallHook_NativeWhenNoManager(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, ".git", "hooks"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	res, err := InstallHook(dir)
+	res, err := InstallHook(dir, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -630,7 +630,7 @@ func TestInstallHook_NativeWhenNoManager(t *testing.T) {
 	body, _ := os.ReadFile(res.Path)
 	mustContain(t, string(body), "gravel manifest --check")
 	// Idempotent re-run.
-	res2, _ := InstallHook(dir)
+	res2, _ := InstallHook(dir, "")
 	if !res2.AlreadyInstalled {
 		t.Errorf("expected AlreadyInstalled=true on re-run, got %+v", res2)
 	}
@@ -645,7 +645,7 @@ func TestInstallHook_HuskyAppendOnce(t *testing.T) {
 	if err := os.WriteFile(huskyPath, []byte("npm test\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	res, _ := InstallHook(dir)
+	res, _ := InstallHook(dir, "")
 	if res.Mode != HookHusky {
 		t.Errorf("Mode = %s", res.Mode)
 	}
@@ -653,7 +653,7 @@ func TestInstallHook_HuskyAppendOnce(t *testing.T) {
 	if !strings.Contains(string(body), "npm test") || !strings.Contains(string(body), "gravel manifest --check") {
 		t.Errorf("husky body not merged:\n%s", body)
 	}
-	res2, _ := InstallHook(dir)
+	res2, _ := InstallHook(dir, "")
 	if !res2.AlreadyInstalled {
 		t.Errorf("expected idempotent re-run")
 	}
@@ -661,9 +661,113 @@ func TestInstallHook_HuskyAppendOnce(t *testing.T) {
 
 func TestInstallHook_SkipsOutsideGitRepo(t *testing.T) {
 	dir := t.TempDir()
-	res, _ := InstallHook(dir)
+	res, _ := InstallHook(dir, "")
 	if res.Mode != HookSkipped {
 		t.Errorf("Mode = %s, want skipped", res.Mode)
+	}
+}
+
+// v0.9.1: hook entry must use the package manager's run command so
+// the bin resolves without an activated venv. Claude's de_platform
+// install (2026-05-20) hit `command not found: gravel` because uv's
+// venv wasn't on PATH.
+func TestInstallHook_PythonUVUsesUvRun(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".git", "hooks"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	res, err := InstallHook(dir, stack.PackageManagerUV)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := os.ReadFile(res.Path)
+	got := string(body)
+	if !strings.Contains(got, "uv run gravel manifest --check") {
+		t.Errorf("uv hook must use `uv run gravel manifest --check`:\n%s", got)
+	}
+}
+
+func TestInstallHook_PNPMUsesPnpmExec(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".git", "hooks"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	res, err := InstallHook(dir, stack.PackageManagerPNPM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := os.ReadFile(res.Path)
+	if !strings.Contains(string(body), "pnpm exec gravel manifest --check") {
+		t.Errorf("pnpm hook must use `pnpm exec`:\n%s", body)
+	}
+}
+
+// v0.9.1: a pre-commit YAML at 4-space indent must NOT get a
+// 2-space block inserted (yaml becomes unparseable). Match the
+// existing indent. Claude's de_platform was the canonical case.
+func TestInstallHook_PreCommitYAML_MatchesExistingIndent(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// 4-space existing config.
+	existing := `repos:
+    - repo: https://github.com/astral-sh/ruff-pre-commit
+      rev: v0.1.0
+      hooks:
+          - id: ruff
+`
+	preYAML := filepath.Join(dir, ".pre-commit-config.yaml")
+	if err := os.WriteFile(preYAML, []byte(existing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := InstallHook(dir, stack.PackageManagerUV)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Mode != HookPreCommitFramework {
+		t.Errorf("Mode = %s, want pre-commit-framework", res.Mode)
+	}
+	body, _ := os.ReadFile(preYAML)
+	got := string(body)
+	// Our injected block must use 4-space indent — the `- repo:` line
+	// must have 4 leading spaces, NOT 2.
+	if !strings.Contains(got, "    - repo: local") {
+		t.Errorf("expected 4-space `- repo: local` to match existing indent:\n%s", got)
+	}
+	if strings.Contains(got, "  - repo: local") && !strings.Contains(got, "    - repo: local") {
+		t.Errorf("regression: emitted 2-space block into 4-space config:\n%s", got)
+	}
+	// Entry must still use uv run.
+	if !strings.Contains(got, "entry: uv run gravel manifest --check") {
+		t.Errorf("entry should use uv run:\n%s", got)
+	}
+}
+
+func TestInstallHook_PreCommitYAML_DefaultTwoSpaceOnFresh(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// 2-space existing config (the pre-commit canonical).
+	existing := `repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.1.0
+    hooks:
+      - id: ruff
+`
+	preYAML := filepath.Join(dir, ".pre-commit-config.yaml")
+	if err := os.WriteFile(preYAML, []byte(existing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, _ := InstallHook(dir, stack.PackageManagerUV)
+	if res.Mode != HookPreCommitFramework {
+		t.Fatalf("Mode = %s, want pre-commit-framework", res.Mode)
+	}
+	body, _ := os.ReadFile(preYAML)
+	got := string(body)
+	if !strings.Contains(got, "  - repo: local") {
+		t.Errorf("expected 2-space block in 2-space config:\n%s", got)
 	}
 }
 

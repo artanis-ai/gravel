@@ -298,7 +298,7 @@ func Run(ctx context.Context, opts RunOptions, _ io.Writer) (RunResult, error) {
 				}
 				if installHook {
 					sp := NewSpinner("Installing pre-commit hook…")
-					hook, err := InstallHook(opts.CWD)
+					hook, err := InstallHook(opts.CWD, d.PackageManager)
 					if err != nil {
 						sp.Fail(fmt.Sprintf("Hook install failed: %s", err))
 						result.Blockers = append(result.Blockers, fmt.Sprintf("Hook install failed: %s", err))

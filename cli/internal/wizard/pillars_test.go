@@ -39,6 +39,75 @@ func TestPlanMount_BareStack_EmitsMinimumActions(t *testing.T) {
 	}
 }
 
+// v0.9.1 polyglot fix: hybrid Next.js + FastAPI repo. Primary
+// language is python (because of pyproject.toml + fastapi); the
+// mount pillar still needs to patch next.config + Clerk
+// middleware + vercel.json because the dashboard reaches the
+// FastAPI side through the Next/Vercel edge. Claude's
+// de_platform install (2026-05-20) hit the broken non-polyglot
+// path — dashboard worked on localhost via FastAPI direct,
+// 404'd on Vercel.
+func TestPlanMount_PolyglotPythonPrimaryWithNextClerkVercel(t *testing.T) {
+	dir := t.TempDir()
+	// Python side (uv lockfile pushes HostStack to pick python primary
+	// even though package.json is present alongside)
+	writeTestFile(t, filepath.Join(dir, "pyproject.toml"), `[project]
+name = "app"
+dependencies = ["fastapi"]
+`)
+	writeTestFile(t, filepath.Join(dir, "uv.lock"), "")
+	writeTestFile(t, filepath.Join(dir, "main.py"), "from fastapi import FastAPI\napp = FastAPI()\n")
+	// Next.js side
+	writeTestFile(t, filepath.Join(dir, "package.json"), `{
+		"dependencies": {
+			"next": "15.0.0",
+			"@clerk/nextjs": "6.0.0"
+		}
+	}`)
+	writeTestFile(t, filepath.Join(dir, "next.config.ts"), "export default {};")
+	writeTestFile(t, filepath.Join(dir, "middleware.ts"), `import { clerkMiddleware } from '@clerk/nextjs/server'
+export default clerkMiddleware()
+`)
+	writeTestFile(t, filepath.Join(dir, "vercel.json"), `{"rewrites":[]}`)
+	if err := os.MkdirAll(filepath.Join(dir, "app"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(dir, "app", "page.tsx"), "")
+
+	d := Detect(dir)
+	if d.Language != stack.LanguagePython {
+		t.Errorf("Language = %q, want python (primary)", d.Language)
+	}
+	if d.Framework != FrameworkFastAPI {
+		t.Errorf("Framework = %q, want fastapi (primary)", d.Framework)
+	}
+	if d.PolyglotNextFramework != FrameworkNextAppRouter {
+		t.Errorf("PolyglotNextFramework = %q, want next-app-router", d.PolyglotNextFramework)
+	}
+	if d.PolyglotAuth != AuthClerk {
+		t.Errorf("PolyglotAuth = %q, want clerk", d.PolyglotAuth)
+	}
+
+	plan := PlanMount(context.Background(), MountPillarOptions{Detection: d})
+	patchPaths := map[string]bool{}
+	for _, a := range plan.Actions {
+		if a.Kind == ActionPatchFile {
+			patchPaths[a.Path] = true
+		}
+	}
+	// All three TS-side patches must be planned despite primary
+	// language = python.
+	if !patchPaths["middleware.ts"] {
+		t.Errorf("expected middleware.ts patch action (polyglot Clerk): %v", patchPaths)
+	}
+	if !patchPaths["vercel.json"] {
+		t.Errorf("expected vercel.json patch action: %v", patchPaths)
+	}
+	if !patchPaths["next.config.{ts,mjs,js}"] {
+		t.Errorf("expected next.config patch action (polyglot Next): %v", patchPaths)
+	}
+}
+
 func TestPlanMount_NextClerkVercel_AddsHostWiring(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, filepath.Join(dir, "next.config.ts"), "export default { /* user config */ }")

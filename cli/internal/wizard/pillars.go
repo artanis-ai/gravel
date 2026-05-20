@@ -263,7 +263,7 @@ func ApplyPrompts(ctx context.Context, opts PromptsPillarOptions) (PromptsApplyR
 		result.ManifestCount = len(m.Prompts)
 	}
 	if d.HasGit && opts.InstallHook {
-		hook, err := InstallHook(d.CWD)
+		hook, err := InstallHook(d.CWD, d.PackageManager)
 		if err != nil {
 			return result, fmt.Errorf("install hook: %w", err)
 		}
@@ -390,8 +390,23 @@ func ApplyTraces(ctx context.Context, opts TracesPillarOptions) (TracesApplyResu
 	if mountPath == "" {
 		mountPath = "/admin/ai"
 	}
-	if _, err := GenerateConfig(d, ConfigOptions{MountPath: mountPath, WithDatabase: true}); err != nil {
-		return result, fmt.Errorf("update config with database block: %w", err)
+	// v0.9.1: patch the existing config in place rather than
+	// regenerating from scratch. Claude's de_platform install
+	// (2026-05-20) lost manual edits (# noqa pragmas, custom
+	// scan_roots, user-written getUser bodies) every time
+	// `gravel traces --apply` ran. The patcher only inserts the
+	// database block where missing; everything else stays as the
+	// user left it. Falls back to regeneration when the config
+	// file doesn't exist yet (mount pillar didn't run).
+	patched, err := PatchConfigForDatabase(d, mountPath)
+	if err != nil {
+		return result, fmt.Errorf("patch config with database block: %w", err)
+	}
+	if !patched {
+		// No existing config to patch — regenerate.
+		if _, err := GenerateConfig(d, ConfigOptions{MountPath: mountPath, WithDatabase: true}); err != nil {
+			return result, fmt.Errorf("update config with database block: %w", err)
+		}
 	}
 	return result, nil
 }

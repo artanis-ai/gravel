@@ -198,7 +198,7 @@ for _env_file in (".env.local", ".env"):
 
 	if d.Auth == AuthDjango {
 		return fmt.Sprintf(`import os
-%sfrom artanis_gravel import GravelConfig, GravelUser
+%sfrom artanis_gravel import GravelConfig, GravelUser  # noqa: E402
 
 async def get_user(req):
     django_user = req.scope.get('user')
@@ -217,7 +217,7 @@ config = GravelConfig(
 `, envLoader, opts.MountPath, dbBlock)
 	}
 	return fmt.Sprintf(`import os
-%sfrom artanis_gravel import GravelConfig
+%sfrom artanis_gravel import GravelConfig  # noqa: E402
 
 config = GravelConfig(
     mount_path='%s',

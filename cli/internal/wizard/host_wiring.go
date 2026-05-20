@@ -28,7 +28,13 @@ func planMountHostWiring(d Detection, mountPath string, _ InspectedState) ([]Pil
 	var actions []PillarAction
 	var warnings []string
 
-	if d.Framework == FrameworkNextAppRouter || d.Framework == FrameworkNextPagesRouter {
+	// Next.js framework markers can come from primary detection (TS
+	// project) OR polyglot detection (Python-primary repo with a
+	// next.config alongside FastAPI). Treat both equivalently — the
+	// patch is on the Next.js config file, language-agnostic.
+	hasNext := d.Framework == FrameworkNextAppRouter || d.Framework == FrameworkNextPagesRouter ||
+		d.PolyglotNextFramework == FrameworkNextAppRouter || d.PolyglotNextFramework == FrameworkNextPagesRouter
+	if hasNext {
 		if pathExists(filepath.Join(d.CWD, "next.config.ts")) ||
 			pathExists(filepath.Join(d.CWD, "next.config.mjs")) ||
 			pathExists(filepath.Join(d.CWD, "next.config.js")) {
@@ -40,7 +46,9 @@ func planMountHostWiring(d Detection, mountPath string, _ InspectedState) ([]Pil
 		}
 	}
 
-	if d.Auth == AuthClerk {
+	// Clerk middleware patch — same logic, polyglot-aware.
+	hasClerk := d.Auth == AuthClerk || d.PolyglotAuth == AuthClerk
+	if hasClerk {
 		middlewarePath := findFirstExisting(d.CWD,
 			"middleware.ts", "middleware.js",
 			"src/middleware.ts", "src/middleware.js",
