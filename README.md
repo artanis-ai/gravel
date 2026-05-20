@@ -1,8 +1,8 @@
 # Gravel
 
-> Open-source library that mounts an admin dashboard inside your AI app. Domain experts review output, manage prompts, and run evals — without ever touching your codebase.
+> Open-source library that mounts an admin dashboard inside your AI app. Domain experts review output, manage prompts, and run evals, without ever touching your codebase.
 
-**Status: v0.7.x, live on npm + PyPI.** Wizard installs against the production `gravel.artanis.ai` control plane. Default-password auth, manifest-backed prompts (list + detail + submit-as-PR via the `gravel[bot]` GitHub App with atomic manifest rewrite), tracing auto-patches (OpenAI / Anthropic / Gemini / LangChain / Vercel AI / generic `fetch`), the judge + eval runner, and the bundled React dashboard all ship. Six TypeScript framework integrations (Next.js App + Pages routers, Express, Hono, Fastify, generic Node) and five Python integrations (FastAPI, Django, Flask, raw ASGI, raw WSGI), all delegating to one shared dispatcher for byte-equal cross-stack behaviour. Polar billing is scaffolded; pricing wiring awaits validation. Datasets + Evals dashboard pillars are scaffolded as placeholder routes only; backend wiring is the next design pass. See [`STATUS.md`](STATUS.md).
+**Status: v0.9.x, live on npm + PyPI.** Wizard installs against the production `gravel.artanis.ai` control plane. Default-password auth, manifest-backed prompts (list + detail + submit-as-PR via the `gravel[bot]` GitHub App with atomic manifest rewrite), tracing auto-patches (OpenAI / Anthropic / Gemini / LangChain / Vercel AI / generic `fetch`), the judge + eval runner, and the bundled React dashboard all ship. Six TypeScript framework integrations (Next.js App + Pages routers, Express, Hono, Fastify, generic Node) and five Python integrations (FastAPI, Django, Flask, raw ASGI, raw WSGI), all delegating to one shared dispatcher for byte-equal cross-stack behaviour. Polar billing is scaffolded; pricing wiring awaits validation. Datasets + Evals dashboard pillars are scaffolded as placeholder routes only; backend wiring is the next design pass. See [`STATUS.md`](STATUS.md).
 
 ```bash
 # TypeScript:
@@ -19,13 +19,13 @@ The wizard logic lives in a single Go binary cross-compiled per platform. The np
 
 ## What it is
 
-Gravel is a library you install into your existing AI engineering codebase (TypeScript or Python). Once installed, an admin dashboard mounts inside your app at `/admin/ai`. From there, your **domain experts** — clinicians, lawyers, teachers, recruiters, accountants, whoever — can:
+Gravel is a library you install into your existing AI engineering codebase (TypeScript or Python). Once installed, an admin dashboard mounts inside your app at `/admin/ai`. From there, your **domain experts** (clinicians, lawyers, teachers, recruiters, accountants, whoever) can:
 
 - See every prompt in the codebase, edit it, and submit a GitHub PR for the change.
 - Review LLM traces flowing through your pipeline, leave feedback and corrections.
 - Build datasets from labelled traces and run evals against them.
 
-Where Langfuse / LangSmith pitch dashboards to engineers, **Gravel ships a dashboard for the people whose job *isn't* engineering** — the ones who actually know what good looks like in your domain.
+Where Langfuse / LangSmith pitch dashboards to engineers, **Gravel ships a dashboard for the people whose job *isn't* engineering**: the ones who actually know what good looks like in your domain.
 
 ## What's open-source
 
@@ -40,16 +40,16 @@ gravel/
 ├── install.sh              # `curl | sh` install for the CLI binary (POSIX)
 ├── install.ps1             # PowerShell equivalent for native Windows
 ├── cli/                    # Go module: single source of truth for the `gravel` wizard
-├── packages/sdk-ts/        # @artanis-ai/gravel — SDK library + bin/gravel.js wrapper
+├── packages/sdk-ts/        # @artanis-ai/gravel: SDK library + bin/gravel.js wrapper
 ├── packages/dashboard/     # React app shipped inside the SDKs
-├── python/gravel/          # artanis-gravel — SDK library + artanis_gravel._cli wrapper
+├── python/gravel/          # artanis-gravel: SDK library + artanis_gravel._cli wrapper
 ├── examples/               # Next.js, FastAPI, Django integration examples (Express / Hono / Fastify / Flask exercised via gravel-test-fixtures)
 └── .github/workflows/      # CI: lint, test, schema-drift, cross-compile + release
 ```
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md). The architecture overview is in [`ARCHITECTURE.md`](ARCHITECTURE.md); rolling progress notes are in [`STATUS.md`](STATUS.md). The wizard is self-explanatory — run `gravel init` and it tells you what it's doing. The dashboard documents itself in its empty states and banners.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). The architecture overview is in [`ARCHITECTURE.md`](ARCHITECTURE.md); rolling progress notes are in [`STATUS.md`](STATUS.md). The wizard is self-explanatory: run `gravel init` and it tells you what it's doing. The dashboard documents itself in its empty states and banners.
 
 ## License
 

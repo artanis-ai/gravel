@@ -1,6 +1,6 @@
 # Tracing source catalogue
 
-> **Status:** v0.6.0. Dedicated renderers ship for every kind below. This
+> **Status:** v0.9.x. Dedicated renderers ship for every kind below. This
 > document is the **source of truth** for every payload shape the Gravel
 > SDK can land in `gravel_samples`. Every renderer round-trips the
 > fixtures listed here without falling through to a raw-JSON dump.

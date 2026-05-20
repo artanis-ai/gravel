@@ -2,7 +2,7 @@
 
 The Python SDK for [Gravel](https://gravel.artanis.ai).
 
-**Status:** v0.5.x, live on PyPI.
+**Status:** v0.9.x, live on PyPI.
 
 ```bash
 uvx artanis-gravel init    # or `pipx run artanis-gravel init`

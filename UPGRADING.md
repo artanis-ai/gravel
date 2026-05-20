@@ -33,7 +33,7 @@ gravel migrate
 
 Run `gravel doctor` first to see what's available and what command applies to your install.
 
-**Fresh installs (>=0.5.0)** are even simpler — the SDK install is implicit:
+**Fresh installs (>=0.5.0)** are even simpler; the SDK install is implicit:
 
 ```
 npx @artanis-ai/gravel init    # TypeScript: wizard auto-adds the SDK to package.json
@@ -52,7 +52,7 @@ Two surfaces, each owning one thing:
 
 2. **Dashboard banner (admin only)**. Reads the SDK version from your `package.json` / `pyproject.toml`, polls `/api/version` once on mount. On **loopback** (the developer's dev box) you see the actionable per-stack upgrade command. On **prod** (any non-loopback hostname) the command would be misleading (the operator viewing the dashboard usually isn't the deployer), so we swap to "ask your developer to update and redeploy".
 
-If a release ships DB migrations, a second banner — **PendingMigrationsBanner** — appears with the count + the right migrate command for your stack.
+If a release ships DB migrations, a second banner (**PendingMigrationsBanner**) appears with the count + the right migrate command for your stack.
 
 ## DB migrations
 
@@ -62,15 +62,15 @@ If a release ships DB migrations, a second banner — **PendingMigrationsBanner*
 | Prod (`NODE_ENV` = `production`) | Refuses to auto-migrate. Run `npx @artanis-ai/gravel migrate` (or `artanis-gravel migrate`) as a deploy step. |
 | Detection | `/api/migrations/status` returns `{ pending, dialect, autoMigrate }`. The dashboard banner uses this to nag admins when the DB is behind. |
 
-SQLite + first install: schema is created by `bootstrap()` (idempotent `CREATE TABLE IF NOT EXISTS`). Postgres has no bootstrap — first deploy MUST run `gravel migrate` or the first query 4xx's.
+SQLite + first install: schema is created by `bootstrap()` (idempotent `CREATE TABLE IF NOT EXISTS`). Postgres has no bootstrap; first deploy MUST run `gravel migrate` or the first query 4xx's.
 
 ## Generated-code migrations (codegen)
 
 `gravel init` writes ~5 files into your repo:
 
-- `gravel.config.ts` / `gravel_config.py` — your config. Regenerated on every `gravel init`, so customisations get clobbered. **Don't hand-edit until we annotate user-editable regions** (issue tracked; for now, treat init as destructive on this file).
-- `instrumentation.ts` — Next.js auto-tracing hook. Gitignored; regenerated freely.
-- `next.config.{ts,mjs,js}` patches — `serverExternalPackages` + webpack externals. Idempotent: the wizard detects "already patched" by checking for our package names in the externals block.
+- `gravel.config.ts` / `gravel_config.py`: your config. Regenerated on every `gravel init`, so customisations get clobbered. **Don't hand-edit until we annotate user-editable regions** (issue tracked; for now, treat init as destructive on this file).
+- `instrumentation.ts`: Next.js auto-tracing hook. Gitignored; regenerated freely.
+- `next.config.{ts,mjs,js}` patches: `serverExternalPackages` + webpack externals. Idempotent: the wizard detects "already patched" by checking for our package names in the externals block.
 - Dashboard mount route (`app/admin/ai/[[...slug]]/route.ts` or pages-router equivalent).
 - Pre-commit hook (Husky → pre-commit-framework → native `.git/hooks/`).
 
@@ -80,7 +80,7 @@ If a release changes the shape of any of these, the migration path today is:
 gravel init  # re-runs the wizard, which re-applies its patchers idempotently
 ```
 
-This is "good enough" because the patchers are designed to be re-runnable. It is **not** "good enough" if you've customised `gravel.config.*` — back that up first. We'll grow proper versioned codemods once we actually ship a breaking codegen change.
+This is "good enough" because the patchers are designed to be re-runnable. It is **not** "good enough" if you've customised `gravel.config.*`; back that up first. We'll grow proper versioned codemods once we actually ship a breaking codegen change.
 
 Per-version migration notes (if any) live in the per-version sections below.
 
