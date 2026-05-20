@@ -133,6 +133,37 @@ def _scrub(record: TraceRecord, runtime: TracingRuntimeConfig) -> None:
                     log.warning("scrub_output raised; passing through unscrubbed: %s", exc)
 
 
+def _jsonify_safe(value: Any) -> Any:
+    """Recursively coerce non-JSON-serialisable leaves to JSON-friendly
+    types. Specifically: `bytes` becomes a base64 string (with a marker
+    so the dashboard can detect it). Without this, a single binary
+    field anywhere in a provider's response object (e.g. Gemini's
+    `thought_signature: bytes` on every v1beta response) causes
+    `json.dumps` to raise inside the SQLAlchemy JSONB write and the
+    whole trace silently drops.
+
+    Walks dict / list / tuple recursively. Other unknown leaf types
+    fall through to `repr()`; primitives pass through untouched."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, bytes):
+        try:
+            return {"__gravel_bytes__": "base64", "len": len(value), "data": _b64(value)}
+        except Exception:
+            return {"__gravel_bytes__": "repr", "len": len(value), "data": repr(value)}
+    if isinstance(value, dict):
+        return {k: _jsonify_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonify_safe(v) for v in value]
+    return repr(value)
+
+
+def _b64(data: bytes) -> str:
+    import base64
+
+    return base64.b64encode(data).decode("ascii")
+
+
 def _flatten(record: TraceRecord) -> tuple[Any, Any, dict[str, Any]]:
     """Collapse the (compat) observation list into the sample's three jsonb
     columns. Returns (input, output, metadata)."""
@@ -148,14 +179,14 @@ def _flatten(record: TraceRecord) -> tuple[Any, Any, dict[str, Any]]:
         elif obs.type == "error":
             states.append({"key": obs.key or "error", "data": obs.data})
             error = error or (obs.data.get("message") if isinstance(obs.data, dict) else None)
-        else:  # 'state' or anything else — treat as auxiliary state
+        else:  # 'state' or anything else: treat as auxiliary state
             states.append({"key": obs.key, "data": obs.data})
     metadata: dict[str, Any] = dict(record.metadata or {})
     if states:
         metadata.setdefault("states", states)
     if error and "error" not in metadata:
         metadata["error"] = error
-    return input_data, output_data, metadata
+    return _jsonify_safe(input_data), _jsonify_safe(output_data), _jsonify_safe(metadata)
 
 
 def persist_trace(record: TraceRecord) -> str | None:
