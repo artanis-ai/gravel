@@ -513,7 +513,7 @@ function SaveStatus({ status }: { status: EditorStatus }) {
       {status === 'saving' && (
         <>
           <Spinner />
-          <span>Saving…</span>
+          <span>Saving</span>
         </>
       )}
       {status === 'saved' && <span className="text-forest">Saved</span>}

@@ -318,10 +318,9 @@ function MetadataStrip({
   sample: SampleDetailResponse['sample']
 }) {
   return (
-    <dl className="grid grid-cols-2 gap-px border-b border-warm bg-warm/60 sm:grid-cols-4 md:grid-cols-6">
+    <dl className="grid grid-cols-2 gap-px border-b border-warm bg-warm/60 sm:grid-cols-3 md:grid-cols-5">
       <Meta label="Name" value={<span className="font-mono">{sample.name}</span>} />
       <Meta label="Model" value={<span className="font-mono">{sample.model ?? '(none)'}</span>} />
-      <Meta label="Env" value={sample.environment ?? '(none)'} />
       <Meta label="Status" value={<StatusBadge status={sample.status} />} />
       <Meta label="Duration" value={<span className="font-mono">{formatDuration(sample.duration_ms)}</span>} />
       <Meta label="When" value={formatRelative(sample.started_at)} />

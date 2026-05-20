@@ -86,6 +86,22 @@ function titleForCode(code: string): string {
   }
 }
 
+export function defaultTitleForDrafts(drafts: SubmitDraftEntry[]): string {
+  if (drafts.length === 0) return ''
+  const basenames = drafts.map((d) => {
+    const path = d.prompt.path
+    return path.split('/').pop() || path
+  })
+  // "Update X, Y and Z" — verbatim format from Yousef's dogfooding
+  // feedback. Single: "Update X". Two: "Update X and Y". 3+:
+  // "Update X, Y and Z" (no Oxford comma).
+  if (basenames.length === 1) return `Update ${basenames[0]}`
+  if (basenames.length === 2) return `Update ${basenames[0]} and ${basenames[1]}`
+  const head = basenames.slice(0, -1).join(', ')
+  const tail = basenames[basenames.length - 1]
+  return `Update ${head} and ${tail}`
+}
+
 function detailsToString(d: unknown): string | null {
   if (d == null) return null
   if (typeof d === 'string') return d
@@ -137,6 +153,17 @@ export function SubmitModal({
     if (me?.id === 'localhost') setName('admin')
     else if (me?.firstName) setName(me.firstName)
   }, [open, me])
+
+  // Prefill the title with a sensible default so reviewers see a
+  // descriptive PR title without the DE having to think about it.
+  // They can still edit before submitting. Single draft → use the
+  // file's basename ("Update investigator.md"); multiple → count.
+  useEffect(() => {
+    if (!open) return
+    if (title.trim()) return // don't clobber typed input on re-open
+    setTitle(defaultTitleForDrafts(drafts))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, drafts])
 
   const submit = useMutation<SubmitPrResult, Error, void>({
     mutationFn: () =>

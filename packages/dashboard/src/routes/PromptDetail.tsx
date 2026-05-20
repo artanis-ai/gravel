@@ -30,7 +30,6 @@ import { useCurrentUser } from '../lib/useCurrentUser'
 import type { PromptDetailResponse } from '../lib/types'
 
 const AUTOSAVE_DEBOUNCE_MS = 500
-const SAVED_BADGE_LINGER_MS = 1500
 
 export function PromptDetail({ promptId }: { promptId: string }) {
   const queryClient = useQueryClient()
@@ -53,11 +52,14 @@ export function PromptDetail({ promptId }: { promptId: string }) {
     insertions: 0,
     deletions: 0,
   })
-  const [status, setStatus] = useState<EditorStatus>('idle')
+  // "Saved" persists once a draft has been written this session, and
+  // when there's an existing draft on mount (page reload mid-edit, the
+  // draft is already saved to localStorage). Reset to 'idle' only when
+  // the draft is discarded.
+  const [status, setStatus] = useState<EditorStatus>(existingDraft ? 'saved' : 'idle')
   // Tracks the last value we successfully wrote to localStorage so the
   // auto-save effect can no-op when nothing changed since.
   const lastSavedTextRef = useRef<string | null>(null)
-  const savedBadgeTimerRef = useRef<number | null>(null)
   // Hoisted out of the conditional return block below: wouter's
   // useLocation calls useSyncExternalStore, so it MUST run on every
   // render or React throws "Rendered more hooks than during the
@@ -66,10 +68,14 @@ export function PromptDetail({ promptId }: { promptId: string }) {
   const [, navigate] = useLocation()
 
   // Seed the editor once we know the current text + any existing draft.
+  // If an existing draft is loaded, flip status to 'saved' so the
+  // indicator says "Saved" from the start (the draft IS saved — to
+  // localStorage — and the user expects to see that on reload).
   useEffect(() => {
     if (draftText !== null) return
     if (!detailQ.data || draftQ.isLoading) return
     setDraftText(existingDraft ? existingDraft.newText : detailQ.data.content)
+    if (existingDraft) setStatus('saved')
   }, [detailQ.data, draftQ.isLoading, existingDraft, draftText])
 
   const save = useMutation<LocalDraft, Error, string>({
@@ -94,6 +100,7 @@ export function PromptDetail({ promptId }: { promptId: string }) {
       // auto-save effect would immediately re-create the draft.
       setDraftText(detailQ.data?.content ?? '')
       lastSavedTextRef.current = detailQ.data?.content ?? null
+      setStatus('idle')
     },
   })
 
@@ -111,17 +118,16 @@ export function PromptDetail({ promptId }: { promptId: string }) {
     // No-op: text hasn't changed since the last successful save.
     if (lastSavedTextRef.current === draftText) return
 
+    // Flip to 'saving' the moment unsaved input is detected — without
+    // this the indicator only shows during the (sync) localStorage write,
+    // which is too fast to render. Showing it for the debounce window
+    // gives the user real feedback that their typing is being captured.
+    setStatus('saving')
     const handle = window.setTimeout(() => {
-      setStatus('saving')
       save.mutate(draftText, {
         onSuccess: () => {
           lastSavedTextRef.current = draftText
           setStatus('saved')
-          if (savedBadgeTimerRef.current) window.clearTimeout(savedBadgeTimerRef.current)
-          savedBadgeTimerRef.current = window.setTimeout(
-            () => setStatus('idle'),
-            SAVED_BADGE_LINGER_MS,
-          )
         },
         onError: () => setStatus('error'),
       })
@@ -129,14 +135,6 @@ export function PromptDetail({ promptId }: { promptId: string }) {
     return () => window.clearTimeout(handle)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftText, detailQ.data, existingDraft])
-
-  // Cancel the linger timer on unmount so we don't setState-after-unmount.
-  useEffect(
-    () => () => {
-      if (savedBadgeTimerRef.current) window.clearTimeout(savedBadgeTimerRef.current)
-    },
-    [],
-  )
 
   if (detailQ.isLoading) {
     return (
@@ -213,14 +211,6 @@ export function PromptDetail({ promptId }: { promptId: string }) {
               <span className="text-primary-dark">−{stats.deletions}</span>
             </span>
           )}
-          {/* Persistent "Saved" indicator: stays visible as long as a
-              draft exists. Tells the DE their work is safe AND that the
-              next step is to open the Prompts page to submit. The
-              transient version inside the editor toolbar still flashes
-              on each auto-save; this one is the at-rest state. */}
-          {existingDraft && (
-            <Badge tone="good">Saved · not yet submitted</Badge>
-          )}
           {(dirty || existingDraft) && (
             <>
               <button
@@ -243,7 +233,7 @@ export function PromptDetail({ promptId }: { promptId: string }) {
                   onClick={goToSubmit}
                   data-testid="prompt-detail-submit"
                 >
-                  Submit →
+                  Submit
                 </button>
               )}
             </>

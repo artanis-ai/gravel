@@ -182,6 +182,7 @@ describe('Prompts list', () => {
     expect(dialog).toBeInTheDocument()
 
     const titleInput = await screen.findByPlaceholderText(/tighten triage prompt/i)
+    await user.clear(titleInput)
     await user.type(titleInput, 'Tighten triage')
     await user.click(screen.getByRole('button', { name: /send for review/i }))
 

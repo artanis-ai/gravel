@@ -22,7 +22,7 @@ vi.mock('../../lib/api', async () => {
 })
 
 import { api, ApiError } from '../../lib/api'
-import { SubmitModal, type SubmitDraftEntry } from './SubmitModal'
+import { SubmitModal, defaultTitleForDrafts, type SubmitDraftEntry } from './SubmitModal'
 import { renderRoute } from '../../test/util'
 
 const mockedPost = api.post as unknown as ReturnType<typeof vi.fn>
@@ -61,13 +61,62 @@ function makeEntry(overrides: Partial<SubmitDraftEntry> = {}): SubmitDraftEntry 
   }
 }
 
+describe('defaultTitleForDrafts (Yousef dogfooding spec)', () => {
+  // Verbatim: "Update X, Y and Z" — no Oxford comma, " and " before
+  // the final basename. Single uses the bare basename; two uses just
+  // "X and Y".
+  const e = (path: string): SubmitDraftEntry => makeEntry({ prompt: { ...makeEntry().prompt, path } })
+  it('returns empty string for zero drafts', () => {
+    expect(defaultTitleForDrafts([])).toBe('')
+  })
+  it('single draft → Update <basename>', () => {
+    expect(defaultTitleForDrafts([e('prompts/triage.md')])).toBe('Update triage.md')
+  })
+  it('two drafts → Update X and Y', () => {
+    expect(defaultTitleForDrafts([e('a/triage.md'), e('b/persona.py')])).toBe(
+      'Update triage.md and persona.py',
+    )
+  })
+  it('three drafts → Update X, Y and Z (no Oxford comma)', () => {
+    expect(
+      defaultTitleForDrafts([e('a/triage.md'), e('b/persona.py'), e('c/scheduler.md')]),
+    ).toBe('Update triage.md, persona.py and scheduler.md')
+  })
+  it('four drafts → comma list with " and " before tail', () => {
+    expect(
+      defaultTitleForDrafts([e('a.md'), e('b.md'), e('c.md'), e('d.md')]),
+    ).toBe('Update a.md, b.md, c.md and d.md')
+  })
+})
+
 describe('SubmitModal', () => {
-  it('requires a title before submitting', async () => {
+  it('prefills the title from the draft path and posts it as-is on send', async () => {
+    mockedPost.mockResolvedValue({
+      ok: true,
+      pr: { prUrl: 'https://github.com/acme/app/pull/1', prNumber: 1, branchName: 'gravel/x' },
+    })
     const user = userEvent.setup()
     renderRoute(
       <SubmitModal open onClose={() => {}} drafts={[makeEntry()]} onSubmitted={() => {}} />,
     )
-    await user.click(screen.getByRole('button', { name: /send for review/i }))
+    const dialog = await screen.findByRole('dialog', { name: /submit changes/i })
+    const titleInput = within(dialog).getByPlaceholderText(/tighten triage prompt/i) as HTMLInputElement
+    await waitFor(() => expect(titleInput.value).toBe('Update triage.md'))
+    await user.click(within(dialog).getByRole('button', { name: /send for review/i }))
+    await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(1))
+    expect(mockedPost.mock.calls[0][1]).toMatchObject({ title: 'Update triage.md' })
+  })
+
+  it('requires a non-empty title — clearing the prefill blocks submit', async () => {
+    const user = userEvent.setup()
+    renderRoute(
+      <SubmitModal open onClose={() => {}} drafts={[makeEntry()]} onSubmitted={() => {}} />,
+    )
+    const dialog = await screen.findByRole('dialog', { name: /submit changes/i })
+    const titleInput = within(dialog).getByPlaceholderText(/tighten triage prompt/i)
+    await waitFor(() => expect((titleInput as HTMLInputElement).value).toBe('Update triage.md'))
+    await user.clear(titleInput)
+    await user.click(within(dialog).getByRole('button', { name: /send for review/i }))
     expect(await screen.findByText(/title is required/i)).toBeInTheDocument()
     expect(mockedPost).not.toHaveBeenCalled()
   })
@@ -93,7 +142,9 @@ describe('SubmitModal', () => {
     )
     await user.clear(within(dialog).getByPlaceholderText(/^pat$/i))
     await user.type(within(dialog).getByPlaceholderText(/^pat$/i), 'Alice')
-    await user.type(within(dialog).getByPlaceholderText(/tighten triage prompt/i), 'Tighten triage')
+    const titleInput = within(dialog).getByPlaceholderText(/tighten triage prompt/i)
+    await user.clear(titleInput)
+    await user.type(titleInput, 'Tighten triage')
     await user.click(within(dialog).getByRole('button', { name: /send for review/i }))
 
     await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(1))
