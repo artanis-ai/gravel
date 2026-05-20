@@ -52,11 +52,28 @@ def _safe_dump(obj: Any) -> Any:
 
 
 def _input_snapshot(kwargs: dict[str, Any]) -> dict[str, Any]:
-    snapshot = dict(kwargs)
-    if "messages" in snapshot:
-        snapshot["messages"] = [_safe_dump(m) for m in snapshot["messages"]]
-    if "system" in snapshot:
-        snapshot["system"] = _safe_dump(snapshot["system"])
+    """Render kwargs to JSON-safe shapes.
+
+    `messages` and `system` are the rich payloads we always normalise.
+    For everything else (including `output_format` on `parse()`, which
+    is a pydantic class) fall through `_safe_dump` so the persister
+    doesn't crash on non-JSON-serialisable types — those would
+    otherwise drop the trace entirely.
+    """
+    snapshot: dict[str, Any] = {}
+    for k, v in kwargs.items():
+        if k == "messages" and isinstance(v, (list, tuple)):
+            snapshot[k] = [_safe_dump(m) for m in v]
+        elif k == "system":
+            snapshot[k] = _safe_dump(v)
+        elif v is None or isinstance(v, (str, int, float, bool, list, dict, tuple)):
+            snapshot[k] = v
+        else:
+            # Anything else (pydantic class for output_format,
+            # arbitrary objects in extra_body, etc.) gets dumped
+            # defensively. _safe_dump falls back to repr() on
+            # unrecognised types so the trace persists.
+            snapshot[k] = _safe_dump(v)
     return snapshot
 
 
@@ -67,10 +84,12 @@ class _StreamTee:
         *,
         kwargs: dict[str, Any],
         started_at: Any,
+        trace_name: str = "anthropic.messages.create",
     ) -> None:
         self._inner = inner
         self._kwargs = kwargs
         self._started_at = started_at
+        self._trace_name = trace_name
         self._chunks: list[Any] = []
         self._closed = False
 
@@ -117,7 +136,7 @@ class _StreamTee:
             else None
         )
         record = make_record(
-            name="anthropic.messages.create",
+            name=self._trace_name,
             started_at=self._started_at,
             completed_at=completed_at,
             model=str(self._kwargs.get("model")) if self._kwargs.get("model") else None,
@@ -136,7 +155,18 @@ class _StreamTee:
             log.warning("persist_trace raised in stream flush: %s", exc)
 
 
-def _wrap_create(original: Callable[..., Any]) -> Callable[..., Any]:
+def _wrap_method(original: Callable[..., Any], *, trace_name: str) -> Callable[..., Any]:
+    """Build a wrapper for `Messages.<method>` that:
+      - records ONE row under `trace_name`
+      - suppresses fetch_patch via fetch_tracing_disabled while
+        the underlying httpx call runs (no double-record)
+      - handles stream=True via _StreamTee
+      - records errors with the same trace_name + error metadata
+
+    Used for `Messages.create` (`anthropic.messages.create`) and
+    `Messages.parse` (`anthropic.messages.parse` — structured output;
+    Claude's de_platform install caught this as missing in 2026-05-20).
+    """
     @functools.wraps(original)
     def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
         if _is_disabled():
@@ -154,7 +184,7 @@ def _wrap_create(original: Callable[..., Any]) -> Callable[..., Any]:
         except Exception as exc:
             completed_at = now_utc()
             record = make_record(
-                name="anthropic.messages.create",
+                name=trace_name,
                 started_at=started_at,
                 completed_at=completed_at,
                 model=str(kwargs.get("model")) if kwargs.get("model") else None,
@@ -170,12 +200,17 @@ def _wrap_create(original: Callable[..., Any]) -> Callable[..., Any]:
             raise
 
         if is_stream:
-            return _StreamTee(iter(result), kwargs=kwargs, started_at=started_at)
+            return _StreamTee(
+                iter(result),
+                kwargs=kwargs,
+                started_at=started_at,
+                trace_name=trace_name,
+            )
 
         completed_at = now_utc()
         dumped = _safe_dump(result)
         record = make_record(
-            name="anthropic.messages.create",
+            name=trace_name,
             started_at=started_at,
             completed_at=completed_at,
             model=str(kwargs.get("model")) if kwargs.get("model") else (
@@ -196,6 +231,10 @@ def _wrap_create(original: Callable[..., Any]) -> Callable[..., Any]:
     return wrapper
 
 
+# Backwards-compat alias: tests may still import the v0.8.x name.
+_wrap_create = _wrap_method
+
+
 def install() -> bool:
     global _PATCHED
     if _PATCHED:
@@ -207,11 +246,22 @@ def install() -> bool:
     except ImportError:
         return False
 
+    # Wrap .create (the canonical message API).
     if not getattr(Messages.create, "__gravel_patched__", False):
-        Messages.create = _wrap_create(Messages.create)  # type: ignore[method-assign]
+        Messages.create = _wrap_method(  # type: ignore[method-assign]
+            Messages.create, trace_name="anthropic.messages.create"
+        )
+    # Wrap .parse (structured output; added in v0.9.1 — Claude's
+    # de_platform dogfooding caught .parse() going unpatched and
+    # only landing as a generic fetch:anthropic.messages row with no
+    # model / input richness).
+    if hasattr(Messages, "parse") and not getattr(Messages.parse, "__gravel_patched__", False):
+        Messages.parse = _wrap_method(  # type: ignore[method-assign]
+            Messages.parse, trace_name="anthropic.messages.parse"
+        )
 
     _PATCHED = True
-    log.debug("anthropic patch installed")
+    log.debug("anthropic patch installed (create + parse)")
     return True
 
 
@@ -225,9 +275,13 @@ def uninstall() -> None:
         _PATCHED = False
         return
 
-    wrapped = getattr(Messages.create, "__wrapped__", None)
-    if wrapped is not None:
-        Messages.create = wrapped  # type: ignore[method-assign]
+    for method_name in ("create", "parse"):
+        method = getattr(Messages, method_name, None)
+        if method is None:
+            continue
+        wrapped = getattr(method, "__wrapped__", None)
+        if wrapped is not None:
+            setattr(Messages, method_name, wrapped)  # type: ignore[method-assign]
     _PATCHED = False
 
 
