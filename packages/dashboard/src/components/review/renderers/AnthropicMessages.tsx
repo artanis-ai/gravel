@@ -198,18 +198,19 @@ function TextBlock({ block }: { block: Record<string, unknown> }): ReactNode {
     Array.isArray(block.citations) && block.citations.length > 0
       ? (block.citations as unknown[])
       : null
-  // Auto-format JSON-shaped text blocks. When a customer uses Anthropic
-  // with response_format-style structured output, the assistant returns
-  // one text block whose entire body is JSON; rendering it raw makes
-  // the trace UI ugly (Olly's 2026-05-21 dogfooding). Try-parse and
-  // pretty-print when the result is an object / array.
+  // Structured-output text blocks. When a customer uses Anthropic with
+  // response_format / a schema, the assistant returns one text block
+  // whose entire body is JSON the application then parses. Domain
+  // experts must NEVER see JSON syntax (quotes, braces, key names) —
+  // hand the parsed object to `HumanValue`, which renders it as the
+  // same labeled key-value UI the rest of the dashboard uses for
+  // unknown shapes. Olly's 2026-05-21 `anthropic.messages.parse` trace
+  // is the canonical case.
   const parsed = tryParseStructuredString(text)
   if (parsed !== undefined && (Array.isArray(parsed) || isPlainObject(parsed))) {
     return (
       <span className="block">
-        <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded border border-warm bg-warm/10 p-2 font-mono text-[11px]">
-          {JSON.stringify(parsed, null, 2)}
-        </pre>
+        <HumanValue value={parsed} />
         {citations && (
           <span className="mt-1 flex flex-wrap gap-1">
             {citations.map((c, i) => (

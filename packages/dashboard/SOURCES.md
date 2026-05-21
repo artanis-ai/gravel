@@ -69,6 +69,7 @@ Notable nuances:
 |---|---|---|
 | `anthropic.messages.create` | `anthropic-messages` | `anthropic-messages.json` (text), `anthropic-messages-system.json` (top-level `system` field), `anthropic-messages-with-tools.json` (tool_use blocks), `anthropic-messages-tool-result.json` (tool_result content blocks), `anthropic-messages-image.json` (base64 + url + document blocks), `anthropic-messages-citations.json` (citation blocks), `anthropic-messages-error.json` |
 | `anthropic.messages.stream` (TS only) | `anthropic-messages` | `anthropic-messages-stream.json` (assembled output + chunks state) |
+| `anthropic.messages.parse` | `anthropic-messages` | structured-output variant; same response shape as `.create`. Text blocks whose body is JSON render through `HumanValue` as a labeled key-value form, never as raw JSON. |
 | `fetch:anthropic.messages` | `anthropic-messages` (after `{body}` unwrap) | `fetch-anthropic-messages.json` |
 
 Notable nuances:
@@ -225,8 +226,9 @@ detectSource(name: string, input: unknown, output: unknown): SourceKind
   2. Match exact: openai.chat.completions.create →
      'openai-chat'; openai.responses.create →
      'openai-responses'; openai.embeddings.create →
-     'openai-embeddings'; anthropic.messages.create or
-     anthropic.messages.stream → 'anthropic-messages'.
+     'openai-embeddings'; anthropic.messages.create,
+     anthropic.messages.stream, or anthropic.messages.parse →
+     'anthropic-messages'.
   3. Match prefix:
      - vercel-ai.generateText | streamText → 'vercel-ai-text'
      - vercel-ai.generateObject | streamObject → 'vercel-ai-object'
