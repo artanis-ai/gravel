@@ -96,7 +96,13 @@ describe('submitDrafts', () => {
 
     const result = await call([{ promptId: 'p_a', newText: 'NEW WHOLE FILE' }])
 
-    expect(githubAPISpy).not.toHaveBeenCalled()
+    // v0.9.5: submitDrafts now probes GET /pulls?state=open once to
+    // decide whether to baseline against the branch manifest. With
+    // no mocked response the helper returns null and we fall back to
+    // the local manifest, which is the desired path here.
+    const calls = githubAPISpy.mock.calls
+    expect(calls).toHaveLength(1)
+    expect(calls[0]![0]).toContain('/pulls?state=open')
     expect(createPullRequestSpy).toHaveBeenCalledOnce()
     const args = createPullRequestSpy.mock.calls[0]![0] as { changes: Array<{ path: string; content: string }> }
     const fileChange = args.changes.find((c) => c.path === 'prompts/sys.md')

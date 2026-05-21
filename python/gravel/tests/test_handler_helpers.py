@@ -396,5 +396,86 @@ def test_migrations_status_pending_count_zero_with_no_versions(monkeypatch, tmp_
     assert pending_migration_count(None) == 0
 
 
+def test_submit_drafts_uses_branch_manifest_as_baseline_on_amendment(
+    tmp_path, patch_submit_github, fake_github
+):
+    """When an open Gravel PR is detected, `submit_drafts` baselines
+    its diff against the branch's manifest (not the user's local
+    manifest). Concrete scenario: branch has prompts [A, B, C] (user1
+    added C in their submit). Our local has [A, B] (we haven't pulled
+    user1's edits yet). We draft a change to A.
+
+    Without the branch-aware fetch we'd write a manifest with [A, B]
+    only, silently dropping C. v0.9.5 fixes this: branch manifest is
+    fetched + used as baseline, so the final manifest is [A, B, C]
+    with our updated hash on A.
+    """
+    import json
+
+    # Local manifest: [A, B]
+    (tmp_path / ".gravel").mkdir()
+    local_manifest = {
+        "version": 1,
+        "prompts": [
+            {"id": "p_a", "type": "file", "path": "a.md", "hash": "old-a-hash"},
+            {"id": "p_b", "type": "file", "path": "b.md", "hash": "old-b-hash"},
+        ],
+    }
+    (tmp_path / ".gravel" / "manifest.json").write_text(json.dumps(local_manifest))
+    (tmp_path / "a.md").write_text("local a")
+    (tmp_path / "b.md").write_text("local b")
+
+    # Branch manifest: [A, B, C] (user1 added C).
+    branch_manifest = {
+        "version": 1,
+        "prompts": [
+            {"id": "p_a", "type": "file", "path": "a.md", "hash": "old-a-hash"},
+            {"id": "p_b", "type": "file", "path": "b.md", "hash": "old-b-hash"},
+            {"id": "p_c", "type": "file", "path": "c.md", "hash": "user1-c-hash"},
+        ],
+    }
+    fake_github.existing_open_pr = {
+        "head": {"ref": "gravel/draft"},
+        "html_url": "https://github.com/o/r/pull/7",
+        "number": 7,
+    }
+    # The FakeGithub serves /contents/.gravel/manifest.json from the
+    # `file_contents` dict; seed it with the BRANCH manifest.
+    fake_github.file_contents[".gravel/manifest.json"] = json.dumps(branch_manifest)
+    # Also need to satisfy unpushed_paths' lookup of `a.md` on remote.
+    fake_github.file_contents["a.md"] = "remote a"
+
+    patch_submit_github(fake_github)
+
+    from artanis_gravel._prompts_submit import DraftInput, SubmitArgs, submit_drafts
+
+    # Patch unpushed_paths to pass: assume `a.md` is on remote.
+    import artanis_gravel._push_status as push_status
+    monkeypatch_target = lambda *a, **k: set()  # noqa: E731
+    import unittest.mock as _mock
+    with _mock.patch.object(push_status, "unpushed_paths", monkeypatch_target):
+        result = submit_drafts(
+            SubmitArgs(
+                repo_root=tmp_path,
+                drafts=[DraftInput("p_a", "new content for a")],
+                draft_branch="gravel/draft",
+                access_token="t",
+                repo_owner="o",
+                repo_name="r",
+                de_first_name="Tester",
+            )
+        )
+
+    assert result.is_amendment is True
+    # The manifest committed in this submit should include all THREE
+    # prompts (a, b, c). If branch-aware fetch was wired, we kept c.
+    manifest_commit = next(
+        c for path, c in fake_github.put_changes if path == ".gravel/manifest.json"
+    )
+    final_manifest = json.loads(manifest_commit)
+    ids = sorted(p["id"] for p in final_manifest["prompts"])
+    assert ids == ["p_a", "p_b", "p_c"], f"branch's p_c was dropped: {ids}"
+
+
 # Suppress unused-import warning for `os`.
 _ = os

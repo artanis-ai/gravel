@@ -25,17 +25,79 @@ from ._github_api import (
     GitHubAPIError,
     PromptChange,
     create_pull_request,
+    find_open_gravel_pr,
     github_api,
 )
 from ._pr_body import compute_manifest_diff_summary, default_pr_title
 from .manifest.hash import hash_prompt
-from .manifest.io import _prompt_to_dict, read_manifest
+from .manifest.io import _prompt_to_dict, _prompt_from_dict, read_manifest
 from .manifest.types import (
     MANIFEST_PATH,
     Manifest,
     ManifestPrompt,
     ManifestPromptEmbedded,
 )
+
+
+def _fetch_branch_manifest(
+    *, access_token: str, repo_owner: str, repo_name: str
+) -> Manifest | None:
+    """Return the `.gravel/manifest.json` from the open Gravel PR's
+    branch, or None if no open PR / no manifest on the branch.
+
+    Used by `submit_drafts` to baseline its diff against the in-flight
+    PR's state instead of the user's local disk; without this,
+    concurrent submits from two users clobber each other's manifest
+    entries on the open PR. Returns None on any failure path so the
+    caller falls back to the local manifest (single-user case + tests
+    that don't stub the GH API + GitHub outages).
+    """
+    try:
+        pr = find_open_gravel_pr(
+            access_token=access_token, repo_owner=repo_owner, repo_name=repo_name
+        )
+    except GitHubAPIError:
+        return None
+    if pr is None:
+        return None
+    branch = pr.get("head", {}).get("ref")
+    if not isinstance(branch, str):
+        return None
+    try:
+        resp = github_api(
+            f"/repos/{repo_owner}/{repo_name}/contents/{MANIFEST_PATH}?ref={branch}",
+            access_token,
+        )
+    except GitHubAPIError:
+        # Branch exists but no manifest yet (e.g. first amendment ever);
+        # caller falls back to the local manifest.
+        return None
+    content = resp.get("content") if isinstance(resp, dict) else None
+    encoding = resp.get("encoding") if isinstance(resp, dict) else None
+    if not isinstance(content, str) or encoding != "base64":
+        return None
+    try:
+        body = _decode_base64_utf8(content, encoding)
+        payload = json.loads(body)
+    except (SubmitError, json.JSONDecodeError):
+        return None
+    return _manifest_from_payload(payload)
+
+
+def _manifest_from_payload(payload: dict) -> Manifest | None:
+    """Lift the inverse of `_serialize_manifest`. Returns None on any
+    shape mismatch; caller falls back to the local manifest."""
+    try:
+        raw_prompts = payload.get("prompts", [])
+        prompts = [_prompt_from_dict(p) for p in raw_prompts]
+        return Manifest(
+            version=int(payload.get("version", 1)),
+            last_full_scan_commit=payload.get("lastFullScanCommit"),
+            last_full_scan_at=payload.get("lastFullScanAt"),
+            prompts=prompts,
+        )
+    except Exception:
+        return None
 
 
 @dataclass
@@ -133,12 +195,31 @@ def submit_drafts(args: SubmitArgs) -> CreatePullRequestResult:
     if not args.drafts:
         raise SubmitError("no_drafts", "No drafts to submit")
 
-    manifest = read_manifest(args.repo_root)
-    if not manifest.prompts:
+    local_manifest = read_manifest(args.repo_root)
+    if not local_manifest.prompts:
         raise SubmitError(
             "manifest_missing",
             "Manifest is empty: the dashboard expected at least one prompt",
         )
+
+    # Branch-aware baseline. When an open Gravel PR exists, fetch the
+    # manifest from its `gravel/draft` branch and use IT as the
+    # baseline instead of the local disk manifest. Without this, user
+    # B's submit reads their stale local manifest (which doesn't
+    # know about user A's in-flight edits) and clobbers A's manifest
+    # entries on the open PR. Closes the v0.9.5 follow-up to v0.9.4.
+    manifest = (
+        _fetch_branch_manifest(
+            access_token=args.access_token,
+            repo_owner=args.repo_owner,
+            repo_name=args.repo_name,
+        )
+        or local_manifest
+    )
+    if not manifest.prompts:
+        # Branch manifest came back empty/malformed; fall back to
+        # local so we don't silently lose every entry.
+        manifest = local_manifest
     prompt_index: dict[str, ManifestPrompt] = {p.id: p for p in manifest.prompts}
 
     resolved: list[_Resolved] = []

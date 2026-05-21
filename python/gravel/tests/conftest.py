@@ -183,6 +183,14 @@ def patch_submit_github(monkeypatch: pytest.MonkeyPatch):
 
         monkeypatch.setattr(ps, "github_api", fake.github_api)
         monkeypatch.setattr(ps, "create_pull_request", fake.create_pr)
+        # Branch-aware manifest fetch (v0.9.5): _prompts_submit imports
+        # find_open_gravel_pr directly. Patch it to honour the fake's
+        # `existing_open_pr` slot.
+        monkeypatch.setattr(
+            ps,
+            "find_open_gravel_pr",
+            lambda *, access_token, repo_owner, repo_name: fake.existing_open_pr,
+        )
 
     return _wire
 

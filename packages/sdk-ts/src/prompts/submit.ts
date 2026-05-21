@@ -36,6 +36,7 @@ import { githubAPI } from '../github/api.js'
 import {
   createPullRequest,
   defaultPRTitle,
+  findOpenGravelPR,
   type PromptChange,
   type CreatePullRequestResult,
   type ManifestDiffEntry,
@@ -72,6 +73,37 @@ export interface SubmitArgs {
   deFirstName?: string
 }
 
+/** Fetch `.gravel/manifest.json` from the open Gravel PR's branch.
+ *  Returns null when no open PR exists, when the branch doesn't carry
+ *  a manifest yet, or on any other failure (caller falls back to the
+ *  local-disk manifest). Mirrors
+ *  `python/gravel/src/artanis_gravel/_prompts_submit.py:_fetch_branch_manifest`. */
+async function fetchBranchManifest(args: SubmitArgs): Promise<Manifest | null> {
+  let pr: { head: { ref: string } } | null
+  try {
+    pr = await findOpenGravelPR(args.accessToken, args.repoOwner, args.repoName)
+  } catch {
+    return null
+  }
+  if (!pr || typeof pr.head?.ref !== 'string') return null
+  let resp: { content?: string; encoding?: string }
+  try {
+    resp = await githubAPI<{ content: string; encoding: string }>(
+      `/repos/${args.repoOwner}/${args.repoName}/contents/.gravel/manifest.json?ref=${pr.head.ref}`,
+      args.accessToken,
+    )
+  } catch {
+    return null
+  }
+  if (typeof resp.content !== 'string' || resp.encoding !== 'base64') return null
+  try {
+    const body = Buffer.from(resp.content.replace(/\s+/g, ''), 'base64').toString('utf-8')
+    return JSON.parse(body) as Manifest
+  } catch {
+    return null
+  }
+}
+
 export class SubmitError extends Error {
   constructor(
     public code:
@@ -93,13 +125,22 @@ export async function submitDrafts(args: SubmitArgs): Promise<CreatePullRequestR
     throw new SubmitError('no_drafts', 'No drafts to submit')
   }
 
-  const manifest = await readManifest(args.repoRoot)
-  if (manifest.prompts.length === 0) {
+  const localManifest = await readManifest(args.repoRoot)
+  if (localManifest.prompts.length === 0) {
     throw new SubmitError(
       'manifest_missing',
-      'Manifest is empty — the dashboard expected at least one prompt',
+      'Manifest is empty (the dashboard expected at least one prompt)',
     )
   }
+  // Branch-aware baseline: when an open Gravel PR exists, fetch the
+  // manifest from its `gravel/draft` branch and use it as the baseline
+  // instead of the user's local disk. Without this, user B's submit
+  // baselines against their stale local state and silently drops
+  // manifest entries user A just added in the open PR. v0.9.5 closes
+  // the follow-up the v0.9.4 commit message flagged.
+  const branchManifest = await fetchBranchManifest(args).catch(() => null)
+  const manifest =
+    branchManifest && branchManifest.prompts.length > 0 ? branchManifest : localManifest
   const promptIndex = new Map<string, ManifestPrompt>(manifest.prompts.map((p) => [p.id, p]))
 
   type Resolved = { draft: DraftInput; entry: ManifestPrompt }
