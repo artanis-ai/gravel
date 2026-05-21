@@ -300,6 +300,74 @@ func findFastAPIEntries(cwd string) []string {
 //   * false -> `from gravel_route import router as gravel_router`
 //     (entry is a top-level script; works when the entry's dir is on
 //     sys.path, which is the case for `python main.py` invocations)
+// importInsertAtBlockEnd inserts `importLine` immediately after the
+// last line of the file's top contiguous import block. The "block" is
+// the run of consecutive `import` / `from ... import` statements at
+// the top of the file (after any module docstring + `from __future__`
+// lines), tolerating blank lines and comments inside.
+//
+// If no import block is detected, falls back to prepending.
+//
+// This is the v0.10.0 fix for Olly's isort regression: the previous
+// "after last fastapi import" insertion landed gravel_route mid-block
+// in real customer files, which isort re-shuffled on commit.
+func importInsertAtBlockEnd(source, importLine string) string {
+	lines := strings.Split(source, "\n")
+	// Find the LAST line that is part of the top import block. We
+	// walk from the top, skipping a leading module docstring +
+	// shebang / encoding / blank lines, then track the latest
+	// `import` / `from ... import` line we've seen, allowing
+	// intervening blank / comment lines as part of the block.
+	importLineRE := regexp.MustCompile(`^(?:import\s|from\s+\S+\s+import\s)`)
+	inDocstring := false
+	docstringQuote := ""
+	lastImportIdx := -1
+	for i, ln := range lines {
+		trimmed := strings.TrimSpace(ln)
+		if inDocstring {
+			if strings.Contains(ln, docstringQuote) {
+				inDocstring = false
+			}
+			continue
+		}
+		// Module-level docstring opener (only counts before we've seen
+		// any code).
+		if lastImportIdx == -1 && (strings.HasPrefix(trimmed, `"""`) || strings.HasPrefix(trimmed, `'''`)) {
+			q := trimmed[:3]
+			// Single-line docstring: opens and closes on same line.
+			rest := trimmed[3:]
+			if strings.Contains(rest, q) {
+				continue
+			}
+			inDocstring = true
+			docstringQuote = q
+			continue
+		}
+		if importLineRE.MatchString(trimmed) {
+			lastImportIdx = i
+			continue
+		}
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			// blank line / comment — could still be inside the block.
+			continue
+		}
+		// First non-blank, non-comment, non-import line: stop scanning.
+		if lastImportIdx >= 0 {
+			break
+		}
+		// We're still before any import at all (e.g. early `if
+		// __name__ == "__main__"` guards). Keep scanning; some files
+		// have imports lower down.
+	}
+	if lastImportIdx < 0 {
+		return importLine + source
+	}
+	// Insert AFTER the last import line.
+	before := strings.Join(lines[:lastImportIdx+1], "\n")
+	after := strings.Join(lines[lastImportIdx+1:], "\n")
+	return before + "\n" + importLine + after
+}
+
 func patchFastAPIMain(source, mountPath string, inPackage bool) string {
 	if strings.Contains(source, "from gravel_route import router as gravel_router") ||
 		strings.Contains(source, "from .gravel_route import router as gravel_router") {
@@ -311,18 +379,23 @@ func patchFastAPIMain(source, mountPath string, inPackage bool) string {
 	}
 	includeTpl := "%s.include_router(gravel_router, prefix='%s')\n"
 
-	// Inject the import after the last `from fastapi import ...`. If
-	// no fastapi import is present we prepend, which is a safe (if
-	// noisy) fallback — the user can move it.
-	withImport := source
-	fastapiImportRE := regexp.MustCompile(`(?m)^from\s+fastapi\s+import\s+[^\n]+\n`)
-	if locs := fastapiImportRE.FindAllStringIndex(source, -1); len(locs) > 0 {
-		last := locs[len(locs)-1]
-		insertAt := last[1]
-		withImport = source[:insertAt] + importLine + source[insertAt:]
-	} else {
-		withImport = importLine + source
-	}
+	// Inject the import at the END of the file's top import block so
+	// isort / ruff don't re-shuffle it on commit.
+	//
+	// Pre-v0.10.0 strategy: after the last `from fastapi import ...`.
+	// That landed gravel_route MID-BLOCK in real customer files (Olly's
+	// 2026-05-21 install), e.g.:
+	//   from fastapi import FastAPI
+	//   from .gravel_route import router as gravel_router  ← inserted
+	//   from fastapi.security import HTTPBearer            ← isort moves
+	// Result: a noisy isort fixup commit on first pre-commit run.
+	//
+	// New strategy: find the contiguous top-of-file import block
+	// (lines starting with `import` or `from ... import`, allowing
+	// blank lines + comments inside) and insert immediately AFTER
+	// the LAST line of that block — wherever isort wants it to be.
+	// Falls back to "prepend" if no import block is detected.
+	withImport := importInsertAtBlockEnd(source, importLine)
 
 	// Find the `<name> = FastAPI(` opening at column ZERO. See
 	// topLevelCtorRE's doc-comment for the rationale; in short, we

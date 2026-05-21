@@ -47,6 +47,115 @@
 }
 
 /*
+ * .gravel-prose — typographic baseline for the WYSIWYG prompt editor.
+ *
+ * Applied via `editorProps.attributes.class` in SuggestionEditor. The
+ * class was removed from styles.css during the v0.9.5 toast-system
+ * refactor while staying applied on the editor; result: headings
+ * stopped looking like headings, lists lost their bullets, blockquotes
+ * lost their left rule. Olly's 2026-05-21 dogfooding spotted the
+ * regression. v0.10.0 restores these rules — kept inline rather than
+ * adding @tailwindcss/typography since we only need a small subset.
+ */
+.gravel-prose {
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: #1f2937;
+}
+.gravel-prose h1 {
+  font-size: 1.65rem;
+  font-weight: 700;
+  line-height: 1.25;
+  margin-top: 1.25em;
+  margin-bottom: 0.5em;
+  color: #111827;
+}
+.gravel-prose h2 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.3;
+  margin-top: 1.1em;
+  margin-bottom: 0.5em;
+  color: #111827;
+}
+.gravel-prose h3 {
+  font-size: 1.15rem;
+  font-weight: 600;
+  line-height: 1.35;
+  margin-top: 1em;
+  margin-bottom: 0.4em;
+  color: #111827;
+}
+.gravel-prose h4,
+.gravel-prose h5,
+.gravel-prose h6 {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.4;
+  margin-top: 0.9em;
+  margin-bottom: 0.35em;
+  color: #111827;
+}
+.gravel-prose p {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+.gravel-prose strong { font-weight: 600; }
+.gravel-prose em { font-style: italic; }
+.gravel-prose ul,
+.gravel-prose ol {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+  padding-left: 1.5em;
+}
+.gravel-prose ul { list-style-type: disc; }
+.gravel-prose ol { list-style-type: decimal; }
+.gravel-prose li { margin: 0.15em 0; }
+.gravel-prose li > p { margin: 0; }
+.gravel-prose blockquote {
+  margin: 0.75em 0;
+  padding: 0.1em 0.9em;
+  border-left: 3px solid rgba(107, 87, 68, 0.35);
+  color: #4b5563;
+  font-style: italic;
+}
+.gravel-prose code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+  background-color: rgba(107, 87, 68, 0.1);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+.gravel-prose pre {
+  background-color: rgba(31, 41, 55, 0.04);
+  border: 1px solid rgba(31, 41, 55, 0.08);
+  padding: 0.7em 0.9em;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 0.7em 0;
+}
+.gravel-prose pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-size: 0.875em;
+}
+.gravel-prose a {
+  color: #c44e46;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+.gravel-prose a:hover { color: #9b3a33; }
+.gravel-prose hr {
+  border: none;
+  border-top: 1px solid rgba(107, 87, 68, 0.2);
+  margin: 1.25em 0;
+}
+.gravel-prose > *:first-child { margin-top: 0; }
+.gravel-prose > *:last-child { margin-bottom: 0; }
+
+/*
  * Warm-toned scrollbar. The thumb is mostly transparent at rest and
  * fades to a stronger earth tone on hover so the chrome only asserts
  * itself when you're actually using it.

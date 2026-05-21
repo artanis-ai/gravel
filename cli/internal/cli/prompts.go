@@ -13,11 +13,12 @@ import (
 
 func newPromptsCmd() *cobra.Command {
 	var (
-		plan       bool
-		apply      bool
-		noDeepScan bool
-		withHook   bool
-		acceptAll  bool
+		plan        bool
+		apply       bool
+		noDeepScan  bool
+		withHook    bool
+		acceptAll   bool
+		skipFolders []string
 	)
 	cmd := &cobra.Command{
 		Use:   "prompts",
@@ -49,6 +50,7 @@ verify loop entirely.`,
 				SkipDeepScan: noDeepScan,
 				InstallHook:  withHook,
 				Prompter:     wizard.DefaultsPrompter{},
+				SkipFolders:  skipFolders,
 			}
 			if !acceptAll && !plan {
 				// Agents should pass --accept-all; humans use `gravel init`.
@@ -79,5 +81,7 @@ verify loop entirely.`,
 	cmd.Flags().BoolVar(&noDeepScan, "no-deep-scan", false, "Skip the LLM-assisted 'did I find everything?' second pass.")
 	cmd.Flags().BoolVar(&withHook, "with-hook", false, "Also install a pre-commit hook (default off; opt-in per Olly's dogfooding).")
 	cmd.Flags().BoolVar(&acceptAll, "accept-all", false, "Accept every prompt the scanner finds (agent flow).")
+	cmd.Flags().StringSliceVar(&skipFolders, "skip-folder", nil,
+		"Skip prompts under this folder (repo-relative). Repeatable. Agents read `folders[]` from --plan, ask the human to skip, then pass --skip-folder for each.")
 	return cmd
 }

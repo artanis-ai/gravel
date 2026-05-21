@@ -39,6 +39,41 @@ from .manifest.types import (
 )
 
 
+def _manifest_missing_on_default_branch(
+    *, access_token: str, repo_owner: str, repo_name: str
+) -> bool:
+    """Return True when `.gravel/manifest.json` does not exist on the
+    repo's default branch. Used to override the per-prompt diff with
+    `first_add` for brand-new manifests: the user's local manifest may
+    already be populated by `gravel init`, but reviewers see the file
+    for the first time and want the "what is this?" explainer.
+
+    Returns False on any non-404 failure (network blip, auth, missing
+    default-branch metadata) so we under-trigger `first_add` rather
+    than mis-trigger it. Mirrors the TS sibling
+    `manifestMissingOnDefaultBranch` in
+    `packages/sdk-ts/src/prompts/submit.ts`. v0.10.0 fix for Olly's
+    2026-05-21 dogfooding.
+    """
+    try:
+        repo_meta = github_api(f"/repos/{repo_owner}/{repo_name}", access_token)
+    except GitHubAPIError:
+        return False
+    default_branch = (
+        repo_meta.get("default_branch") if isinstance(repo_meta, dict) else None
+    )
+    if not isinstance(default_branch, str):
+        return False
+    try:
+        github_api(
+            f"/repos/{repo_owner}/{repo_name}/contents/{MANIFEST_PATH}?ref={default_branch}",
+            access_token,
+        )
+        return False
+    except GitHubAPIError as err:
+        return "404" in str(err)
+
+
 def _fetch_branch_manifest(
     *, access_token: str, repo_owner: str, repo_name: str
 ) -> Manifest | None:
@@ -390,6 +425,17 @@ def submit_drafts(args: SubmitArgs) -> CreatePullRequestResult:
     # this for TS; Olly's dogfooding (de_platform PR #249) caught the
     # Python stack never received it.
     manifest_diff = compute_manifest_diff_summary(manifest, updated_manifest)
+    # Brand-new manifest on the default branch: override per-prompt
+    # diff with a single `first_add` so reviewers get the
+    # "what is this file?" explainer. Local manifest may already be
+    # populated by `gravel init` — that's not what reviewers see.
+    if _manifest_missing_on_default_branch(
+        access_token=args.access_token,
+        repo_owner=args.repo_owner,
+        repo_name=args.repo_name,
+    ):
+        from ._pr_body import ManifestDiffEntry
+        manifest_diff = [ManifestDiffEntry(kind="first_add")]
 
     # Software-default title from the prompt basenames. Matches the
     # TS `defaultPRTitle` byte-for-byte (dashboard prefill also

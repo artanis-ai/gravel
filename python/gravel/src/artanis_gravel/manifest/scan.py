@@ -24,7 +24,26 @@ PROMPT_FILE_EXTS = {".md", ".markdown", ".txt", ".mdx", ".mdc"}
 # documentation about prompts rather than a prompt. Applied as a
 # path-segment filter on every candidate (post-walk), so we skip
 # `prompts/docs/foo.md`, `templates/examples/foo.md`, etc.
-DOC_DIR_NAMES = {"docs", "doc", "documentation", "examples"}
+DOC_DIR_NAMES = {
+    "docs",
+    "doc",
+    "documentation",
+    "examples",
+    # v0.10.0 additions from Olly's dogfooding (2026-05-21): markdown
+    # here is repo metadata or test fixtures, not user-edited prompts.
+    ".github",
+    "tests",
+    "test",
+    "__tests__",
+    "spec",
+    "specs",
+    "__fixtures__",
+    "fixtures",
+    # Knowledge-base / agent context the host app reads at runtime.
+    "kb",
+    "knowledge",
+    "knowledgebase",
+}
 
 # Case-insensitive denylist of doc-file stems (without extension).
 # Without this, a README.md sitting next to a real prompt would end
@@ -47,6 +66,22 @@ DOC_FILE_STEMS = {
     "TODO",
     "ROADMAP",
     "USAGE",
+    # v0.10.0: AI agent config files (Cursor / Aider / etc. seed
+    # system prompts from these; they're not user-edited prompts).
+    "CLAUDE",
+    "GEMINI",
+    "AGENTS",
+    # GitHub templates.
+    "ISSUE_TEMPLATE",
+    "PULL_REQUEST_TEMPLATE",
+    # Dependency manifests in .txt form.
+    "REQUIREMENTS",
+    "REQUIREMENTS-DEV",
+    "PIPFILE",
+    "CONSTRAINTS",
+    # Other commonly-co-located metadata.
+    "CONFIG",
+    "VERSION",
 }
 
 # FS-walk fallback's ignore list: only kicks in when git isn't

@@ -34,10 +34,19 @@ export const githubRoutes: RouteTable = {
     })
   },
   'GET /api/github/install': async ({ request, config }) => {
+    const requestUrl = new URL(request.url)
+    // Pin the install-initiating origin into the callback URL so the
+    // final post-install redirect lands on the SAME origin the user
+    // started on. Pre-v0.10.0 this drifted: GitHub / the CP could
+    // canonicalise the round-trip URL (localhost ↔ 127.0.0.1) and
+    // bounce the user to a different origin. localStorage is
+    // origin-scoped, so the drafts the user typed before the install
+    // looked gone (they were on the OLD origin). Olly hit this 2026-05-21.
     const callback = new URL(
       `${config.mountPath}/api/github/install/callback`,
       request.url,
-    ).toString()
+    )
+    callback.searchParams.set('return_origin', requestUrl.origin)
     if (process.env.GRAVEL_GH_DEV_STUB === '1') {
       const owner = process.env.GRAVEL_GH_DEV_REPO_OWNER
       const name = process.env.GRAVEL_GH_DEV_REPO_NAME
@@ -47,7 +56,8 @@ export const githubRoutes: RouteTable = {
           500,
         )
       }
-      return json({ redirectUrl: `${callback}?gh=installed` })
+      callback.searchParams.set('gh', 'installed')
+      return json({ redirectUrl: callback.toString() })
     }
     // Bounce to the CP's install/start so it can sign the state JWT
     // GitHub's install URL needs. No project_id — the CP is anonymous
@@ -58,7 +68,7 @@ export const githubRoutes: RouteTable = {
     // mismatch prompt to the user.
     const cpUrl = process.env.GRAVEL_CONTROL_PLANE_URL ?? 'https://gravel.artanis.ai'
     const start = new URL('/api/cli/github/install/start', cpUrl)
-    start.searchParams.set('return_to', callback)
+    start.searchParams.set('return_to', callback.toString())
     const { detectLocalGithubRepo } = await import('../../github/repo-detect.js')
     const localRepo = detectLocalGithubRepo()
     if (localRepo) {
@@ -100,9 +110,16 @@ export const githubRoutes: RouteTable = {
         console.error('[gravel] failed to write GH install env vars:', e)
       }
     }
+    // Redirect back to the install-initiating origin (see the
+    // `return_origin` set in /api/github/install). Falls back to a
+    // same-origin relative redirect when absent (older callbacks).
+    const returnOrigin = url.searchParams.get('return_origin')
+    const target = returnOrigin
+      ? `${returnOrigin}${config.mountPath}/?gh=installed`
+      : `${config.mountPath}/?gh=installed`
     return new Response(null, {
       status: 302,
-      headers: { location: `${config.mountPath}/?gh=installed` },
+      headers: { location: target },
     })
   },
 }

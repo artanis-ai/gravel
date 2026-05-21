@@ -191,10 +191,14 @@ func TestGetVersionInfo(t *testing.T) {
 	if got.HasUpdate || got.Latest != nil {
 		t.Errorf("unknown latest: expected (hasUpdate=false, latest=nil), got %+v", got)
 	}
-	// Tagged release with leading "v" still compares correctly.
+	// Tagged release with leading "v" compares correctly AND lands in
+	// the JSON without the "v" prefix. v0.10.0 normalised this so the
+	// `current` (bare semver) and `latest` fields read consistently;
+	// pre-fix the doctor JSON had `current: 0.5.26, latest: v0.9.7`
+	// and agents emitted the `v` literally in install hints.
 	tagged := GetVersionInfo(ctx, s, "0.1.0", stubFetcher("v0.2.0"))
-	if !tagged.HasUpdate || tagged.Latest == nil || *tagged.Latest != "v0.2.0" {
-		t.Errorf("v-prefixed: got %+v, want hasUpdate=true latest=v0.2.0", tagged)
+	if !tagged.HasUpdate || tagged.Latest == nil || *tagged.Latest != "0.2.0" {
+		t.Errorf("v-prefixed: got %+v, want hasUpdate=true latest=0.2.0 (v stripped)", tagged)
 	}
 }
 

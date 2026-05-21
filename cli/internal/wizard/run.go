@@ -80,6 +80,16 @@ func Run(ctx context.Context, opts RunOptions, _ io.Writer) (RunResult, error) {
 	interactive := isInteractive(opts.Prompter)
 
 	Welcome("Gravel install", "Embedded prompt management and evals for domain experts")
+	// Agent-detection signpost. When `gravel init` runs under an
+	// agent (Claude Code, Codex, Cursor), the agent should be driving
+	// pillar-by-pillar via `gravel mount --plan` / `--apply` etc. —
+	// NOT `gravel init --yes`. Olly's 2026-05-21 dogfooding showed
+	// agents reaching for `init --yes` because they only had the
+	// landing page to go on. Print the curl-llms.txt line ALWAYS;
+	// it's two lines of dim text for humans and a clear redirect for
+	// any agent watching stdout.
+	Note("Driving this install via an AI agent? Tell it to fetch the agent-facing install guide:")
+	Note("  " + Bold("curl -fsSL https://artanis.ai/gravel/llms.txt"))
 	dbLabel := "unknown"
 	if d.DBDriver != DBUnknown {
 		dbLabel = string(d.DBDriver)
@@ -357,6 +367,29 @@ func Run(ctx context.Context, opts RunOptions, _ io.Writer) (RunResult, error) {
 	tracesSkipReason := ""
 	if wantTraces {
 		tracesAttempted = true
+		// Python + postgres: make sure psycopg2 is in deps BEFORE the
+		// probe runs. Pre-v0.10.0 this only ran via the standalone
+		// `gravel traces --apply` subcommand; agents using `gravel init`
+		// missed it entirely and hit "No module named 'psycopg2'" at
+		// app boot. Olly's 2026-05-21 install was the canonical case.
+		if NeedsPsycopg2(d) {
+			depSp := NewSpinner("Adding psycopg2-binary to your Python deps…")
+			dep := EnsureDepInstalled(ctx, d, "psycopg2-binary")
+			switch dep.Kind {
+			case SDKAlreadyPresent:
+				depSp.Stop("psycopg2-binary already in deps")
+			case SDKAdded:
+				depSp.Stop("psycopg2-binary added")
+			case SDKSkippedNoManifest:
+				depSp.Fail("Couldn't add psycopg2-binary: no pyproject.toml found. Run `" + dep.Command + "` manually.")
+				result.Blockers = append(result.Blockers,
+					"psycopg2-binary install skipped (no pyproject.toml); run `"+dep.Command+"` manually before traces will work")
+			case SDKFailed:
+				depSp.Fail("psycopg2-binary install failed: " + dep.Stderr)
+				result.Blockers = append(result.Blockers,
+					"psycopg2-binary install failed: "+dep.Stderr+". Run `"+dep.Command+"` manually before traces will work.")
+			}
+		}
 		probeSp := NewSpinner("Checking DATABASE_URL…")
 		probe := ProbeDatabase(ctx, opts.CWD)
 		result.DBProbe = probe

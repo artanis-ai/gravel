@@ -147,10 +147,14 @@ func InstallHook(repoRoot string, pm stack.PackageManager) (HookResult, error) {
 		}
 		text := string(content)
 		block := preCommitYAMLLocal(pm)
-		// Match the existing indent so we don't corrupt 4-space configs.
-		// Default block is 2-space; if the existing file uses 4, re-indent.
-		if existingIndent(text) == 4 {
-			block = reindentTwoToFour(block)
+		// Match the existing indent so we don't corrupt the user's
+		// YAML config. Default block is 2-space; if the existing file
+		// uses 4 / 6 / 8 / etc., scale the block to match. Pre-v0.10.0
+		// only special-cased 2-and-4; Olly's de_platform install used
+		// an 8-12 space style and the 2-space block landed verbatim
+		// (YAML-valid but yamllint / prettier reshuffled on commit).
+		if n := existingIndent(text); n > 0 && n != 2 {
+			block = reindentTo(block, n)
 		}
 		if strings.Contains(text, "repos:") {
 			if !strings.HasSuffix(text, "\n") {
@@ -235,12 +239,22 @@ func existingIndent(yaml string) int {
 	return 0
 }
 
-// reindentTwoToFour doubles the leading-space indent of every line —
-// turns the canonical 2-space pre-commit block into a 4-space block
-// to match a project that uses 4-space YAML. Claude's de_platform
-// install hit a YAML parse failure because we'd inserted a 2-space
-// block into a 4-space file.
-func reindentTwoToFour(block string) string {
+// reindentTo scales the leading-space indent of every line in `block`
+// so the canonical 2-space pre-commit YAML matches `target`-space
+// indentation. Multiplies each line's leading indent by target/2;
+// works for any even target (2, 4, 6, 8, 10, …).
+//
+// Pre-v0.10.0 this was `reindentTwoToFour` — hardcoded ×2. Olly's
+// 2026-05-21 install used an 8-space style and the 2-space block
+// landed verbatim, yaml-valid but yamllint / prettier reshuffled it.
+func reindentTo(block string, target int) string {
+	if target <= 0 || target == 2 {
+		return block // 0 = undecidable, 2 = canonical, no-op
+	}
+	factor := target / 2
+	if factor < 1 {
+		factor = 1
+	}
 	out := make([]string, 0, len(block))
 	for _, line := range strings.Split(block, "\n") {
 		// Count leading spaces.
@@ -251,7 +265,7 @@ func reindentTwoToFour(block string) string {
 			}
 			count++
 		}
-		out = append(out, strings.Repeat(" ", count*2)+line[count:])
+		out = append(out, strings.Repeat(" ", count*factor)+line[count:])
 	}
 	return strings.Join(out, "\n")
 }

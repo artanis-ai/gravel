@@ -34,7 +34,26 @@ const PROMPT_FILE_EXTS = new Set(['.md', '.markdown', '.txt', '.mdx', '.mdc'])
 // about the prompts, not a prompt. Applied as a path-segment filter
 // on every candidate so nested cases (`templates/examples/foo.md`)
 // also get pruned.
-const DOC_DIR_NAMES = new Set(['docs', 'doc', 'documentation', 'examples'])
+const DOC_DIR_NAMES = new Set([
+  'docs',
+  'doc',
+  'documentation',
+  'examples',
+  // v0.10.0 additions from Olly's dogfooding (2026-05-21): markdown
+  // here is repo metadata or test fixtures, not user-edited prompts.
+  '.github',
+  'tests',
+  'test',
+  '__tests__',
+  'spec',
+  'specs',
+  '__fixtures__',
+  'fixtures',
+  // Knowledge-base / agent context the host app reads at runtime.
+  'kb',
+  'knowledge',
+  'knowledgebase',
+])
 
 // Case-insensitive denylist of conventional documentation stems. A
 // README.md next to a genuine prompt would otherwise pollute the
@@ -57,6 +76,22 @@ const DOC_FILE_STEMS = new Set([
   'TODO',
   'ROADMAP',
   'USAGE',
+  // v0.10.0: AI agent config files. AI tools (Cursor, Aider, etc.)
+  // use these to seed system prompts; they're not user-edited prompts.
+  'CLAUDE',
+  'GEMINI',
+  'AGENTS',
+  // GitHub templates.
+  'ISSUE_TEMPLATE',
+  'PULL_REQUEST_TEMPLATE',
+  // Dependency manifests in .txt form.
+  'REQUIREMENTS',
+  'REQUIREMENTS-DEV',
+  'PIPFILE',
+  'CONSTRAINTS',
+  // Other commonly-co-located metadata.
+  'CONFIG',
+  'VERSION',
 ])
 
 // FS-walk fallback ignore list: kicks in only when the repo isn't a

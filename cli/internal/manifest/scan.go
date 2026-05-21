@@ -46,6 +46,22 @@ var docDirNames = map[string]struct{}{
 	"doc":           {},
 	"documentation": {},
 	"examples":      {},
+	// v0.10.0 additions from Olly's dogfooding: .github holds PR /
+	// issue templates that are markdown but not prompts; tests / spec
+	// dirs hold .md fixtures that look prompt-shaped but are not.
+	".github":    {},
+	"tests":      {},
+	"test":       {},
+	"__tests__":  {},
+	"spec":       {},
+	"specs":      {},
+	"__fixtures__": {},
+	"fixtures":   {},
+	// Knowledge-base / agent context. Files here are reference material
+	// the host app reads at runtime, not prompts under review.
+	"kb":          {},
+	"knowledge":   {},
+	"knowledgebase": {},
 }
 
 // docFilenames is the case-insensitive denylist of conventional
@@ -74,6 +90,25 @@ var docFilenames = map[string]struct{}{
 	"TODO":            {},
 	"ROADMAP":         {},
 	"USAGE":           {},
+	// v0.10.0 additions from Olly's dogfooding 2026-05-21. CLAUDE /
+	// GEMINI / AGENTS are agent-config files; AI tools like Cursor /
+	// Aider use them to seed system prompts. Not user-edited prompts.
+	"CLAUDE":          {},
+	"GEMINI":          {},
+	"AGENTS":          {},
+	// GitHub templates — markdown that looks prompt-shaped but is repo
+	// metadata for the PR / issue workflow.
+	"ISSUE_TEMPLATE":         {},
+	"PULL_REQUEST_TEMPLATE":  {},
+	// Dependency manifests (`.txt` form). The `.txt` extension hits the
+	// allowlist; without this filter requirements.txt lands as a prompt.
+	"REQUIREMENTS":     {},
+	"REQUIREMENTS-DEV": {},
+	"PIPFILE":          {},
+	"CONSTRAINTS":      {},
+	// Other commonly-co-located metadata.
+	"CONFIG":  {},
+	"VERSION": {},
 }
 
 // defaultIgnoreDirs is the FS-walk fallback's safety net for projects

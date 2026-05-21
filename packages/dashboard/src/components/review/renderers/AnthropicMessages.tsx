@@ -36,6 +36,7 @@ import { Message } from '../Message'
 import type { Renderer } from '../types'
 import { summariseContent } from '../summarise'
 import { ClickableImage, ClickablePdf } from '../ClickableMedia'
+import { tryParseStructuredString } from '../../../lib/parseStructured'
 
 export const AnthropicMessagesRenderer: Renderer = ({ input, output }) => {
   const systemMessages = extractSystem(input)
@@ -176,6 +177,9 @@ function BlockView({ block }: { block: unknown }): ReactNode {
       return <ToolResultBlock block={block} />
     case 'document':
       return <DocumentBlock block={block} />
+    case 'thinking':
+    case 'redacted_thinking':
+      return <ThinkingBlock block={block} kind={type} />
     default:
       return (
         <div className="rounded border border-warm bg-warm/20 p-2 text-xs">
@@ -194,6 +198,28 @@ function TextBlock({ block }: { block: Record<string, unknown> }): ReactNode {
     Array.isArray(block.citations) && block.citations.length > 0
       ? (block.citations as unknown[])
       : null
+  // Auto-format JSON-shaped text blocks. When a customer uses Anthropic
+  // with response_format-style structured output, the assistant returns
+  // one text block whose entire body is JSON; rendering it raw makes
+  // the trace UI ugly (Olly's 2026-05-21 dogfooding). Try-parse and
+  // pretty-print when the result is an object / array.
+  const parsed = tryParseStructuredString(text)
+  if (parsed !== undefined && (Array.isArray(parsed) || isPlainObject(parsed))) {
+    return (
+      <span className="block">
+        <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded border border-warm bg-warm/10 p-2 font-mono text-[11px]">
+          {JSON.stringify(parsed, null, 2)}
+        </pre>
+        {citations && (
+          <span className="mt-1 flex flex-wrap gap-1">
+            {citations.map((c, i) => (
+              <CitationChip key={i} citation={c} />
+            ))}
+          </span>
+        )}
+      </span>
+    )
+  }
   return (
     <span className="block">
       <span className="whitespace-pre-wrap break-words">{text}</span>
@@ -205,6 +231,66 @@ function TextBlock({ block }: { block: Record<string, unknown> }): ReactNode {
         </span>
       )}
     </span>
+  )
+}
+
+/**
+ * ThinkingBlock — Anthropic's extended-thinking output. The API returns
+ * a `thinking` block per assistant turn that contains the model's
+ * scratchpad (`thinking` string) plus an opaque `signature` (700+
+ * char base64 cryptographic blob the API needs back if you replay the
+ * turn). Pre-v0.10.0 the renderer dumped both inline; Olly's
+ * 2026-05-21 trace had a 712-char signature taking up the entire
+ * Review pane above the actual JSON output. Hide behind a disclosure.
+ *
+ * `redacted_thinking` is the same shape with `data` instead of
+ * `thinking` (server returns this when the thinking content itself
+ * was redacted for policy reasons). Always collapsed — there's no
+ * useful content to read inline.
+ */
+function ThinkingBlock({
+  block,
+  kind,
+}: {
+  block: Record<string, unknown>
+  kind: 'thinking' | 'redacted_thinking'
+}): ReactNode {
+  const thought =
+    typeof block.thinking === 'string'
+      ? block.thinking
+      : typeof block.data === 'string'
+        ? block.data
+        : ''
+  const signature = typeof block.signature === 'string' ? block.signature : ''
+  // Empty thinking block (signature only, no thought): show as a tiny
+  // pill instead of an empty disclosure. Common for short turns.
+  if (!thought.trim()) {
+    return (
+      <div className="text-[10px] text-text-muted">
+        <span className="inline-flex items-center rounded bg-warm/20 px-1.5 py-0.5 font-mono uppercase tracking-wide">
+          {kind === 'redacted_thinking' ? 'thinking (redacted)' : 'thinking (empty)'}
+        </span>
+      </div>
+    )
+  }
+  return (
+    <details className="rounded border border-warm bg-warm/10 text-xs">
+      <summary className="flex cursor-pointer items-center gap-2 px-2 py-1.5 text-[11px] text-text-muted">
+        <span className="inline-flex items-center rounded bg-warm/40 px-1.5 py-0.5 font-mono uppercase tracking-wide">
+          {kind === 'redacted_thinking' ? 'redacted_thinking' : 'thinking'}
+        </span>
+        <span className="truncate">{thought.slice(0, 80)}{thought.length > 80 ? '…' : ''}</span>
+      </summary>
+      <div className="space-y-2 border-t border-warm px-2 py-2">
+        <span className="block whitespace-pre-wrap break-words text-text-dark">{thought}</span>
+        {signature && (
+          <details className="text-[10px] text-text-muted">
+            <summary className="cursor-pointer">signature ({signature.length} chars)</summary>
+            <span className="mt-1 block break-all font-mono text-[10px]">{signature}</span>
+          </details>
+        )}
+      </div>
+    </details>
   )
 }
 

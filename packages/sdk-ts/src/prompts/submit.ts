@@ -73,6 +73,37 @@ export interface SubmitArgs {
   deFirstName?: string
 }
 
+/** Return true when `.gravel/manifest.json` does NOT yet exist on the
+ *  repo's default branch. Used to override the manifest-diff kind from
+ *  `edited` / `added` to `first_add` for brand-new manifests — the user
+ *  may have a populated local manifest already (from `gravel init`)
+ *  but reviewers seeing the PR have no prior state. Reviewers want the
+ *  "what is this file?" explainer, not per-prompt deltas.
+ *
+ *  Returns false if the manifest exists, on any unexpected GH error,
+ *  or on missing-repo fall-through (callers degrade gracefully to the
+ *  local-state diff). v0.10.0 fix for Olly's 2026-05-21 dogfooding. */
+async function manifestMissingOnDefaultBranch(args: SubmitArgs): Promise<boolean> {
+  try {
+    const repo = await githubAPI<{ default_branch: string }>(
+      `/repos/${args.repoOwner}/${args.repoName}`,
+      args.accessToken,
+    )
+    await githubAPI(
+      `/repos/${args.repoOwner}/${args.repoName}/contents/.gravel/manifest.json?ref=${repo.default_branch}`,
+      args.accessToken,
+    )
+    return false
+  } catch (err) {
+    // GitHub's contents API returns 404 when the file is missing.
+    // Other errors (network blip, auth) fall through to the same
+    // "treat as exists" path: better to under-trigger first_add than
+    // mis-trigger it on transient failures.
+    const message = err instanceof Error ? err.message : String(err)
+    return /\b404\b/.test(message)
+  }
+}
+
 /** Fetch `.gravel/manifest.json` from the open Gravel PR's branch.
  *  Returns null when no open PR exists, when the branch doesn't carry
  *  a manifest yet, or on any other failure (caller falls back to the
@@ -311,7 +342,14 @@ export async function submitDrafts(args: SubmitArgs): Promise<CreatePullRequestR
   const promptFilePaths = changes
     .filter((c) => c.path !== MANIFEST_PATH)
     .map((c) => c.path)
-  const manifestDiff = computeManifestDiffSummary(manifest, updatedManifest)
+  let manifestDiff = computeManifestDiffSummary(manifest, updatedManifest)
+  // Brand-new manifest on the default branch: override the per-prompt
+  // diff (which only sees the LOCAL state's already-populated baseline)
+  // with a single `first_add` entry, so the PR body shows the
+  // "what is this file?" explainer for reviewers.
+  if (await manifestMissingOnDefaultBranch(args)) {
+    manifestDiff = [{ kind: 'first_add' }]
+  }
 
   try {
     return await createPullRequest({

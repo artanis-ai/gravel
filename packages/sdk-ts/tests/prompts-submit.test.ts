@@ -96,13 +96,18 @@ describe('submitDrafts', () => {
 
     const result = await call([{ promptId: 'p_a', newText: 'NEW WHOLE FILE' }])
 
-    // v0.9.5: submitDrafts now probes GET /pulls?state=open once to
+    // v0.9.5: submitDrafts probes GET /pulls?state=open once to
     // decide whether to baseline against the branch manifest. With
     // no mocked response the helper returns null and we fall back to
     // the local manifest, which is the desired path here.
+    // v0.10.0: also probes GET /repos/:o/:r to find the default branch
+    // (for the manifest-missing-on-default check). With no mocked repo
+    // response that call errors out and the default-branch probe
+    // returns false (so first_add isn't mis-triggered). 2 calls total.
     const calls = githubAPISpy.mock.calls
-    expect(calls).toHaveLength(1)
+    expect(calls).toHaveLength(2)
     expect(calls[0]![0]).toContain('/pulls?state=open')
+    expect(calls[1]![0]).toMatch(/^\/repos\/[^/]+\/[^/]+$/)
     expect(createPullRequestSpy).toHaveBeenCalledOnce()
     const args = createPullRequestSpy.mock.calls[0]![0] as { changes: Array<{ path: string; content: string }> }
     const fileChange = args.changes.find((c) => c.path === 'prompts/sys.md')

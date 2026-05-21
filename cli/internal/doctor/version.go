@@ -180,7 +180,13 @@ func GetVersionInfo(ctx context.Context, s stack.Stack, current string, fetch Fe
 	latestRaw, _ := fetch(ctx)
 	var latest *string
 	if latestRaw != "" {
-		l := latestRaw
+		// Normalise: GitHub releases tag as `v0.9.7`; PyPI / npm
+		// report `0.9.7`. The doctor's `current` field is always the
+		// bare semver (pyproject.toml / package.json values). Strip
+		// the `v` prefix so JSON consumers compare apples to apples.
+		// Pre-v0.10.0 fix: `current: 0.5.26, latest: v0.9.7` made
+		// agents emit the `v` literally in upgrade hints.
+		l := strings.TrimPrefix(latestRaw, "v")
 		latest = &l
 	}
 	hasUpdate := latest != nil && IsNewer(current, *latest)

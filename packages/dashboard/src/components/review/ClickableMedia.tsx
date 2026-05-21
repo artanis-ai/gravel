@@ -11,6 +11,7 @@
  * its natural size, fit inside the viewport.
  */
 import { useState, type MouseEvent, type ReactNode } from 'react'
+import { X } from 'lucide-react'
 
 import { Dialog } from '../Dialog'
 
@@ -179,17 +180,27 @@ function PdfDialog({
   return (
     <Dialog open={open} onClose={onClose} ariaLabel={`${title} (enlarged)`} size="fullscreen">
       <div className="flex h-full flex-col">
-        <header className="flex items-center justify-between border-b border-warm px-4 py-2 text-xs">
+        <header className="flex items-center justify-between gap-3 border-b border-warm px-4 py-2 text-xs">
           <span className="font-medium text-text-dark">{title}</span>
-          <a
-            href={src}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={openInNewTab}
-            className="cursor-pointer text-text-muted underline hover:text-forest"
-          >
-            open in new tab
-          </a>
+          <div className="flex items-center gap-4">
+            <a
+              href={src}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={openInNewTab}
+              className="cursor-pointer text-text-muted underline hover:text-forest"
+            >
+              open in new tab
+            </a>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close PDF preview"
+              className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full text-text-muted transition-colors hover:bg-warm-50 hover:text-text-dark"
+            >
+              <X size={16} aria-hidden="true" />
+            </button>
+          </div>
         </header>
         <iframe src={src} title={title} className="flex-1 bg-white" />
       </div>

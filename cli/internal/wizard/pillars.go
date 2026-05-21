@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"sort"
 
 	"github.com/artanis-ai/gravel/cli/internal/manifest"
 	"github.com/artanis-ai/gravel/cli/internal/migrate"
@@ -33,6 +34,27 @@ type PillarPlan struct {
 	// Detection echoed back so the agent can show the user "I see X,
 	// will do Y" without a second call.
 	Detection DetectionDoc `json:"detection"`
+	// Folders is populated by `gravel prompts --plan`. It groups the
+	// candidate prompt files the scan found by their parent directory
+	// so the agent can ask the human user a folder-level question
+	// before the apply step ("found 47 files in /docs, keep all or
+	// skip that folder?"). Empty / omitted on non-prompts pillars.
+	Folders []FolderSummary `json:"folders,omitempty"`
+}
+
+// FolderSummary lists one parent directory holding prompt-shaped files,
+// with a sample of paths so the agent can narrate concretely.
+type FolderSummary struct {
+	// Path is the repo-relative folder (e.g. "api/py/prompts" or "."
+	// for repo root). Use "." for root so JSON consumers don't have
+	// to special-case empty string.
+	Path string `json:"path"`
+	// FileCount is the total number of prompt-shaped files under this
+	// folder (one level deep — nested subfolders surface separately).
+	FileCount int `json:"file_count"`
+	// SamplePaths is the first ~3 paths under this folder so the agent
+	// can name them without dumping the full list. Repo-relative.
+	SamplePaths []string `json:"sample_paths"`
 }
 
 // PillarAction describes one observable side-effect the apply step
@@ -206,9 +228,20 @@ type PromptsPillarOptions struct {
 	// `gravel prompts --apply` defaults to true when .git is present;
 	// `--no-hook` flips it off. Plan reports both decisions separately.
 	InstallHook bool
+	// SkipFolders lists repo-relative folder paths that should NOT be
+	// scanned for prompts. Populated by `--skip-folder` (repeatable) on
+	// the CLI; agents read the `folders[]` array from `--plan`, ask
+	// the human "skip docs/?", and pass through the answer. Path match
+	// is exact-prefix at folder boundary; a skip on `docs` filters
+	// `docs/a.md` + `docs/sub/b.md` but not `docstrings.md`.
+	SkipFolders []string
 }
 
-// PlanPrompts returns the action document for the prompts pillar.
+// PlanPrompts returns the action document for the prompts pillar. It
+// also runs a dry scan to populate Folders[] with the per-directory
+// breakdown of candidate prompt files; agents narrate this to the
+// human user and pass back any "skip this folder" decisions via
+// `--skip-folder` flags on apply.
 func PlanPrompts(_ context.Context, opts PromptsPillarOptions) PillarPlan {
 	d := opts.Detection
 	plan := PillarPlan{
@@ -234,7 +267,94 @@ func PlanPrompts(_ context.Context, opts PromptsPillarOptions) PillarPlan {
 	} else if !d.HasGit {
 		plan.Warnings = append(plan.Warnings, "No .git/ detected — pre-commit hook will be skipped.")
 	}
+	// Dry-scan + bucket findings by parent directory so agents can ask
+	// folder-level. Errors here are non-fatal: the plan still works
+	// for apply; the folder summary just lands empty.
+	if scan, err := manifest.FastScan(d.CWD, manifest.Empty()); err == nil {
+		plan.Folders = summariseFolders(scan.Manifest.Prompts)
+	}
 	return plan
+}
+
+// filterPromptsBySkipFolders drops any prompt whose path is under one
+// of `skips`. Folder paths are matched as exact prefixes at a folder
+// boundary: a skip on "docs" filters "docs/a.md" and "docs/sub/b.md"
+// but NOT "docstrings.md" (no folder boundary between "docs" and "t").
+// Repo-root prompts (path with no directory) can be skipped via "."
+// (mirrors the plan output's "." for root).
+func filterPromptsBySkipFolders(prompts []manifest.Prompt, skips []string) []manifest.Prompt {
+	if len(skips) == 0 {
+		return prompts
+	}
+	cleanSkips := make([]string, 0, len(skips))
+	for _, s := range skips {
+		s = filepath.ToSlash(filepath.Clean(s))
+		if s == "" {
+			continue
+		}
+		cleanSkips = append(cleanSkips, s)
+	}
+	kept := prompts[:0]
+	for _, p := range prompts {
+		dir := filepath.Dir(p.Path)
+		if dir == "" {
+			dir = "."
+		}
+		dir = filepath.ToSlash(dir)
+		skip := false
+		for _, s := range cleanSkips {
+			if s == "." {
+				if dir == "." {
+					skip = true
+					break
+				}
+				continue
+			}
+			// dir == s (exact folder) OR dir starts with s + "/" (nested).
+			if dir == s || (len(dir) > len(s) && dir[:len(s)] == s && dir[len(s)] == '/') {
+				skip = true
+				break
+			}
+		}
+		if !skip {
+			kept = append(kept, p)
+		}
+	}
+	return kept
+}
+
+// summariseFolders groups prompts by their parent directory and
+// returns one FolderSummary per folder. Sorted by file_count desc so
+// the agent narrates the biggest buckets first.
+func summariseFolders(prompts []manifest.Prompt) []FolderSummary {
+	const sampleLimit = 3
+	byFolder := map[string]*FolderSummary{}
+	for _, p := range prompts {
+		dir := filepath.Dir(p.Path)
+		if dir == "" {
+			dir = "."
+		}
+		entry, ok := byFolder[dir]
+		if !ok {
+			entry = &FolderSummary{Path: dir}
+			byFolder[dir] = entry
+		}
+		entry.FileCount++
+		if len(entry.SamplePaths) < sampleLimit {
+			entry.SamplePaths = append(entry.SamplePaths, p.Path)
+		}
+	}
+	out := make([]FolderSummary, 0, len(byFolder))
+	for _, e := range byFolder {
+		out = append(out, *e)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].FileCount != out[j].FileCount {
+			return out[i].FileCount > out[j].FileCount
+		}
+		return out[i].Path < out[j].Path
+	})
+	return out
 }
 
 // PromptsApplyResult bundles results of the prompts pillar.
@@ -256,6 +376,13 @@ func ApplyPrompts(ctx context.Context, opts PromptsPillarOptions) (PromptsApplyR
 	m, err := RunScanAndVerify(ctx, d.CWD, prompter, opts.SkipDeepScan)
 	if err != nil {
 		return PromptsApplyResult{}, fmt.Errorf("scan: %w", err)
+	}
+	// Apply folder skips after scan + verify. Agents reading the plan's
+	// folders[] array ask the human user "skip docs/?" and pass any
+	// yesses back via --skip-folder; the filter drops matching prompts
+	// before manifest write.
+	if m != nil && len(opts.SkipFolders) > 0 {
+		m.Prompts = filterPromptsBySkipFolders(m.Prompts, opts.SkipFolders)
 	}
 	result := PromptsApplyResult{}
 	if m != nil {

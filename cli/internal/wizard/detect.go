@@ -136,6 +136,19 @@ func Detect(cwd string) Detection {
 		if pathExists(filepath.Join(cwd, "package.json")) {
 			fillPolyglotTSSignals(&d, cwd)
 		}
+		// Auth-field reconciliation: a Python-primary repo with Clerk
+		// wired on the TS side (e.g. @clerk/nextjs in package.json) is
+		// authenticated via Clerk in practice — `Auth: unknown` would
+		// be misleading. If the polyglot scan found a concrete auth
+		// provider and the primary scan left Auth at Unknown, promote
+		// it. Mount pillar's host-wiring already consults both fields
+		// (so the Clerk middleware patch fired correctly pre-v0.10.0);
+		// this is purely about what the agent narrates to the user.
+		// Olly's 2026-05-21 install saw "Auth: unknown" despite Clerk
+		// being present; this fixes the report.
+		if d.Auth == AuthUnknown && d.PolyglotAuth != AuthUnknown {
+			d.Auth = d.PolyglotAuth
+		}
 	}
 	return d
 }
