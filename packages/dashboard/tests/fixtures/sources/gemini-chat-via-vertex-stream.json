@@ -1,0 +1,468 @@
+{
+  "name": "gemini.models.generate_content_stream",
+  "description": "Vertex AI: streaming turn captured from `Client(vertexai=True).models.generate_content_stream` against `gemini-2.5-flash` via `us-central1`. Output is the tracer's tee'd `chunks[]` list, matching what _StreamTee.flush persists. Each chunk is a partial GenerateContentResponse.",
+  "source": "gemini-chat",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "model": "gemini-2.5-flash",
+    "contents": "Write three short paragraphs about Tokyo, separated by blank lines. Each paragraph should be a different topic (history, food, transit)."
+  },
+  "output": {
+    "chunks": [
+      {
+        "sdk_http_response": {
+          "headers": {
+            "content-type": "text/event-stream",
+            "content-disposition": "attachment",
+            "vary": "Origin, X-Origin, Referer",
+            "transfer-encoding": "chunked",
+            "date": "Thu, 21 May 2026 13:36:45 GMT",
+            "server": "scaffolding on HTTPServer2",
+            "x-xss-protection": "0",
+            "x-frame-options": "SAMEORIGIN",
+            "x-content-type-options": "nosniff",
+            "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000"
+          },
+          "body": null
+        },
+        "candidates": [
+          {
+            "content": {
+              "parts": [
+                {
+                  "media_resolution": null,
+                  "code_execution_result": null,
+                  "executable_code": null,
+                  "file_data": null,
+                  "function_call": null,
+                  "function_response": null,
+                  "inline_data": null,
+                  "text": "From its origins as the humble fishing village of Edo, Tokyo has undergone a remarkable transformation to become the sprawling metropolis it is today. Established as the seat of the Tokugawa shogunate in 1603, Edo grew into one of the world's largest",
+                  "thought": null,
+                  "thought_signature": null,
+                  "video_metadata": null,
+                  "tool_call": null,
+                  "tool_response": null,
+                  "part_metadata": null
+                }
+              ],
+              "role": "model"
+            },
+            "citation_metadata": null,
+            "finish_message": null,
+            "token_count": null,
+            "finish_reason": null,
+            "grounding_metadata": null,
+            "avg_logprobs": null,
+            "index": null,
+            "logprobs_result": null,
+            "safety_ratings": null,
+            "url_context_metadata": null
+          }
+        ],
+        "create_time": "2026-05-21T13:36:42.921344Z",
+        "model_version": "gemini-2.5-flash",
+        "prompt_feedback": null,
+        "response_id": "agoPaoCeOPKLmecP5IjhmAI",
+        "usage_metadata": {
+          "cache_tokens_details": null,
+          "cached_content_token_count": null,
+          "candidates_token_count": null,
+          "candidates_tokens_details": null,
+          "prompt_token_count": null,
+          "prompt_tokens_details": null,
+          "thoughts_token_count": null,
+          "tool_use_prompt_token_count": null,
+          "tool_use_prompt_tokens_details": null,
+          "total_token_count": null,
+          "traffic_type": "ON_DEMAND"
+        },
+        "model_status": null,
+        "automatic_function_calling_history": null,
+        "parsed": null
+      },
+      {
+        "sdk_http_response": {
+          "headers": {
+            "content-type": "text/event-stream",
+            "content-disposition": "attachment",
+            "vary": "Origin, X-Origin, Referer",
+            "transfer-encoding": "chunked",
+            "date": "Thu, 21 May 2026 13:36:45 GMT",
+            "server": "scaffolding on HTTPServer2",
+            "x-xss-protection": "0",
+            "x-frame-options": "SAMEORIGIN",
+            "x-content-type-options": "nosniff",
+            "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000"
+          },
+          "body": null
+        },
+        "candidates": [
+          {
+            "content": {
+              "parts": [
+                {
+                  "media_resolution": null,
+                  "code_execution_result": null,
+                  "executable_code": null,
+                  "file_data": null,
+                  "function_call": null,
+                  "function_response": null,
+                  "inline_data": null,
+                  "text": " cities by the 18th century, a vibrant center of culture and commerce. Renamed Tokyo (\"Eastern Capital\") in 1868 with the Meiji Restoration, it rapidly modernized, enduring earthquakes, fires, and the devastation of World War II, yet always rebuilding with unwavering resilience and an innovative spirit that",
+                  "thought": null,
+                  "thought_signature": null,
+                  "video_metadata": null,
+                  "tool_call": null,
+                  "tool_response": null,
+                  "part_metadata": null
+                }
+              ],
+              "role": "model"
+            },
+            "citation_metadata": null,
+            "finish_message": null,
+            "token_count": null,
+            "finish_reason": null,
+            "grounding_metadata": null,
+            "avg_logprobs": null,
+            "index": null,
+            "logprobs_result": null,
+            "safety_ratings": null,
+            "url_context_metadata": null
+          }
+        ],
+        "create_time": "2026-05-21T13:36:42.921344Z",
+        "model_version": "gemini-2.5-flash",
+        "prompt_feedback": null,
+        "response_id": "agoPaoCeOPKLmecP5IjhmAI",
+        "usage_metadata": {
+          "cache_tokens_details": null,
+          "cached_content_token_count": null,
+          "candidates_token_count": null,
+          "candidates_tokens_details": null,
+          "prompt_token_count": null,
+          "prompt_tokens_details": null,
+          "thoughts_token_count": null,
+          "tool_use_prompt_token_count": null,
+          "tool_use_prompt_tokens_details": null,
+          "total_token_count": null,
+          "traffic_type": "ON_DEMAND"
+        },
+        "model_status": null,
+        "automatic_function_calling_history": null,
+        "parsed": null
+      },
+      {
+        "sdk_http_response": {
+          "headers": {
+            "content-type": "text/event-stream",
+            "content-disposition": "attachment",
+            "vary": "Origin, X-Origin, Referer",
+            "transfer-encoding": "chunked",
+            "date": "Thu, 21 May 2026 13:36:45 GMT",
+            "server": "scaffolding on HTTPServer2",
+            "x-xss-protection": "0",
+            "x-frame-options": "SAMEORIGIN",
+            "x-content-type-options": "nosniff",
+            "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000"
+          },
+          "body": null
+        },
+        "candidates": [
+          {
+            "content": {
+              "parts": [
+                {
+                  "media_resolution": null,
+                  "code_execution_result": null,
+                  "executable_code": null,
+                  "file_data": null,
+                  "function_call": null,
+                  "function_response": null,
+                  "inline_data": null,
+                  "text": " continues to shape its identity.\n\nTokyo is a global culinary powerhouse, offering an unparalleled gastronomic adventure for every palate. From the exquisite artistry of Edo-mae sushi found in Michelin-starred establishments to steaming bowls of ramen in bustling neighborhood joints, the city is a paradise for food lovers. Beyond these icons, visitors can savor",
+                  "thought": null,
+                  "thought_signature": null,
+                  "video_metadata": null,
+                  "tool_call": null,
+                  "tool_response": null,
+                  "part_metadata": null
+                }
+              ],
+              "role": "model"
+            },
+            "citation_metadata": null,
+            "finish_message": null,
+            "token_count": null,
+            "finish_reason": null,
+            "grounding_metadata": null,
+            "avg_logprobs": null,
+            "index": null,
+            "logprobs_result": null,
+            "safety_ratings": null,
+            "url_context_metadata": null
+          }
+        ],
+        "create_time": "2026-05-21T13:36:42.921344Z",
+        "model_version": "gemini-2.5-flash",
+        "prompt_feedback": null,
+        "response_id": "agoPaoCeOPKLmecP5IjhmAI",
+        "usage_metadata": {
+          "cache_tokens_details": null,
+          "cached_content_token_count": null,
+          "candidates_token_count": null,
+          "candidates_tokens_details": null,
+          "prompt_token_count": null,
+          "prompt_tokens_details": null,
+          "thoughts_token_count": null,
+          "tool_use_prompt_token_count": null,
+          "tool_use_prompt_tokens_details": null,
+          "total_token_count": null,
+          "traffic_type": "ON_DEMAND"
+        },
+        "model_status": null,
+        "automatic_function_calling_history": null,
+        "parsed": null
+      },
+      {
+        "sdk_http_response": {
+          "headers": {
+            "content-type": "text/event-stream",
+            "content-disposition": "attachment",
+            "vary": "Origin, X-Origin, Referer",
+            "transfer-encoding": "chunked",
+            "date": "Thu, 21 May 2026 13:36:45 GMT",
+            "server": "scaffolding on HTTPServer2",
+            "x-xss-protection": "0",
+            "x-frame-options": "SAMEORIGIN",
+            "x-content-type-options": "nosniff",
+            "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000"
+          },
+          "body": null
+        },
+        "candidates": [
+          {
+            "content": {
+              "parts": [
+                {
+                  "media_resolution": null,
+                  "code_execution_result": null,
+                  "executable_code": null,
+                  "file_data": null,
+                  "function_call": null,
+                  "function_response": null,
+                  "inline_data": null,
+                  "text": " delicate tempura, savory yakitori, comforting izakaya fare, and an endless array of international cuisines, all executed with precision, quality, and a profound respect for ingredients.\n\nNavigating Tokyo is an astonishingly efficient and often bewildering experience thanks to its vast and meticulously run public transportation network. Dominated by an intricate web",
+                  "thought": null,
+                  "thought_signature": null,
+                  "video_metadata": null,
+                  "tool_call": null,
+                  "tool_response": null,
+                  "part_metadata": null
+                }
+              ],
+              "role": "model"
+            },
+            "citation_metadata": null,
+            "finish_message": null,
+            "token_count": null,
+            "finish_reason": null,
+            "grounding_metadata": null,
+            "avg_logprobs": null,
+            "index": null,
+            "logprobs_result": null,
+            "safety_ratings": null,
+            "url_context_metadata": null
+          }
+        ],
+        "create_time": "2026-05-21T13:36:42.921344Z",
+        "model_version": "gemini-2.5-flash",
+        "prompt_feedback": null,
+        "response_id": "agoPaoCeOPKLmecP5IjhmAI",
+        "usage_metadata": {
+          "cache_tokens_details": null,
+          "cached_content_token_count": null,
+          "candidates_token_count": null,
+          "candidates_tokens_details": null,
+          "prompt_token_count": null,
+          "prompt_tokens_details": null,
+          "thoughts_token_count": null,
+          "tool_use_prompt_token_count": null,
+          "tool_use_prompt_tokens_details": null,
+          "total_token_count": null,
+          "traffic_type": "ON_DEMAND"
+        },
+        "model_status": null,
+        "automatic_function_calling_history": null,
+        "parsed": null
+      },
+      {
+        "sdk_http_response": {
+          "headers": {
+            "content-type": "text/event-stream",
+            "content-disposition": "attachment",
+            "vary": "Origin, X-Origin, Referer",
+            "transfer-encoding": "chunked",
+            "date": "Thu, 21 May 2026 13:36:45 GMT",
+            "server": "scaffolding on HTTPServer2",
+            "x-xss-protection": "0",
+            "x-frame-options": "SAMEORIGIN",
+            "x-content-type-options": "nosniff",
+            "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000"
+          },
+          "body": null
+        },
+        "candidates": [
+          {
+            "content": {
+              "parts": [
+                {
+                  "media_resolution": null,
+                  "code_execution_result": null,
+                  "executable_code": null,
+                  "file_data": null,
+                  "function_call": null,
+                  "function_response": null,
+                  "inline_data": null,
+                  "text": " of train and subway lines, operated by multiple companies like JR and Tokyo Metro, the system connects every corner of the city with remarkable punctuality. While initially daunting with its numerous lines and stations, the seamless integration of IC cards like Suica and Pasmo makes commuting surprisingly straightforward, allowing millions to traverse the metropolis daily with ease",
+                  "thought": null,
+                  "thought_signature": null,
+                  "video_metadata": null,
+                  "tool_call": null,
+                  "tool_response": null,
+                  "part_metadata": null
+                }
+              ],
+              "role": "model"
+            },
+            "citation_metadata": null,
+            "finish_message": null,
+            "token_count": null,
+            "finish_reason": null,
+            "grounding_metadata": null,
+            "avg_logprobs": null,
+            "index": null,
+            "logprobs_result": null,
+            "safety_ratings": null,
+            "url_context_metadata": null
+          }
+        ],
+        "create_time": "2026-05-21T13:36:42.921344Z",
+        "model_version": "gemini-2.5-flash",
+        "prompt_feedback": null,
+        "response_id": "agoPaoCeOPKLmecP5IjhmAI",
+        "usage_metadata": {
+          "cache_tokens_details": null,
+          "cached_content_token_count": null,
+          "candidates_token_count": null,
+          "candidates_tokens_details": null,
+          "prompt_token_count": null,
+          "prompt_tokens_details": null,
+          "thoughts_token_count": null,
+          "tool_use_prompt_token_count": null,
+          "tool_use_prompt_tokens_details": null,
+          "total_token_count": null,
+          "traffic_type": "ON_DEMAND"
+        },
+        "model_status": null,
+        "automatic_function_calling_history": null,
+        "parsed": null
+      },
+      {
+        "sdk_http_response": {
+          "headers": {
+            "content-type": "text/event-stream",
+            "content-disposition": "attachment",
+            "vary": "Origin, X-Origin, Referer",
+            "transfer-encoding": "chunked",
+            "date": "Thu, 21 May 2026 13:36:45 GMT",
+            "server": "scaffolding on HTTPServer2",
+            "x-xss-protection": "0",
+            "x-frame-options": "SAMEORIGIN",
+            "x-content-type-options": "nosniff",
+            "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000"
+          },
+          "body": null
+        },
+        "candidates": [
+          {
+            "content": {
+              "parts": [
+                {
+                  "media_resolution": null,
+                  "code_execution_result": null,
+                  "executable_code": null,
+                  "file_data": null,
+                  "function_call": null,
+                  "function_response": null,
+                  "inline_data": null,
+                  "text": ".",
+                  "thought": null,
+                  "thought_signature": null,
+                  "video_metadata": null,
+                  "tool_call": null,
+                  "tool_response": null,
+                  "part_metadata": null
+                }
+              ],
+              "role": "model"
+            },
+            "citation_metadata": null,
+            "finish_message": null,
+            "token_count": null,
+            "finish_reason": "STOP",
+            "grounding_metadata": null,
+            "avg_logprobs": null,
+            "index": null,
+            "logprobs_result": null,
+            "safety_ratings": null,
+            "url_context_metadata": null
+          }
+        ],
+        "create_time": "2026-05-21T13:36:42.921344Z",
+        "model_version": "gemini-2.5-flash",
+        "prompt_feedback": null,
+        "response_id": "agoPaoCeOPKLmecP5IjhmAI",
+        "usage_metadata": {
+          "cache_tokens_details": null,
+          "cached_content_token_count": null,
+          "candidates_token_count": 314,
+          "candidates_tokens_details": [
+            {
+              "modality": "TEXT",
+              "token_count": 314
+            }
+          ],
+          "prompt_token_count": 26,
+          "prompt_tokens_details": [
+            {
+              "modality": "TEXT",
+              "token_count": 26
+            }
+          ],
+          "thoughts_token_count": 344,
+          "tool_use_prompt_token_count": null,
+          "tool_use_prompt_tokens_details": null,
+          "total_token_count": 684,
+          "traffic_type": "ON_DEMAND"
+        },
+        "model_status": null,
+        "automatic_function_calling_history": null,
+        "parsed": null
+      }
+    ]
+  },
+  "metadata": {
+    "routing": "vertex",
+    "states": [
+      {
+        "key": "stream",
+        "data": {
+          "chunk_count": 6
+        }
+      }
+    ]
+  }
+}

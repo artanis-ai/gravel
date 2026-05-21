@@ -81,7 +81,10 @@ export function ReviewSurface({
           <TokenUsageStrip usage={usage} />
           <StreamObservations metadata={metadata} />
         </div>
-        <span className="font-mono text-[11px] text-text-muted">{source}</span>
+        <div className="flex items-baseline gap-2">
+          <RoutingPill metadata={metadata} />
+          <span className="font-mono text-[11px] text-text-muted">{source}</span>
+        </div>
       </div>
 
       {metadata && (
@@ -129,4 +132,34 @@ function extractUsage(output: unknown): unknown {
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return v !== null && typeof v === 'object' && !Array.isArray(v)
+}
+
+/**
+ * Surfaces the tracer-recorded routing backend (`metadata.routing`) as a
+ * small caption. Today only Gemini calls populate this (Vertex AI vs the
+ * Gemini Developer API), but the wiring is provider-agnostic so other
+ * tracers can adopt the same key. Returns null when the field is absent
+ * or unrecognised — the existing dashboard chrome stays identical for
+ * non-routed providers.
+ */
+function RoutingPill({
+  metadata,
+}: {
+  metadata: Record<string, unknown> | null | undefined
+}): ReactNode {
+  if (!metadata) return null
+  const routing = metadata.routing
+  if (typeof routing !== 'string') return null
+  const label = ROUTING_LABEL[routing]
+  if (!label) return null
+  return (
+    <span className="inline-flex items-center rounded bg-forest/15 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-forest">
+      via {label}
+    </span>
+  )
+}
+
+const ROUTING_LABEL: Record<string, string> = {
+  vertex: 'Vertex AI',
+  enterprise: 'Gemini Enterprise',
 }

@@ -1,0 +1,96 @@
+{
+  "name": "gemini.models.generate_content",
+  "description": "Vertex AI: plain turn captured from a real `Client(vertexai=True).models.generate_content` call against `gemini-2.5-flash` via `us-central1`. Proves the existing GeminiChat renderer handles Vertex-routed responses without any shape divergence. `metadata.routing` flag set by tracer.",
+  "source": "gemini-chat",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "model": "gemini-2.5-flash",
+    "contents": "What's the capital of Japan? One word."
+  },
+  "output": {
+    "sdk_http_response": {
+      "headers": {
+        "content-type": "application/json; charset=UTF-8",
+        "vary": "Origin, X-Origin, Referer",
+        "content-encoding": "gzip",
+        "date": "Thu, 21 May 2026 13:36:42 GMT",
+        "server": "scaffolding on HTTPServer2",
+        "x-xss-protection": "0",
+        "x-frame-options": "SAMEORIGIN",
+        "x-content-type-options": "nosniff",
+        "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+        "transfer-encoding": "chunked"
+      },
+      "body": null
+    },
+    "candidates": [
+      {
+        "content": {
+          "parts": [
+            {
+              "media_resolution": null,
+              "code_execution_result": null,
+              "executable_code": null,
+              "file_data": null,
+              "function_call": null,
+              "function_response": null,
+              "inline_data": null,
+              "text": "Tokyo",
+              "thought": null,
+              "thought_signature": null,
+              "video_metadata": null,
+              "tool_call": null,
+              "tool_response": null,
+              "part_metadata": null
+            }
+          ],
+          "role": "model"
+        },
+        "citation_metadata": null,
+        "finish_message": null,
+        "token_count": null,
+        "finish_reason": "STOP",
+        "grounding_metadata": null,
+        "avg_logprobs": -2.755380153656006,
+        "index": null,
+        "logprobs_result": null,
+        "safety_ratings": null,
+        "url_context_metadata": null
+      }
+    ],
+    "create_time": "2026-05-21T13:36:41.429846Z",
+    "model_version": "gemini-2.5-flash",
+    "prompt_feedback": null,
+    "response_id": "aQoPapaeGoaJmecPwdL70AE",
+    "usage_metadata": {
+      "cache_tokens_details": null,
+      "cached_content_token_count": null,
+      "candidates_token_count": 1,
+      "candidates_tokens_details": [
+        {
+          "modality": "TEXT",
+          "token_count": 1
+        }
+      ],
+      "prompt_token_count": 11,
+      "prompt_tokens_details": [
+        {
+          "modality": "TEXT",
+          "token_count": 11
+        }
+      ],
+      "thoughts_token_count": 27,
+      "tool_use_prompt_token_count": null,
+      "tool_use_prompt_tokens_details": null,
+      "total_token_count": 39,
+      "traffic_type": "ON_DEMAND"
+    },
+    "model_status": null,
+    "automatic_function_calling_history": [],
+    "parsed": null
+  },
+  "metadata": {
+    "routing": "vertex"
+  }
+}

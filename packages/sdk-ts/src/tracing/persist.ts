@@ -40,6 +40,8 @@ export interface PersistTraceInput {
   states?: Array<{ key?: string; data: unknown }>
   /** Set when status === 'errored'. Stored on a state observation with key 'error'. */
   errorMessage?: string
+  /** Optional: extra metadata keys to merge into the persisted record (e.g. tracer-provided routing flag). */
+  extraMetadata?: Record<string, unknown>
 }
 
 let resolvedConfig: ResolvedGravelConfig | null = null
@@ -149,6 +151,11 @@ export async function persistSample(payload: PersistTraceInput): Promise<void> {
       metadata.states = payload.states.map((s) => ({ key: s.key, data: s.data ?? null }))
     }
     if (payload.errorMessage) metadata.error = payload.errorMessage
+    if (payload.extraMetadata) {
+      for (const [k, v] of Object.entries(payload.extraMetadata)) {
+        if (v !== undefined) metadata[k] = v
+      }
+    }
 
     const status = payload.status === 'errored' ? 'errored' : 'completed'
 

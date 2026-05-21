@@ -33,7 +33,7 @@ The trust boundary is hard. Sample data, feedback, and prompts stay in your data
 
 Source: `packages/sdk-ts/`. Published to npm.
 
-- Auto-patches OpenAI / Anthropic / Gemini / Langchain / Vercel AI SDK on import.
+- Auto-patches OpenAI / Anthropic / Gemini (incl. Vertex AI + Gemini Enterprise Agent Platform via the same `google-genai` SDK) / Langchain / Vercel AI SDK on import.
 - Mounts the dashboard route (Next.js, Express, generic Node).
 - Manages `gravel_*` tables in the user's Postgres or SQLite via Drizzle.
 - Bundles the React dashboard as static assets.

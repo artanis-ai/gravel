@@ -95,8 +95,8 @@ Both stacks (Python `google-genai`, TS `@google/genai`) trace under the same can
 
 | Trace name | Renderer | Fixtures |
 |---|---|---|
-| `gemini.models.generate_content` | `gemini-chat` | `gemini-chat.json` (plain text), `gemini-chat-system.json` (config.system_instruction), `gemini-chat-with-tools.json` (function_call output), `gemini-chat-tool-result.json` (function_response follow-up), `gemini-chat-multimodal.json` (inline_data image), `gemini-chat-safety.json` (finish_reason=SAFETY + safety_ratings), `gemini-chat-error.json` |
-| `gemini.models.generate_content_stream` | `gemini-chat` (assembled) | `gemini-chat-stream.json` (assembled candidates + metadata.states chunk list) |
+| `gemini.models.generate_content` | `gemini-chat` | `gemini-chat.json` (plain text), `gemini-chat-system.json` (config.system_instruction), `gemini-chat-with-tools.json` (function_call output), `gemini-chat-tool-result.json` (function_response follow-up), `gemini-chat-multimodal.json` (inline_data image), `gemini-chat-safety.json` (finish_reason=SAFETY + safety_ratings), `gemini-chat-error.json`, plus `gemini-chat-via-vertex.json` / `gemini-chat-via-vertex-tools.json` (real-captured Vertex AI variants) |
+| `gemini.models.generate_content_stream` | `gemini-chat` (assembled) | `gemini-chat-stream.json` (hand-shaped assembled form), `gemini-chat-via-vertex-stream.json` (real-captured raw `chunks[]` shape — what the tracer actually persists) |
 | `fetch:gemini.models.generate_content` | `gemini-chat` (after `{body}` unwrap) | `fetch-gemini-chat.json` |
 
 Notable nuances:
@@ -112,7 +112,16 @@ Notable nuances:
 - **`function_call.args`** is a dict (NOT a JSON-encoded string, different from OpenAI's `tool_call.function.arguments`). Renderer passes straight to HumanValue.
 - **Async**: `client.aio.models.generate_content(...)` exists on a separate `AsyncModels` class in Python; sync tracing is what ships today. Async parity is on the roadmap alongside async OpenAI / Anthropic.
 - **TS patch gotcha** (was a real bug in v0.7.0): the `@google/genai` SDK assigns `generateContent` / `generateContentStream` as own-property arrow functions on each `Models` instance (delegating to `generateContentInternal` / `generateContentStreamInternal` on the prototype). `Models.prototype.generateContent` is `undefined`; patching it is a no-op. The patch wraps the prototype-level `*Internal` methods instead.
-- **Vertex AI** is the same SDK with `genai.Client(vertexai=True, project=..., location=...)`; the patch covers it transparently.
+- **Vertex AI / Gemini Enterprise Agent Platform** route through the same SDK as the Gemini Developer API. Three activation modes:
+  - **Constructor flag**: `genai.Client(vertexai=True, project='...', location='...')` (Python) / `new GoogleGenAI({vertexai: true, project, location})` (TS).
+  - **Env vars**: `GOOGLE_GENAI_USE_VERTEXAI=true` (or `GOOGLE_GENAI_USE_ENTERPRISE=true`) + `GOOGLE_CLOUD_PROJECT` + `GOOGLE_CLOUD_LOCATION`, then bare `genai.Client()` / `new GoogleGenAI()`.
+  - **Express Mode**: `GEMINI_API_KEY` + `GOOGLE_GENAI_USE_VERTEXAI=true` + `GOOGLE_CLOUD_PROJECT` — Vertex AI but with an API key instead of Google Cloud auth.
+- The patch fires for all three: `Models.generate_content` / `Models.prototype.generateContentInternal` are the same methods regardless of routing. **What changes**: only the auth path (ADC / service account / Express API key) and the HTTP endpoint the SDK calls. **What does NOT change**: the request shape, response shape, streaming protocol, function-calling shape, multimodal handling — all identical.
+- The tracer records the routing backend as `metadata.routing` (one of `gemini-api` / `vertex` / `enterprise`) by inspecting `Models._api_client.vertexai` (Python) / `Models.apiClient.clientOptions.vertexai` (TS). The dashboard's `ReviewSurface` paints a "via Vertex AI" / "via Gemini Enterprise" caption pill in the footer when this is set; gemini-api routing has no pill (it's the default).
+- **Vertex-only response fields** that show up in `_safe_dump` / `model_dump()` but the renderer deliberately filters: `sdk_http_response` (SDK pydantic wrapper exposing the raw HTTP response headers — noise), `automatic_function_calling_history` (SDK-side bookkeeping for the auto-call helper), `parsed` (deserialised structured output the SDK fills in for the user). `extractCandidates` reads only the documented public fields, so this noise stays out of the UI.
+- **`avg_logprobs`** is populated on Vertex responses but absent on the Gemini Developer API path. Renderer ignores it.
+- **`traffic_type`** field inside `usage_metadata` (Vertex-only — values: `ON_DEMAND` / `PROVISIONED`). Surfaces in the raw HumanValue fallback paths but not in TokenUsageStrip.
+- **Legacy SDKs deprecated**: the older `google-cloud-aiplatform` (Python `vertexai.generative_models.GenerativeModel`) and `@google-cloud/vertexai` (Node) are deprecated as of 2025-06-24 and removed on 2026-06-24. Gravel does not patch these; the official migration is to `google-genai` / `@google/genai` which Gravel already covers.
 
 ### Vercel AI (TS only)
 

@@ -133,6 +133,96 @@ func TestDetect_GeminiTS(t *testing.T) {
 	}
 }
 
+// upgradeGeminiRouting: env-var signals + source-code grep should
+// upgrade LLMGemini → LLMGeminiVertex / LLMGeminiEnterprise /
+// LLMGeminiVertexExpress so the wizard's "Detected: ..." line and
+// auth signpost match the user's actual deployment shape.
+
+func TestDetect_GeminiVertex_EnvFlag(t *testing.T) {
+	dir := newFixture(t, map[string]string{
+		"pyproject.toml": `[project]
+name = "app"
+dependencies = ["fastapi", "google-genai>=1.0"]
+`,
+		".env.local": "GOOGLE_GENAI_USE_VERTEXAI=true\nGOOGLE_CLOUD_PROJECT=my-proj\nGOOGLE_CLOUD_LOCATION=us-central1\n",
+	})
+	d := Detect(dir)
+	if contains(d.LLMLibs, LLMGemini) {
+		t.Errorf("base LLMGemini should have been upgraded: %v", d.LLMLibs)
+	}
+	if !contains(d.LLMLibs, LLMGeminiVertex) {
+		t.Errorf("expected LLMGeminiVertex in libs, got %v", d.LLMLibs)
+	}
+}
+
+func TestDetect_GeminiVertexExpress_APIKeyPlusVertexFlag(t *testing.T) {
+	dir := newFixture(t, map[string]string{
+		"pyproject.toml": `[project]
+name = "app"
+dependencies = ["google-genai>=1.0"]
+`,
+		".env": "GOOGLE_GENAI_USE_VERTEXAI=true\nGOOGLE_CLOUD_PROJECT=my-proj\nGEMINI_API_KEY=foo\n",
+	})
+	d := Detect(dir)
+	if !contains(d.LLMLibs, LLMGeminiVertexExpress) {
+		t.Errorf("expected Vertex Express Mode, got %v", d.LLMLibs)
+	}
+}
+
+func TestDetect_GeminiEnterprise_EnvFlag(t *testing.T) {
+	dir := newFixture(t, map[string]string{
+		"package.json": `{"name":"app","dependencies":{"@google/genai":"1.0.0"}}`,
+		".env":         "GOOGLE_GENAI_USE_ENTERPRISE=true\n",
+	})
+	d := Detect(dir)
+	if !contains(d.LLMLibs, LLMGeminiEnterprise) {
+		t.Errorf("expected LLMGeminiEnterprise, got %v", d.LLMLibs)
+	}
+}
+
+func TestDetect_GeminiVertex_SourceGrep(t *testing.T) {
+	dir := newFixture(t, map[string]string{
+		"pyproject.toml": `[project]
+name = "app"
+dependencies = ["google-genai>=1.0"]
+`,
+		"app.py": "from google import genai\nclient = genai.Client(vertexai=True, project='my-proj', location='us-central1')\n",
+	})
+	d := Detect(dir)
+	if !contains(d.LLMLibs, LLMGeminiVertex) {
+		t.Errorf("expected source-grep upgrade to Vertex, got %v", d.LLMLibs)
+	}
+}
+
+func TestDetect_GeminiVertex_TSSourceGrep(t *testing.T) {
+	dir := newFixture(t, map[string]string{
+		"package.json":   `{"dependencies":{"@google/genai":"1.0.0"}}`,
+		"src/llm.ts":     "import {GoogleGenAI} from '@google/genai';\nconst ai = new GoogleGenAI({vertexai: true, project: 'p', location: 'us-central1'});\n",
+	})
+	d := Detect(dir)
+	if !contains(d.LLMLibs, LLMGeminiVertex) {
+		t.Errorf("expected TS source-grep upgrade to Vertex, got %v", d.LLMLibs)
+	}
+}
+
+func TestDetect_GeminiNoUpgradeWhenPlainGeminiAPI(t *testing.T) {
+	dir := newFixture(t, map[string]string{
+		"pyproject.toml": `[project]
+name = "app"
+dependencies = ["google-genai>=1.0"]
+`,
+		".env":  "GEMINI_API_KEY=foo\n",
+		"a.py":  "from google import genai\nclient = genai.Client(api_key='foo')\n",
+	})
+	d := Detect(dir)
+	if !contains(d.LLMLibs, LLMGemini) {
+		t.Errorf("plain Gemini Developer API should stay LLMGemini, got %v", d.LLMLibs)
+	}
+	if contains(d.LLMLibs, LLMGeminiVertex) || contains(d.LLMLibs, LLMGeminiEnterprise) {
+		t.Errorf("no Vertex/Enterprise signal — must not upgrade: %v", d.LLMLibs)
+	}
+}
+
 func TestDetect_FastAPIWithSetupCfg(t *testing.T) {
 	// setup.cfg [options] install_requires syntax — another legacy
 	// shape.

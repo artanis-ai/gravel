@@ -90,6 +90,30 @@ def _model_of(kwargs: dict[str, Any], result: Any | None) -> str | None:
     return None
 
 
+def _routing_of(self: Any) -> str | None:
+    """Inspect the Models instance's BaseApiClient to determine routing
+    backend. Returns 'vertex' if the client was constructed with
+    `vertexai=True` (or via `GOOGLE_GENAI_USE_VERTEXAI=true` / the
+    enterprise env var — both flow into the same flag in the SDK), else
+    'gemini-api'. None if the SDK shape is unrecognised.
+
+    Wrapped defensively: this peeks at SDK-internal state (`_api_client`)
+    and we don't want a future refactor to break tracing. The renderer
+    falls back gracefully when routing is absent."""
+    try:
+        client = getattr(self, "_api_client", None)
+        if client is None:
+            return None
+        vertexai = getattr(client, "vertexai", None)
+        if vertexai is True:
+            return "vertex"
+        if vertexai is False or vertexai is None:
+            return "gemini-api"
+    except Exception:  # noqa: BLE001 — never let metadata capture break tracing
+        return None
+    return None
+
+
 # ---------- streaming wrapper ----------
 
 
@@ -105,6 +129,7 @@ class _StreamTee:
         name: str,
         kwargs: dict[str, Any],
         started_at: Any,
+        routing: str | None,
     ) -> None:
         self._inner = inner
         self._name = name
@@ -112,6 +137,7 @@ class _StreamTee:
         self._started_at = started_at
         self._chunks: list[Any] = []
         self._closed = False
+        self._routing = routing
 
     def __iter__(self) -> "_StreamTee":
         return self
@@ -156,6 +182,9 @@ class _StreamTee:
             if error is not None
             else None
         )
+        meta = dict(gravel_context_singleton.get_metadata() or {})
+        if self._routing is not None:
+            meta["routing"] = self._routing
         record = make_record(
             name=self._name,
             started_at=self._started_at,
@@ -165,7 +194,7 @@ class _StreamTee:
             input_data=_input_snapshot(self._kwargs),
             output_data=output if status == "ok" else None,
             error_data=error_data,
-            metadata=gravel_context_singleton.get_metadata(),
+            metadata=meta,
             extra_observations=[
                 ObservationRecord(type="state", data={"chunk_count": len(self._chunks)}, key="stream")
             ],
@@ -194,6 +223,10 @@ def _wrap_call(
             return original(self, *args, **kwargs)
 
         started_at = now_utc()
+        routing = _routing_of(self)
+        meta = dict(gravel_context_singleton.get_metadata() or {})
+        if routing is not None:
+            meta["routing"] = routing
 
         try:
             # Suppress the raw-fetch patch for the duration of the
@@ -213,7 +246,7 @@ def _wrap_call(
                 status="errored",
                 input_data=_input_snapshot(kwargs),
                 error_data={"message": str(exc), "type": type(exc).__name__},
-                metadata=gravel_context_singleton.get_metadata(),
+                metadata=meta,
             )
             try:
                 persist_trace(record)
@@ -227,6 +260,7 @@ def _wrap_call(
                 name=trace_name,
                 kwargs=kwargs,
                 started_at=started_at,
+                routing=routing,
             )
 
         completed_at = now_utc()
@@ -239,7 +273,7 @@ def _wrap_call(
             status="ok",
             input_data=_input_snapshot(kwargs),
             output_data=dumped if isinstance(dumped, dict) else {"value": dumped},
-            metadata=gravel_context_singleton.get_metadata(),
+            metadata=meta,
         )
         try:
             persist_trace(record)

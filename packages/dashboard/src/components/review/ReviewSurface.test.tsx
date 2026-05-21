@@ -90,5 +90,57 @@ describe('ReviewSurface: renders every fixture without throwing', () => {
         }
       })
     }
+
+    if (fixture.metadata && fixture.metadata.routing === 'vertex') {
+      it(`${file} surfaces a "via Vertex AI" routing pill`, () => {
+        const { container } = render(
+          <ReviewSurface
+            name={fixture.name}
+            input={fixture.input}
+            output={fixture.output}
+            metadata={fixture.metadata ?? null}
+          />,
+        )
+        expect(container.textContent ?? '').toMatch(/via\s+Vertex AI/i)
+      })
+    }
   }
+})
+
+describe('ReviewSurface routing pill', () => {
+  it('omits the pill when metadata.routing is gemini-api (default)', () => {
+    const { container } = render(
+      <ReviewSurface
+        name="gemini.models.generate_content"
+        input={{ contents: 'hi' }}
+        output={{ candidates: [] }}
+        metadata={{ routing: 'gemini-api' }}
+      />,
+    )
+    expect(container.textContent ?? '').not.toMatch(/via\s+/i)
+  })
+
+  it('omits the pill when metadata.routing is missing entirely', () => {
+    const { container } = render(
+      <ReviewSurface
+        name="gemini.models.generate_content"
+        input={{ contents: 'hi' }}
+        output={{ candidates: [] }}
+        metadata={null}
+      />,
+    )
+    expect(container.textContent ?? '').not.toMatch(/via\s+/i)
+  })
+
+  it('shows "via Gemini Enterprise" for enterprise routing', () => {
+    const { container } = render(
+      <ReviewSurface
+        name="gemini.models.generate_content"
+        input={{ contents: 'hi' }}
+        output={{ candidates: [] }}
+        metadata={{ routing: 'enterprise' }}
+      />,
+    )
+    expect(container.textContent ?? '').toMatch(/via\s+Gemini Enterprise/i)
+  })
 })

@@ -67,6 +67,18 @@ const (
 	LLMGemini    LLMLib = "Gemini"
 	LLMLangChain LLMLib = "LangChain"
 	LLMVercelAI  LLMLib = "Vercel AI"
+	// Gemini-via-Vertex / Gemini-Enterprise: the `google-genai` SDK
+	// supports three routing modes. Detection inspects env files
+	// (GOOGLE_GENAI_USE_VERTEXAI / GOOGLE_GENAI_USE_ENTERPRISE) and
+	// source-code grep (`vertexai=True` / `vertexai: true`); when a
+	// signal fires, the base `LLMGemini` entry is upgraded so the
+	// wizard prints "Detected: Gemini (Vertex AI)" — and so the auth
+	// signpost recommends ADC instead of GEMINI_API_KEY.
+	// `metadata.routing` from the tracer surfaces the same info per
+	// trace in the dashboard.
+	LLMGeminiVertex     LLMLib = "Gemini (Vertex AI)"
+	LLMGeminiEnterprise LLMLib = "Gemini (Enterprise)"
+	LLMGeminiVertexExpress LLMLib = "Gemini (Vertex AI Express Mode)"
 )
 
 // NextAppDirLocation is where Next.js's `app/` directory lives.
@@ -314,6 +326,7 @@ func fillTS(d *Detection, cwd string) {
 	}
 
 	d.DBDriver, d.DBEnvVar = readDBEnv(cwd, []string{"DATABASE_URL", "POSTGRES_URL", "NEON_DATABASE_URL"})
+	upgradeGeminiRouting(d, cwd)
 }
 
 func fillPython(d *Detection, cwd string) {
@@ -375,6 +388,153 @@ func fillPython(d *Detection, cwd string) {
 	}
 
 	d.DBDriver, d.DBEnvVar = readDBEnv(cwd, []string{"DATABASE_URL", "POSTGRES_URL"})
+	upgradeGeminiRouting(d, cwd)
+}
+
+// upgradeGeminiRouting rewrites the base `LLMGemini` entry to one of
+// `LLMGeminiVertex` / `LLMGeminiEnterprise` / `LLMGeminiVertexExpress`
+// when the project carries routing signals. Called from both fillTS
+// and fillPython after base LLM detection has populated `d.LLMLibs`.
+//
+// Signal priority (highest first):
+//
+//  1. `.env*` declares GOOGLE_GENAI_USE_ENTERPRISE=true — explicit
+//     enterprise routing.
+//  2. `.env*` declares GOOGLE_GENAI_USE_VERTEXAI=true. If a Gemini
+//     API key is ALSO declared (GEMINI_API_KEY / GOOGLE_API_KEY) AND
+//     GOOGLE_CLOUD_PROJECT is set, the user is on Express Mode — surface
+//     that specifically. Otherwise standard Vertex (ADC / service acct).
+//  3. Source-code grep for `vertexai=True` (Python) / `vertexai: true`
+//     (TS) in any `.py` / `.ts` / `.tsx` / `.mjs` file under cwd.
+//
+// If no signal fires, leaves `LLMGemini` in place.
+//
+// Why upgrade rather than append: keeping a single Gemini entry in the
+// summary line ("Detected: Gemini (Vertex AI)") is less noisy than
+// listing both. The dashboard's per-trace routing pill carries the
+// finer detail.
+func upgradeGeminiRouting(d *Detection, cwd string) {
+	// Quick pre-check: only do the work if base Gemini was detected.
+	idx := -1
+	for i, lib := range d.LLMLibs {
+		if lib == LLMGemini {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return
+	}
+
+	envVals := readEnvKeys(cwd, "GOOGLE_GENAI_USE_VERTEXAI", "GOOGLE_GENAI_USE_ENTERPRISE",
+		"GOOGLE_CLOUD_PROJECT", "GEMINI_API_KEY", "GOOGLE_API_KEY")
+	isTrue := func(v string) bool {
+		v = strings.ToLower(strings.TrimSpace(v))
+		return v == "true" || v == "1" || v == "yes"
+	}
+
+	upgrade := LLMLib("")
+	switch {
+	case isTrue(envVals["GOOGLE_GENAI_USE_ENTERPRISE"]):
+		upgrade = LLMGeminiEnterprise
+	case isTrue(envVals["GOOGLE_GENAI_USE_VERTEXAI"]):
+		// Express Mode: Vertex AI but with an API key, not Google Cloud
+		// auth. Recognised by an api-key env var alongside the Vertex flag.
+		// The auth signpost differs (no `gcloud auth application-default
+		// login` required for Express).
+		hasAPIKey := envVals["GEMINI_API_KEY"] != "" || envVals["GOOGLE_API_KEY"] != ""
+		hasProject := envVals["GOOGLE_CLOUD_PROJECT"] != ""
+		if hasAPIKey && hasProject {
+			upgrade = LLMGeminiVertexExpress
+		} else {
+			upgrade = LLMGeminiVertex
+		}
+	default:
+		// Source-code grep fallback. Cheap walk over the user's own
+		// .py / .ts / .tsx / .mjs files (skips node_modules / .venv etc).
+		if greppedVertexaiTrue(cwd) {
+			upgrade = LLMGeminiVertex
+		}
+	}
+
+	if upgrade != "" {
+		d.LLMLibs[idx] = upgrade
+	}
+}
+
+// readEnvKeys reads .env.local then .env and returns a map containing
+// only the keys the caller named. Last write wins on duplicates across
+// files (i.e. .env overrides .env.local — matches readDBEnv's order
+// where .env.local is read first and "wins" because it returns early).
+// We don't return early here because we may need multiple keys from
+// different files; the merged view is good enough for our routing
+// decision.
+func readEnvKeys(cwd string, names ...string) map[string]string {
+	out := make(map[string]string, len(names))
+	wanted := make(map[string]struct{}, len(names))
+	for _, n := range names {
+		wanted[n] = struct{}{}
+	}
+	// .env first, then .env.local so the latter wins (Next.js precedence).
+	for _, file := range []string{".env", ".env.local"} {
+		body, err := os.ReadFile(filepath.Join(cwd, file))
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(body), "\n") {
+			name, value, ok := parseEnvLine(line)
+			if !ok {
+				continue
+			}
+			if _, want := wanted[name]; want {
+				out[name] = value
+			}
+		}
+	}
+	return out
+}
+
+var vertexaiSourceRE = regexp.MustCompile(`vertexai\s*[:=]\s*[Tt]rue`)
+
+// greppedVertexaiTrue walks the project (skipping node_modules / .venv /
+// .git / dist / build) looking for `vertexai=True` (Python) or
+// `vertexai: true` (TS) literals. Best-effort; returns true on first
+// match. Bounded by file count + extension filter so it stays cheap.
+func greppedVertexaiTrue(cwd string) bool {
+	const maxFiles = 200
+	count := 0
+	found := false
+	skipDirs := map[string]struct{}{
+		"node_modules": {}, ".venv": {}, "venv": {}, ".git": {},
+		"dist": {}, "build": {}, "__pycache__": {}, ".next": {},
+	}
+	_ = filepath.WalkDir(cwd, func(path string, dee os.DirEntry, err error) error {
+		if err != nil || found || count >= maxFiles {
+			return filepath.SkipAll
+		}
+		if dee.IsDir() {
+			if _, skip := skipDirs[dee.Name()]; skip {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		ext := filepath.Ext(dee.Name())
+		switch ext {
+		case ".py", ".ts", ".tsx", ".mjs", ".js":
+		default:
+			return nil
+		}
+		count++
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		if vertexaiSourceRE.Match(body) {
+			found = true
+		}
+		return nil
+	})
+	return found
 }
 
 // readDBEnv scans .env.local then .env for the first candidate var

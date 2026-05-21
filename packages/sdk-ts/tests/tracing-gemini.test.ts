@@ -186,4 +186,48 @@ describe('tracing/gemini', () => {
 
     expect(persistSpy).not.toHaveBeenCalled()
   })
+
+  it('records extraMetadata.routing="vertex" when apiClient.clientOptions.vertexai is true', async () => {
+    const client = new FakeGoogleGenAI()
+    // Mimic the real SDK shape: Models exposes apiClient.clientOptions.vertexai.
+    ;(client.models as any).apiClient = { clientOptions: { vertexai: true } }
+    await client.models.generateContent({ model: 'gemini-x', contents: [] })
+
+    const call = persistSpy.mock.calls[0]![0] as any
+    expect(call.extraMetadata).toEqual({ routing: 'vertex' })
+  })
+
+  it('records extraMetadata.routing="gemini-api" when vertexai flag is false', async () => {
+    const client = new FakeGoogleGenAI()
+    ;(client.models as any).apiClient = { clientOptions: { vertexai: false } }
+    await client.models.generateContent({ model: 'gemini-x', contents: [] })
+
+    const call = persistSpy.mock.calls[0]![0] as any
+    expect(call.extraMetadata).toEqual({ routing: 'gemini-api' })
+  })
+
+  it('omits extraMetadata when apiClient internals are unrecognised', async () => {
+    const client = new FakeGoogleGenAI()
+    // Deliberately no apiClient on the Models instance.
+    delete (client.models as any).apiClient
+    await client.models.generateContent({ model: 'gemini-x', contents: [] })
+
+    const call = persistSpy.mock.calls[0]![0] as any
+    expect(call.extraMetadata).toBeUndefined()
+  })
+
+  it('streams: routing flows into the flushed sample', async () => {
+    const client = new FakeGoogleGenAI()
+    ;(client.models as any).apiClient = { clientOptions: { vertexai: true } }
+    const stream = await client.models.generateContentStream({
+      model: 'gemini-x',
+      contents: [],
+    })
+    for await (const _ of stream as AsyncIterable<unknown>) {
+      /* drain */
+    }
+
+    const call = persistSpy.mock.calls[0]![0] as any
+    expect(call.extraMetadata).toEqual({ routing: 'vertex' })
+  })
 })

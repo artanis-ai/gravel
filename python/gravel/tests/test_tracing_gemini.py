@@ -262,3 +262,66 @@ def test_fetch_tracing_disabled_during_call(gemini_patched) -> None:
     assert seen_during_call == [True]
     # Flag is restored after the call.
     assert gravel_context_singleton.is_fetch_tracing_disabled() is False
+
+
+def test_routing_metadata_vertex(gemini_patched) -> None:
+    """When the Models instance carries `_api_client.vertexai=True`, the
+    persisted record's metadata records `routing='vertex'`. The dashboard
+    uses this to paint a 'via Vertex AI' caption pill."""
+    Models, persist_mock = gemini_patched
+    Models._impl = staticmethod(lambda **kwargs: {"ok": True})
+
+    client = Models()
+    client._api_client = types.SimpleNamespace(vertexai=True)
+    client.generate_content(model="gemini-x", contents=[])
+
+    record = persist_mock.call_args.args[0]
+    assert record.metadata["routing"] == "vertex"
+
+
+def test_routing_metadata_gemini_api(gemini_patched) -> None:
+    """Default Gemini Developer API: `_api_client.vertexai` is False/None,
+    routing is recorded as 'gemini-api'. The dashboard hides the pill for
+    this default case."""
+    Models, persist_mock = gemini_patched
+    Models._impl = staticmethod(lambda **kwargs: {"ok": True})
+
+    client = Models()
+    client._api_client = types.SimpleNamespace(vertexai=False)
+    client.generate_content(model="gemini-x", contents=[])
+
+    record = persist_mock.call_args.args[0]
+    assert record.metadata["routing"] == "gemini-api"
+
+
+def test_routing_metadata_absent_when_sdk_internals_unrecognised(gemini_patched) -> None:
+    """If `_api_client` is missing entirely (defensive case for future SDK
+    refactors), routing is silently omitted. Tracing still completes."""
+    Models, persist_mock = gemini_patched
+    Models._impl = staticmethod(lambda **kwargs: {"ok": True})
+
+    client = Models()
+    # Deliberately leave _api_client unset (None).
+    client._api_client = None
+    client.generate_content(model="gemini-x", contents=[])
+
+    record = persist_mock.call_args.args[0]
+    assert "routing" not in record.metadata
+
+
+def test_routing_metadata_flows_through_streaming(gemini_patched) -> None:
+    """Streaming path also records routing on the flushed record."""
+    Models, persist_mock = gemini_patched
+    Models._impl_stream = staticmethod(
+        lambda **kwargs: iter(
+            [{"candidates": [{"content": {"role": "model", "parts": [{"text": "hi"}]}}]}]
+        )
+    )
+
+    client = Models()
+    client._api_client = types.SimpleNamespace(vertexai=True)
+    stream = client.generate_content_stream(model="gemini-x", contents=[])
+    list(stream)
+
+    record = persist_mock.call_args.args[0]
+    assert record.metadata["routing"] == "vertex"

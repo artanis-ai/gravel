@@ -347,16 +347,27 @@ func Run(ctx context.Context, opts RunOptions, _ io.Writer) (RunResult, error) {
 		}
 		tracerPhrase = "auto-tracing for " + strings.Join(libs, ", ") + ", plus raw fetch"
 	}
+	// Gemini-via-Vertex / Gemini-Enterprise routing needs Google Cloud
+	// auth (ADC / service account), NOT a Gemini API key. Flag it once
+	// here so users don't think the tracer needs a separate credential.
+	// Express Mode uses an API key + project ID — different signpost.
+	geminiAuthHint := geminiVertexAuthHint(d)
 
 	wantTraces := opts.WithTraces
 	if !opts.TracesExplicit {
 		StepHeader(3, 3, "Traces")
 		Say("Last step: capture every LLM call your app makes. I'll add " + Bold("two tables") + " (gravel_samples, gravel_feedback) to " + dbPhrase + " and turn on " + tracerPhrase + ". Your team reviews the calls in the " + Bold("Review") + " tab.")
+		if geminiAuthHint != "" {
+			Note(geminiAuthHint)
+		}
 		if confirmed, err := opts.Prompter.YesNo("Continue?", true); err == nil {
 			wantTraces = confirmed
 		}
 	} else if opts.WithTraces {
 		StepHeader(3, 3, "Traces ("+Dim("--traces")+")")
+		if geminiAuthHint != "" {
+			Note(geminiAuthHint)
+		}
 	}
 
 	if !wantTraces && !opts.TracesExplicit {
@@ -588,6 +599,30 @@ func describeMount(d Detection, mountPath string) string {
 func isInteractive(p Prompter) bool {
 	_, ok := p.(DefaultsPrompter)
 	return !ok
+}
+
+// geminiVertexAuthHint returns a one-line note about the auth method
+// the user's Vertex/Enterprise routing needs, or "" when no hint is
+// needed. The wizard prints this above the Traces "Continue?" prompt so
+// users don't think tracing requires a separate API key.
+//
+//   - Standard Vertex / Enterprise → ADC (`gcloud auth
+//     application-default login`).
+//   - Express Mode → uses the GEMINI_API_KEY / GOOGLE_API_KEY they
+//     already set, no extra step.
+//
+// Tracing itself is auth-agnostic — the patch fires regardless. This is
+// purely a courtesy to set expectations.
+func geminiVertexAuthHint(d Detection) string {
+	for _, lib := range d.LLMLibs {
+		switch lib {
+		case LLMGeminiVertex, LLMGeminiEnterprise:
+			return "Vertex AI / Gemini Enterprise routing uses Google Cloud auth, not an API key. If you haven't already, run " + Cyan("gcloud auth application-default login") + " in this shell."
+		case LLMGeminiVertexExpress:
+			return "Vertex AI Express Mode picks up your " + Bold("GEMINI_API_KEY") + " + " + Bold("GOOGLE_CLOUD_PROJECT") + " automatically. No extra auth step needed for the tracer."
+		}
+	}
+	return ""
 }
 
 // checkVersionAndNudge consults the GitHub release API for the latest

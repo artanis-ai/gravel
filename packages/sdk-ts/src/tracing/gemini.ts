@@ -96,6 +96,33 @@ interface WrapOptions {
   isStream: boolean
 }
 
+/**
+ * Inspect the Models instance's apiClient to determine the routing backend.
+ * Returns 'vertex' if the SDK was constructed with `vertexai: true` (or via
+ * env vars GOOGLE_GENAI_USE_VERTEXAI / GOOGLE_GENAI_USE_ENTERPRISE — both
+ * end up flipping the same flag), else 'gemini-api'. Returns undefined if
+ * the SDK internal shape isn't recognised; the renderer falls back gracefully.
+ *
+ * Wrapped defensively so an SDK refactor of `apiClient.clientOptions` can't
+ * break tracing — the worst case is no routing pill in the dashboard.
+ */
+function routingOf(self: unknown): 'vertex' | 'gemini-api' | undefined {
+  try {
+    const apiClient = (self as any)?.apiClient
+    if (!apiClient) return undefined
+    const opts = apiClient.clientOptions
+    if (opts && typeof opts === 'object' && 'vertexai' in opts) {
+      return opts.vertexai === true ? 'vertex' : 'gemini-api'
+    }
+    if (typeof apiClient.isVertexAI === 'function') {
+      return apiClient.isVertexAI() === true ? 'vertex' : 'gemini-api'
+    }
+  } catch {
+    return undefined
+  }
+  return undefined
+}
+
 function wrapCall(proto: any, methodName: string, opts: WrapOptions): void {
   const original = proto[methodName]
   if (typeof original !== 'function') return
@@ -113,6 +140,9 @@ function wrapCall(proto: any, methodName: string, opts: WrapOptions): void {
     const req = (args[0] ?? {}) as Record<string, unknown>
     const model = typeof req.model === 'string' ? req.model : undefined
     const input = req
+    const routing = routingOf(this)
+
+    const extraMetadata = routing ? { routing } : undefined
 
     let result: any
     try {
@@ -130,6 +160,7 @@ function wrapCall(proto: any, methodName: string, opts: WrapOptions): void {
         model,
         input,
         errorMessage: (err as Error).message,
+        extraMetadata,
       })
       throw err
     }
@@ -137,7 +168,7 @@ function wrapCall(proto: any, methodName: string, opts: WrapOptions): void {
     return Promise.resolve(result).then(
       (response: any) => {
         if (opts.isStream && response && typeof response[Symbol.asyncIterator] === 'function') {
-          return teeStream(response, { ...opts, startedAt, model, input })
+          return teeStream(response, { ...opts, startedAt, model, input, routing })
         }
         const usage = response?.usageMetadata ?? response?.usage_metadata
         void persistSample({
@@ -151,6 +182,7 @@ function wrapCall(proto: any, methodName: string, opts: WrapOptions): void {
           tokensOutput: usage?.candidatesTokenCount ?? usage?.candidates_token_count,
           input,
           output: response,
+          extraMetadata,
         })
         return response
       },
@@ -164,6 +196,7 @@ function wrapCall(proto: any, methodName: string, opts: WrapOptions): void {
           model,
           input,
           errorMessage: err?.message ?? String(err),
+          extraMetadata,
         })
         throw err
       },
@@ -177,11 +210,13 @@ interface TeeContext extends WrapOptions {
   startedAt: Date
   model?: string
   input: unknown
+  routing?: 'vertex' | 'gemini-api'
 }
 
 function teeStream(stream: any, ctx: TeeContext): any {
   const collectedChunks: unknown[] = []
   const originalIterator = stream[Symbol.asyncIterator].bind(stream)
+  const extraMetadata = ctx.routing ? { routing: ctx.routing } : undefined
 
   stream[Symbol.asyncIterator] = function (): AsyncIterator<unknown> {
     const inner = originalIterator()
@@ -204,6 +239,7 @@ function teeStream(stream: any, ctx: TeeContext): any {
               states: [
                 { key: 'stream_chunks', data: { count: collectedChunks.length } },
               ],
+              extraMetadata,
             })
           }
           return item
@@ -218,6 +254,7 @@ function teeStream(stream: any, ctx: TeeContext): any {
             input: ctx.input,
             output: collapseChunks(collectedChunks),
             errorMessage: (err as Error).message,
+            extraMetadata,
           })
           throw err
         }

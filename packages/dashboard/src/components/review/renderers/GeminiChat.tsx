@@ -196,6 +196,14 @@ function extractFunctionDeclarations(input: unknown): FunctionDeclaration[] {
 
 function extractCandidates(output: unknown): GeminiCandidate[] {
   if (!isPlainObject(output)) return []
+  // Streamed shape: the Python `_StreamTee` and TS `teeStream` both persist
+  // `output: { chunks: [...] }` — a list of partial `GenerateContentResponse`
+  // payloads. Assemble them into a consolidated candidates[] before falling
+  // through to the regular path so the renderer treats stream + non-stream
+  // identically. Mirrors OpenAIChat's `assembleStreamedChoices`.
+  if (Array.isArray(output.chunks) && !Array.isArray(output.candidates)) {
+    return assembleStreamedCandidates(output.chunks)
+  }
   const raw = output.candidates
   if (!Array.isArray(raw)) return []
   return raw.map((c, i) => {
@@ -235,6 +243,88 @@ function extractCandidates(output: unknown): GeminiCandidate[] {
     const index = typeof c.index === 'number' ? c.index : i
     return { content, finish_reason, safety_ratings, citation_metadata, index, raw: c }
   })
+}
+
+function assembleStreamedCandidates(chunks: unknown[]): GeminiCandidate[] {
+  // For each candidate index across chunks, concatenate text deltas + take
+  // the last non-null finish_reason / safety_ratings / citation_metadata.
+  // Gemini stream chunks carry incremental (not cumulative) text. function_call
+  // parts arrive whole in a single chunk; just take the last seen.
+  type Slot = {
+    role: string
+    text: string
+    nonTextParts: unknown[]
+    finish_reason: string | null
+    safety_ratings: unknown[] | null
+    citation_metadata: unknown | null
+    last_raw: Record<string, unknown>
+  }
+  const slots = new Map<number, Slot>()
+  for (const chunk of chunks) {
+    if (!isPlainObject(chunk)) continue
+    const candidates = Array.isArray(chunk.candidates) ? chunk.candidates : []
+    for (let i = 0; i < candidates.length; i++) {
+      const c = candidates[i]
+      if (!isPlainObject(c)) continue
+      const index = typeof c.index === 'number' ? c.index : i
+      const slot = slots.get(index) ?? {
+        role: 'model',
+        text: '',
+        nonTextParts: [] as unknown[],
+        finish_reason: null,
+        safety_ratings: null,
+        citation_metadata: null,
+        last_raw: c,
+      }
+      slot.last_raw = c
+      const content = isPlainObject(c.content) ? c.content : null
+      if (content && typeof content.role === 'string') slot.role = content.role
+      const parts = content && Array.isArray(content.parts) ? content.parts : []
+      for (const p of parts) {
+        if (!isPlainObject(p)) continue
+        if (typeof p.text === 'string') {
+          slot.text += p.text
+          continue
+        }
+        const fnCall = pickField(p, 'function_call', 'functionCall')
+        const inline = pickField(p, 'inline_data', 'inlineData')
+        const file = pickField(p, 'file_data', 'fileData')
+        const fnResp = pickField(p, 'function_response', 'functionResponse')
+        if (fnCall || inline || file || fnResp) slot.nonTextParts.push(p)
+      }
+      const fr =
+        typeof c.finish_reason === 'string'
+          ? c.finish_reason
+          : typeof c.finishReason === 'string'
+            ? c.finishReason
+            : null
+      if (fr !== null) slot.finish_reason = fr
+      const sr = Array.isArray(c.safety_ratings)
+        ? c.safety_ratings
+        : Array.isArray(c.safetyRatings)
+          ? c.safetyRatings
+          : null
+      if (sr !== null) slot.safety_ratings = sr
+      const cm = 'citation_metadata' in c ? c.citation_metadata : c.citationMetadata
+      if (cm !== null && cm !== undefined) slot.citation_metadata = cm
+      slots.set(index, slot)
+    }
+  }
+  return Array.from(slots.entries())
+    .sort(([a], [b]) => a - b)
+    .map(([index, s]) => {
+      const parts: unknown[] = []
+      if (s.text.length > 0) parts.push({ text: s.text })
+      parts.push(...s.nonTextParts)
+      return {
+        content: { role: s.role, parts },
+        finish_reason: s.finish_reason,
+        safety_ratings: s.safety_ratings,
+        citation_metadata: s.citation_metadata,
+        index,
+        raw: s.last_raw,
+      }
+    })
 }
 
 function lastUserIdx(turns: GeminiTurn[]): number {

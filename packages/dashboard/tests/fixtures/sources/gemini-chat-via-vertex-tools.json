@@ -1,0 +1,127 @@
+{
+  "name": "gemini.models.generate_content",
+  "description": "Vertex AI: function-calling turn captured from a real call against `gemini-2.5-flash` via `us-central1` with a single FunctionDeclaration in `config.tools`. Output candidates include a `function_call` part the renderer surfaces via the existing tool-call block. Pins the Vertex function_call shape (snake_case `args`, no JSON-encoded strings).",
+  "source": "gemini-chat",
+  "isFetch": false,
+  "status": "completed",
+  "input": {
+    "model": "gemini-2.5-flash",
+    "contents": "What's the weather in Tokyo?",
+    "config": {
+      "tools": [
+        {
+          "function_declarations": [
+            {
+              "name": "get_current_weather",
+              "description": "Return current weather for a city.",
+              "parameters": {
+                "type": "OBJECT",
+                "properties": {
+                  "city": {
+                    "type": "STRING"
+                  }
+                },
+                "required": [
+                  "city"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "output": {
+    "sdk_http_response": {
+      "headers": {
+        "content-type": "application/json; charset=UTF-8",
+        "vary": "Origin, X-Origin, Referer",
+        "content-encoding": "gzip",
+        "date": "Thu, 21 May 2026 13:36:49 GMT",
+        "server": "scaffolding on HTTPServer2",
+        "x-xss-protection": "0",
+        "x-frame-options": "SAMEORIGIN",
+        "x-content-type-options": "nosniff",
+        "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+        "transfer-encoding": "chunked"
+      },
+      "body": null
+    },
+    "candidates": [
+      {
+        "content": {
+          "parts": [
+            {
+              "media_resolution": null,
+              "code_execution_result": null,
+              "executable_code": null,
+              "file_data": null,
+              "function_call": {
+                "id": null,
+                "args": {
+                  "city": "Tokyo"
+                },
+                "name": "get_current_weather",
+                "partial_args": null,
+                "will_continue": null
+              },
+              "function_response": null,
+              "inline_data": null,
+              "text": null,
+              "thought": null,
+              "thought_signature": "Cr8CAY89a18L1ceu0ZIRDCRO1cyKdBwp1roNcMMUAtj0IGAYee77wYWwZUVyKqRZrPyH01eRUGQ0L6T59auoaNzFlQdriVJrAU-89lYVwrut2En19RuSv2fZcgCdfeXf4XObWWwC9dZAamLW9Oe4Wpy-GbEnnVVVmMugP5UwNuLRwjPYYQVcEpe4vEGw5c-giEYmktnmXLfNtQPewzUrXI4GlmYnPaOtBw86WxoZB6B0-ZfiOM9vzT3t6G75uyDnOyGnBtRYPzrecEvoYzXqbxO7MnCpLF9keUOl40DDuO5rV1UKGjB0fY6yIX3t01OH9_BF-BrCunpf1gXe9zr8YNLPkhaM4Ef7eKkwTwvSX5jJD86bzFXaxXuBjZmByfrEqZXWnLJCqHiZodShlp7dm6GfoLE1m1zWwAMbfq3wRHXxDg==",
+              "video_metadata": null,
+              "tool_call": null,
+              "tool_response": null,
+              "part_metadata": null
+            }
+          ],
+          "role": "model"
+        },
+        "citation_metadata": null,
+        "finish_message": null,
+        "token_count": null,
+        "finish_reason": "STOP",
+        "grounding_metadata": null,
+        "avg_logprobs": -1.2051797594342912,
+        "index": null,
+        "logprobs_result": null,
+        "safety_ratings": null,
+        "url_context_metadata": null
+      }
+    ],
+    "create_time": "2026-05-21T13:36:47.995367Z",
+    "model_version": "gemini-2.5-flash",
+    "prompt_feedback": null,
+    "response_id": "bwoPaqfgPIybmecPtYWI8AU",
+    "usage_metadata": {
+      "cache_tokens_details": null,
+      "cached_content_token_count": null,
+      "candidates_token_count": 7,
+      "candidates_tokens_details": [
+        {
+          "modality": "TEXT",
+          "token_count": 7
+        }
+      ],
+      "prompt_token_count": 34,
+      "prompt_tokens_details": [
+        {
+          "modality": "TEXT",
+          "token_count": 34
+        }
+      ],
+      "thoughts_token_count": 72,
+      "tool_use_prompt_token_count": null,
+      "tool_use_prompt_tokens_details": null,
+      "total_token_count": 113,
+      "traffic_type": "ON_DEMAND"
+    },
+    "model_status": null,
+    "automatic_function_calling_history": null,
+    "parsed": null
+  },
+  "metadata": {
+    "routing": "vertex"
+  }
+}

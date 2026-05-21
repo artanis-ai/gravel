@@ -113,6 +113,46 @@ describe('GeminiChatRenderer', () => {
     expect(container.textContent).toContain('Blocked')
   })
 
+  it('Vertex AI plain: real-captured `Client(vertexai=True)` response renders without JSON leaks', () => {
+    const f = loadFixture('gemini-chat-via-vertex.json')
+    const { container } = render(
+      <RenderBoth renderer={GeminiChatRenderer} input={f.input} output={f.output} isFetch={false} />,
+    )
+    expect(container.textContent).toContain('capital of Japan')
+    expect(container.textContent).toContain('Tokyo')
+    // sdk_http_response noise from the dump must NOT surface anywhere in the UI.
+    expect(container.textContent).not.toContain('sdk_http_response')
+    expect(container.textContent).not.toContain('alt-svc')
+    expect(container.textContent).not.toContain('content-type')
+    // automatic_function_calling_history is SDK bookkeeping; must not leak.
+    expect(container.textContent).not.toContain('automatic_function_calling_history')
+  })
+
+  it('Vertex AI stream: real-captured chunks[] assemble into a single model reply', () => {
+    const f = loadFixture('gemini-chat-via-vertex-stream.json')
+    const { container } = render(
+      <RenderBoth renderer={GeminiChatRenderer} input={f.input} output={f.output} isFetch={false} />,
+    )
+    // Multiple chunks: text from chunk 1 + chunk 6 (start + end) both present.
+    expect(container.textContent).toContain('Edo')
+    expect(container.textContent).toContain('Pasmo')
+    // chunk_count metadata stays out of the visible body.
+    expect(container.textContent).not.toContain('"chunks":')
+  })
+
+  it('Vertex AI tools: real-captured function_call surfaces as Tool call with structured args', () => {
+    const f = loadFixture('gemini-chat-via-vertex-tools.json')
+    const { container } = render(
+      <RenderBoth renderer={GeminiChatRenderer} input={f.input} output={f.output} isFetch={false} />,
+    )
+    expect(container.textContent).toMatch(/Tool call/i)
+    expect(container.textContent).toContain('get_current_weather')
+    expect(container.textContent).toContain('Tokyo')
+    // args are a plain dict — must render via HumanValue, not as JSON.
+    expect(container.textContent).not.toContain('"city":')
+    expect(container.textContent).not.toContain('{"city"')
+  })
+
   it('accepts camelCase TS-shape too: finishReason / usageMetadata / functionCall', () => {
     const f = loadFixture('fetch-gemini-chat.json')
     // The fetch envelope is unwrapped by the ReviewSurface in production;
