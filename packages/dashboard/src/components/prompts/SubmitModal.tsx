@@ -13,6 +13,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { Modal } from '../Modal'
+import { toast } from '../Toast'
 import { PromptBadge } from './PromptBadge'
 import { DiffView } from './DiffView'
 import { Alert } from '../Alert'
@@ -59,30 +60,63 @@ interface SubmitErrorState {
 }
 
 /**
- * Map server error codes to friendly titles. Anything unmapped falls
- * back to a generic "Couldn't send for review" — the server's
- * `message` field gives the specific reason in the body.
+ * Map server error codes to domain-expert-friendly title + body.
+ * The raw server `message` (often a stack trace or nested 502 / 404
+ * JSON) is folded into the Alert's `details` disclosure so engineers
+ * can dig in without confronting users with line noise.
  */
-function titleForCode(code: string): string {
+function copyForCode(code: string): { title: string; body: string } {
   switch (code) {
     case 'github_not_installed':
-      return 'GitHub App not connected'
+      return {
+        title: 'Engineering setup incomplete',
+        body: "Your team's engineer needs to connect their codebase to Gravel before changes can be sent for review. Ask them to open the dashboard's setup and install the gravel-bot app.",
+      }
     case 'github_failed':
-      return "GitHub didn't accept the change"
+      return {
+        title: "Engineering side couldn't accept the change",
+        body: "The bridge from Gravel to your team's code rejected this submission. Try again in a minute; if it persists, ask your engineer to check the gravel-bot app and the project repository.",
+      }
     case 'github_token_mint_failed':
-      return "Couldn't reach Gravel cloud"
+      return {
+        title: "Gravel couldn't reach the engineering side",
+        body: 'This is usually a temporary outage. Try again in a minute. If it keeps happening, ask your engineer to reinstall the gravel-bot app in your team’s repository.',
+      }
     case 'unknown_prompt':
-      return 'Prompt not in manifest'
+      return {
+        title: 'One of your prompts looks unfamiliar',
+        body: 'Refresh the page so the dashboard re-reads the prompts. If the same edit still fails, ask your engineer; the prompt may have been renamed or removed since you started editing.',
+      }
     case 'prompt_no_position':
-      return 'Prompt is missing position info'
+      return {
+        title: "We can't locate one of your prompts",
+        body: "Your engineer needs to re-scan the codebase so Gravel knows where each prompt lives. Ask them to run the manifest update.",
+      }
     case 'prompt_unchanged':
-      return 'One of your changes is identical to the current text'
+      return {
+        title: "One of your edits matches the current text",
+        body: 'Either change the text, or remove this prompt from the submission. We only send actual edits for review.',
+      }
     case 'no_drafts':
-      return 'Nothing to send'
+      return {
+        title: 'Nothing to send yet',
+        body: "There aren’t any draft edits ready. Edit a prompt first.",
+      }
     case 'invalid_draft':
-      return 'Bad request'
+      return {
+        title: 'Something looks off with the draft',
+        body: "Refresh the page and try again. If it keeps happening, ask your engineer.",
+      }
+    case 'prompt_not_pushed':
+      return {
+        title: "Your engineer hasn't pushed the latest code yet",
+        body: "One of the prompts you're editing isn't on the team's main branch yet. Ask your engineer to push their changes, then try again.",
+      }
     default:
-      return "Couldn't send for review"
+      return {
+        title: "Couldn't send for review",
+        body: 'Try again in a minute. If it keeps happening, share the technical details below with your engineer.',
+      }
   }
 }
 
@@ -186,18 +220,28 @@ export function SubmitModal({
       onClose()
     },
     onError: (err) => {
-      if (err instanceof ApiError) {
-        setError({
-          title: titleForCode(err.code),
-          body: err.serverMessage || err.message || 'Please try again.',
-          details: detailsToString(err.details),
-        })
-      } else {
-        setError({
-          title: "Couldn't send for review",
-          body: err.message || 'Please try again.',
-        })
-      }
+      const friendly =
+        err instanceof ApiError
+          ? copyForCode(err.code)
+          : { title: "Couldn't send for review", body: err.message || 'Please try again.' }
+      // Engineer-facing raw payload goes into the Alert's <details>
+      // disclosure (and into the toast's optional details) so the
+      // domain expert sees friendly copy first but can hand the
+      // technical reason to their engineer if needed.
+      const rawDetails =
+        err instanceof ApiError
+          ? (err.serverMessage ?? '') +
+            (err.details ? '\n' + detailsToString(err.details) : '')
+          : err.message || ''
+      setError({
+        title: friendly.title,
+        body: friendly.body,
+        details: rawDetails.trim() || undefined,
+      })
+      // Toast in parallel: if the user dismissed the modal between
+      // submit click and 502 (or scrolled past the Alert), the toast
+      // still flags the failure. Bottom-right, dismissable, 6 s.
+      toast(`${friendly.title}. ${friendly.body}`, { tone: 'error', durationMs: 6000 })
     },
   })
 

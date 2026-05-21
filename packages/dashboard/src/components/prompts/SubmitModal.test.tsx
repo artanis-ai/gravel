@@ -179,11 +179,11 @@ describe('SubmitModal', () => {
     expect(screen.getByRole('button', { name: /send for review/i })).toBeDisabled()
   })
 
-  // Regression: the old error-display path only rendered err.message — for
-  // ApiError that was just the code ("github_failed") with no message or
-  // details, which is useless to a non-engineer. Verify the Alert now
-  // shows the humanised title, the server message, AND the details box.
-  it('renders a styled Alert with server message + details when submit fails', async () => {
+  // v0.9.6: the visible Alert body is now a domain-expert-friendly
+  // sentence. The raw server message (engineer jargon, often a nested
+  // 502 JSON) moves to the Alert's <details> disclosure so it's still
+  // surfaceable but doesn't confront the user.
+  it('renders a friendly Alert with raw error tucked into details on submit failure', async () => {
     mockedPost.mockRejectedValue(
       new ApiError({
         status: 400,
@@ -203,9 +203,12 @@ describe('SubmitModal', () => {
     await user.click(within(dialog).getByRole('button', { name: /send for review/i }))
 
     const alert = await within(dialog).findByRole('alert')
-    expect(alert).toHaveTextContent(/GitHub didn’?t accept the change|GitHub didn't accept the change/i)
+    // Friendly title + body for the github_failed code (no PR/repo jargon).
+    expect(alert).toHaveTextContent(/Engineering side couldn'?t accept the change/i)
+    expect(alert).toHaveTextContent(/Try again in a minute/i)
+    // Raw server message still reachable via the details disclosure.
     expect(alert).toHaveTextContent(/Could not read src\/landlord_ai\/persona\.py/i)
-    expect(within(alert).getByText('Not Found')).toBeInTheDocument()
+    expect(alert).toHaveTextContent(/Not Found/)
   })
 
   it('falls back to a generic title when the error code is unknown', async () => {
