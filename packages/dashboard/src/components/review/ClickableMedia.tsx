@@ -117,7 +117,7 @@ export function ClickablePdf({
   }
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex h-full min-h-0 flex-col gap-2">
       <div className="flex items-center justify-between gap-2 text-xs">
         <span className="font-medium text-text-dark">{title}</span>
         <button
@@ -132,7 +132,7 @@ export function ClickablePdf({
       <iframe
         src={src}
         title={title}
-        className="h-64 w-full rounded-lg border border-warm bg-white"
+        className="min-h-[28rem] w-full flex-1 rounded-lg border border-warm bg-white"
       />
       <PdfDialog open={open} onClose={() => setOpen(false)} src={src} title={title} />
     </div>

@@ -97,7 +97,7 @@ describe('Prompts list', () => {
     // Developer-only hint visible because auth/me reports localhost. The
     // page-level DeveloperNote sits at the top under the tabs.
     expect(await screen.findByText(/manifest --update/i)).toBeInTheDocument()
-    expect(screen.getAllByText(/visible only on localhost/i).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/only you can see this box/i).length).toBeGreaterThan(0)
   })
 
   it('hides the CLI hint from domain experts (non-localhost user)', async () => {
@@ -110,7 +110,7 @@ describe('Prompts list', () => {
     renderRoute(<PromptsPage />)
     expect(await screen.findByText(/no prompts yet/i)).toBeInTheDocument()
     expect(screen.queryByText(/manifest --update/i)).not.toBeInTheDocument()
-    expect(screen.queryByText(/visible only on localhost/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/only you can see this box/i)).not.toBeInTheDocument()
   })
 
   it('renders prompts grouped by directory and a draft dot', async () => {
@@ -205,7 +205,7 @@ describe('Prompts list', () => {
     // The whole banner is wrapped in DeveloperNote — visible only on
     // localhost. There are two such notes on this page (top + banner),
     // so just confirm at least one renders.
-    expect(screen.getAllByText(/visible only on localhost/i).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/only you can see this box/i).length).toBeGreaterThan(0)
   })
 
   it('hides the install-GitHub-App banner from non-localhost users', async () => {

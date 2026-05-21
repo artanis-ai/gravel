@@ -36,6 +36,7 @@ import { SkeletonText } from '../Skeleton'
 import { cx, formatDuration, formatRelative } from '../../lib/format'
 import { ReviewSurface } from '../review/ReviewSurface'
 import { TraceNavigator } from '../review/TraceNavigator'
+import { toast } from '../Toast'
 
 interface Props {
   /** All samples currently on screen (one page of the table). Drives prev/next. */
@@ -360,19 +361,20 @@ function FeedbackPanel({
   const [reason, setReason] = useState('')
   const [showReason, setShowReason] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // Set once a feedback submit succeeds. Keeps the user on the same
-  // sample (no auto-advance) so they can verify what landed; the Skip
-  // button relabels to "Next →" so the next-sample action is still
-  // one click away. Per Yousef's dogfooding: auto-advance felt like
-  // their feedback got lost.
-  const [justSubmitted, setJustSubmitted] = useState(false)
+
+  // If the sample already has a negative-feedback row, treat any
+  // further positive-feedback action as nonsensical (the user already
+  // told us this output was wrong; clicking Approve would contradict
+  // themselves). The Approve slot is replaced by "Add feedback" which
+  // opens the same reason-textarea flow so they can add another
+  // detail or correction.
+  const hasNegative = feedback.some((f) => f.score === 'negative')
 
   // Reset local state when navigating samples.
   useEffect(() => {
     setReason('')
     setShowReason(false)
     setError(null)
-    setJustSubmitted(false)
   }, [sampleId])
 
   const submit = useMutation<unknown, Error, { score: 'positive' | 'negative'; comment: string | null }>({
@@ -385,12 +387,10 @@ function FeedbackPanel({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sample', sampleId] })
       queryClient.invalidateQueries({ queryKey: ['samples'] })
-      setJustSubmitted(true)
       setShowReason(false)
       setReason('')
-      // No auto-advance here. User confirms via the "Next →" button
-      // (formerly "Skip") to move on, OR submits more feedback on the
-      // same sample first.
+      toast('Feedback recorded', { tone: 'success' })
+      // No auto-advance; user moves on via Skip when ready.
     },
     onError: (err) => setError(err.message),
   })
@@ -412,17 +412,19 @@ function FeedbackPanel({
     submit.mutate({ score: 'negative', comment: reason.trim() })
   }
 
-  // Keyboard shortcuts: C / W / S when not typing in a textarea/input.
+  // Keyboard shortcuts: A (Approve / Add feedback) / R (Reject) / S
+  // (Skip) when not typing in a textarea/input.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const t = e.target as HTMLElement | null
       if (t?.tagName === 'TEXTAREA' || t?.tagName === 'INPUT') return
       if (e.metaKey || e.ctrlKey || e.altKey) return
       const k = e.key.toLowerCase()
-      if (k === 'c') {
+      if (k === 'a') {
         e.preventDefault()
-        approve()
-      } else if (k === 'w') {
+        if (hasNegative) flagBad()
+        else approve()
+      } else if (k === 'r') {
         e.preventDefault()
         flagBad()
       } else if (k === 's') {
@@ -435,30 +437,27 @@ function FeedbackPanel({
     // approve/flagBad/skip close over `submit` and `onAdvance`, both
     // captured per-render via the mutation hook.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sampleId, showReason])
+  }, [sampleId, showReason, hasNegative])
 
   return (
     <section className="border-t border-warm bg-warm/20 px-4 py-3">
       {feedback.length > 0 && <ExistingFeedback items={feedback} />}
-      {justSubmitted && (
-        <p
-          className="mb-2 rounded-md border border-forest/30 bg-forest/5 px-3 py-1.5 text-center text-sm text-forest"
-          role="status"
-          data-testid="feedback-recorded"
-        >
-          ✓ Feedback recorded · add more or click Next →
-        </p>
-      )}
       {!showReason ? (
         <div className="flex items-center justify-center gap-3">
-          <FeedbackButton tone="correct" shortcut="C" onClick={approve} disabled={submit.isPending}>
-            ✓ Correct
-          </FeedbackButton>
-          <FeedbackButton tone="wrong" shortcut="W" onClick={flagBad} disabled={submit.isPending}>
-            ✕ Wrong
+          {hasNegative ? (
+            <FeedbackButton tone="wrong" shortcut="A" onClick={flagBad} disabled={submit.isPending}>
+              + Add feedback
+            </FeedbackButton>
+          ) : (
+            <FeedbackButton tone="correct" shortcut="A" onClick={approve} disabled={submit.isPending}>
+              ✓ Approve
+            </FeedbackButton>
+          )}
+          <FeedbackButton tone="wrong" shortcut="R" onClick={flagBad} disabled={submit.isPending}>
+            ✕ Reject
           </FeedbackButton>
           <FeedbackButton tone="skip" shortcut="S" onClick={skip} disabled={submit.isPending}>
-            {justSubmitted ? 'Next →' : '↷ Skip'}
+            ↷ Skip
           </FeedbackButton>
         </div>
       ) : (
@@ -472,7 +471,7 @@ function FeedbackPanel({
             onChange={(e) => setReason(e.target.value)}
             rows={3}
             autoFocus
-            placeholder="Be specific — the next iteration learns from this."
+            placeholder="Be specific. The next iteration learns from this."
             className="w-full rounded-md border border-warm bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
           />
           <div className="flex items-center justify-end gap-2">

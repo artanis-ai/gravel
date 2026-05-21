@@ -77,7 +77,7 @@ describe('Samples list', () => {
     // wired tracing yet, so we surface the setup hint instead.
     expect(await screen.findByText(/no traces yet/i)).toBeInTheDocument()
     expect(screen.queryByText(/Trace Evals/i)).not.toBeInTheDocument()
-    expect(screen.getByText(/visible only on localhost/i)).toBeInTheDocument()
+    expect(screen.getByText(/only you can see this box/i)).toBeInTheDocument()
   })
 
   it('renders rows when samples are returned', async () => {

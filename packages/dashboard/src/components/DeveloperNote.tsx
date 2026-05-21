@@ -29,8 +29,8 @@ export function DeveloperNote({ children }: { children: ReactNode }) {
   if (data?.user?.id !== 'localhost') return null
 
   return (
-    <div className="overflow-hidden rounded-xl border-2 border-dashed border-accent bg-accent-light/40 shadow-sm">
-      <div className="flex items-center gap-1.5 border-b border-accent/50 bg-accent/30 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-earth-dark">
+    <div className="overflow-hidden rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/80 shadow-sm">
+      <div className="flex items-center gap-1.5 border-b border-slate-200 bg-slate-100 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
         <svg
           xmlns="http://www.w3.org/2000/svg"
           width="14"
@@ -46,9 +46,9 @@ export function DeveloperNote({ children }: { children: ReactNode }) {
           <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z" />
           <circle cx="12" cy="12" r="3" />
         </svg>
-        Visible only on localhost
+        Only you can see this box (localhost)
       </div>
-      <div className="px-3 py-3 text-xs text-earth-dark">{children}</div>
+      <div className="px-3 py-3 text-xs text-slate-700">{children}</div>
     </div>
   )
 }

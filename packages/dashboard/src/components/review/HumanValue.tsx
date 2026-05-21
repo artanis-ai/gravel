@@ -40,6 +40,13 @@ interface HumanValueProps {
 const MAX_RECURSION = 12
 const COLLAPSE_DEFAULT_DEPTH = 4
 const LONG_STRING_THRESHOLD = 280
+// Number of items to render before collapsing a long list / enum.
+// Threshold picked so structured-output enums (typical 50-200 values)
+// collapse but human-meaningful arrays (tools, messages, choices)
+// don't get hidden.
+const LONG_LIST_THRESHOLD = 12
+// Preview count when a long list is collapsed (first N items shown).
+const LONG_LIST_PREVIEW = 6
 
 export function HumanValue({ value, depth = 0 }: HumanValueProps): ReactNode {
   if (depth > MAX_RECURSION) {
@@ -178,12 +185,21 @@ function HumanArray({
   }
 
   // Render as columnar table when every item is an object with
-  // overlapping keys — far easier to scan than a nested list.
+  // overlapping keys; far easier to scan than a nested list.
   if (items.every((it) => isPlainObject(it)) && items.length >= 2) {
     const keys = uniqueKeys(items as Array<Record<string, unknown>>)
     if (keys.length > 0 && keys.length <= 8) {
       return <HumanTable rows={items as Array<Record<string, unknown>>} keys={keys} depth={depth} />
     }
+  }
+
+  // Long-list collapse. Structured-output enums often dump 50-200
+  // values into a single field; rendering them all overwhelms the
+  // pane and pushes everything below offscreen. Show the first N +
+  // a "show more" affordance, parallel to ExpandableString's
+  // approach for long strings.
+  if (items.length > LONG_LIST_THRESHOLD) {
+    return <ExpandableList items={items} depth={depth} />
   }
 
   return (
@@ -194,6 +210,37 @@ function HumanArray({
         </li>
       ))}
     </ul>
+  )
+}
+
+function ExpandableList({
+  items,
+  depth,
+}: {
+  items: unknown[]
+  depth: number
+}): ReactNode {
+  const [open, setOpen] = useState(false)
+  const shown = open ? items : items.slice(0, LONG_LIST_PREVIEW)
+  const hiddenCount = items.length - shown.length
+  return (
+    <div className="space-y-1">
+      <ul className="ml-3 list-disc space-y-1">
+        {shown.map((it, i) => (
+          <li key={i} className="pl-1">
+            <HumanValue value={it} depth={depth + 1} />
+          </li>
+        ))}
+      </ul>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="ml-3 cursor-pointer text-[11px] text-text-muted underline"
+        data-testid="expandable-list-toggle"
+      >
+        {open ? 'show less' : `show ${hiddenCount} more (${items.length} total)`}
+      </button>
+    </div>
   )
 }
 

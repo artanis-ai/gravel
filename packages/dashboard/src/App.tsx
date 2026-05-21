@@ -5,6 +5,7 @@ import { PromptsPage } from './routes/Prompts'
 import { SamplesPage } from './routes/Samples'
 import { LoadingPage } from './components/LoadingPage'
 import { LoginPage } from './routes/Login'
+import { Toaster } from './components/Toast'
 
 export function App() {
   const { data: me, isLoading, error } = useApi.get('/api/auth/me')
@@ -29,6 +30,7 @@ export function App() {
           <Route path="/samples/:id">{(params) => <SamplesPage sampleId={params.id} />}</Route>
         </Switch>
       </Layout>
+      <Toaster />
     </Router>
   )
 }

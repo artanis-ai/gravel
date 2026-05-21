@@ -12,7 +12,7 @@
  *
  */
 import { useEffect, useRef, useState } from 'react'
-import { Link, useLocation } from 'wouter'
+import { Link } from 'wouter'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { SkeletonText } from '../components/Skeleton'
@@ -60,12 +60,6 @@ export function PromptDetail({ promptId }: { promptId: string }) {
   // Tracks the last value we successfully wrote to localStorage so the
   // auto-save effect can no-op when nothing changed since.
   const lastSavedTextRef = useRef<string | null>(null)
-  // Hoisted out of the conditional return block below: wouter's
-  // useLocation calls useSyncExternalStore, so it MUST run on every
-  // render or React throws "Rendered more hooks than during the
-  // previous render" once the data loads and the early-return paths
-  // stop firing.
-  const [, navigate] = useLocation()
 
   // Seed the editor once we know the current text + any existing draft.
   // If an existing draft is loaded, flip status to 'saved' so the
@@ -170,22 +164,18 @@ export function PromptDetail({ promptId }: { promptId: string }) {
     if (existingDraft) discard.mutate()
   }
 
-  // "Submit →" sends the user back to the prompt library where the
-  // bulk-submit button lives. We don't open a per-prompt submit
-  // dialog here because the wizard / dashboard model is "one PR with
-  // every draft" — submitting from inside the editor would either
-  // submit only this prompt (confusing partial state) or duplicate
-  // the bulk page's modal. Instead we signal the bulk page to
-  // pulse-highlight its Submit button so the next click is obvious.
+  // When the user leaves the editor with unsaved/saved changes, signal
+  // the prompts library to pulse-highlight its bulk Submit button. The
+  // editor no longer has its own Submit (the wizard model is "one PR
+  // with every draft"); the pulse is the only nudge to commit them.
   const PULSE_SIGNAL_KEY = 'gravel:focus-submit-once'
-  const goToSubmit = () => {
+  const flagPulseIfDirty = () => {
+    if (!(dirty || existingDraft)) return
     try {
       sessionStorage.setItem(PULSE_SIGNAL_KEY, '1')
     } catch {
-      /* Safari private mode etc. — the navigation still works, just
-         without the pulse. */
+      /* Safari private mode etc.; the navigation still works without the pulse. */
     }
-    navigate('/prompts')
   }
 
   return (
@@ -195,6 +185,7 @@ export function PromptDetail({ promptId }: { promptId: string }) {
           href="/prompts"
           className="cursor-pointer rounded-lg border border-warm px-2 py-1 text-xs font-medium text-text-mid hover:bg-warm/40 hover:text-text-dark"
           aria-label="Back to prompts"
+          onClick={flagPulseIfDirty}
         >
           ← Back
         </Link>
@@ -203,7 +194,6 @@ export function PromptDetail({ promptId }: { promptId: string }) {
         </h1>
         <PromptBadge type={detail.type} />
         {detail.varName && <Badge tone="neutral">{detail.varName}</Badge>}
-        {existingDraft && <Badge tone="warn">draft</Badge>}
         <div className="ml-auto flex items-center gap-2">
           {(stats.insertions > 0 || stats.deletions > 0) && (
             <span className="font-mono text-xs text-text-muted">
@@ -212,31 +202,19 @@ export function PromptDetail({ promptId }: { promptId: string }) {
             </span>
           )}
           {(dirty || existingDraft) && (
-            <>
-              <button
-                type="button"
-                disabled={discard.isPending}
-                className={cx(
-                  'rounded-lg border px-2 py-1 text-xs font-medium',
-                  discard.isPending
-                    ? 'cursor-not-allowed border-warm text-text-muted'
-                    : 'cursor-pointer border-warm text-text-mid hover:bg-warm/40 hover:text-text-dark',
-                )}
-                onClick={resetAndDiscard}
-              >
-                {discard.isPending ? 'Discarding…' : 'Reset'}
-              </button>
-              {existingDraft && (
-                <button
-                  type="button"
-                  className="cursor-pointer rounded-lg bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primary-dark"
-                  onClick={goToSubmit}
-                  data-testid="prompt-detail-submit"
-                >
-                  Submit
-                </button>
+            <button
+              type="button"
+              disabled={discard.isPending}
+              className={cx(
+                'rounded-lg border px-2 py-1 text-xs font-medium',
+                discard.isPending
+                  ? 'cursor-not-allowed border-warm text-text-muted'
+                  : 'cursor-pointer border-warm text-text-mid hover:bg-warm/40 hover:text-text-dark',
               )}
-            </>
+              onClick={resetAndDiscard}
+            >
+              {discard.isPending ? 'Discarding…' : 'Reset'}
+            </button>
           )}
         </div>
       </div>
