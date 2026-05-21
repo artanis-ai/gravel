@@ -122,6 +122,20 @@ describe('unwrapFetch', () => {
   })
 })
 
+describe('detectSource: Anthropic SDK method variants all map to anthropic-messages', () => {
+  // v0.10.0 fix for Olly's 2026-05-21 trace: `anthropic.messages.parse`
+  // was missing from the exact-match list, so a `.parse` trace landed
+  // on the generic raw-JSON renderer instead of the structured one.
+  it.each([
+    'anthropic.messages.create',
+    'anthropic.messages.stream',
+    'anthropic.messages.parse',
+    'anthropic.messages',
+  ])('classifies %s as anthropic-messages', (name) => {
+    expect(detectSource(name, {}, {})).toBe('anthropic-messages')
+  })
+})
+
 describe('detectSource: unknown shapes fall through', () => {
   it('returns unknown for a made-up trace name', () => {
     expect(detectSource('weird.thing', {}, {})).toBe('unknown')

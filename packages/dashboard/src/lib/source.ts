@@ -96,6 +96,7 @@ export function detectSource(name: string, _input: unknown, _output: unknown): S
   if (stripped === 'openai.embeddings') return 'openai-embeddings'
   if (stripped === 'anthropic.messages.create') return 'anthropic-messages'
   if (stripped === 'anthropic.messages.stream') return 'anthropic-messages'
+  if (stripped === 'anthropic.messages.parse') return 'anthropic-messages'
   if (stripped === 'anthropic.messages') return 'anthropic-messages'
 
   // Gemini (Google's `google-genai` Python SDK and `@google/genai` JS SDK).
