@@ -235,29 +235,21 @@ def test_env_writer_preserves_other_lines(tmp_path: Path):
 # -------------------- _prompts_submit --------------------
 
 
-def test_draft_branch_for_is_deterministic_per_day():
-    """Same user + same date → same branch, so re-submits update the
-    existing PR instead of opening a new one."""
+def test_draft_branch_for_is_stable_across_users_and_dates():
+    """v0.9.x: single-open-PR model means the branch is always the
+    same (`gravel/draft`), regardless of user or date. Subsequent
+    submissions amend the existing PR rather than fanning out into
+    per-user or per-day branches."""
     from datetime import date
 
     from artanis_gravel._prompts_submit import draft_branch_for
 
-    b1 = draft_branch_for("user-123", today=date(2026, 5, 13))
-    b2 = draft_branch_for("user-123", today=date(2026, 5, 13))
-    assert b1 == b2
-    assert "2026-05-13" in b1
-    assert "user-123" in b1
-
-
-def test_draft_branch_for_sanitizes_user_id():
-    """Non-alphanumeric chars become dashes so the branch name is git-safe."""
-    from datetime import date
-
-    from artanis_gravel._prompts_submit import draft_branch_for
-
-    name = draft_branch_for("a/b@c", today=date(2026, 5, 13))
-    assert "/" not in name.replace("gravel/", "")  # only the prefix slash
-    assert "@" not in name
+    assert draft_branch_for("user-123") == "gravel/draft"
+    assert draft_branch_for("user-456") == "gravel/draft"
+    assert draft_branch_for("user-123", today=date(2026, 5, 13)) == "gravel/draft"
+    assert draft_branch_for("user-123", today=date(2026, 5, 14)) == "gravel/draft"
+    # User id arg is intentionally ignored; weird inputs don't break.
+    assert draft_branch_for("a/b@c") == "gravel/draft"
 
 
 def test_submit_drafts_raises_no_drafts():

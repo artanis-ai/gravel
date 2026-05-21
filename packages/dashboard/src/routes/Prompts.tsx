@@ -41,7 +41,9 @@ function PromptsList() {
   const [search, setSearch] = useState('')
   const [submitOpen, setSubmitOpen] = useState(false)
   const [needsGithubOpen, setNeedsGithubOpen] = useState(false)
-  const [submittedPrUrl, setSubmittedPrUrl] = useState<string | null>(null)
+  const [submittedPr, setSubmittedPr] = useState<{ url: string; isAmendment: boolean } | null>(
+    null,
+  )
   // Set briefly when the user arrives here from PromptDetail's
   // "Submit →" button. The bulk-submit pulses for 2.5s to teach the
   // user where to click next.
@@ -162,8 +164,9 @@ function PromptsList() {
       </header>
 
       <SubmitSuccessDialog
-        prUrl={submittedPrUrl}
-        onClose={() => setSubmittedPrUrl(null)}
+        prUrl={submittedPr?.url ?? null}
+        isAmendment={submittedPr?.isAmendment ?? false}
+        onClose={() => setSubmittedPr(null)}
       />
 
       {promptsQ.isLoading ? (
@@ -201,7 +204,10 @@ function PromptsList() {
         onClose={() => setSubmitOpen(false)}
         drafts={draftPreviewsQ.data ?? []}
         onSubmitted={(result) => {
-          setSubmittedPrUrl(result.pr.prUrl)
+          setSubmittedPr({
+            url: result.pr.prUrl,
+            isAmendment: Boolean(result.pr.isAmendment),
+          })
           queryClient.invalidateQueries({ queryKey: ['prompts', 'drafts'] })
         }}
       />

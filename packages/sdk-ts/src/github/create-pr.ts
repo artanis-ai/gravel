@@ -62,6 +62,41 @@ export interface CreatePullRequestResult {
   prUrl: string
   prNumber: number
   branchName: string
+  /** True when the call landed on an already-open PR (commits added
+   *  to the existing branch, no new PR opened). False when a fresh
+   *  PR was created. Surfaced to the dashboard so the success copy
+   *  can read "added to your existing pull request" instead of
+   *  "opened a new pull request". See UX 8. */
+  isAmendment: boolean
+}
+
+interface OpenPRSummary {
+  head: { ref: string }
+  html_url: string
+  number: number
+}
+
+/**
+ * Return the open PR raised by Gravel for this repo, if any. Matches
+ * by `head.ref === 'gravel/draft'` (the canonical stable branch).
+ * One open PR per project at a time: subsequent submissions push
+ * commits to that branch and the open PR auto-updates. Mirrors
+ * `python/gravel/src/artanis_gravel/_github_api.py:find_open_gravel_pr`.
+ */
+export async function findOpenGravelPR(
+  accessToken: string,
+  repoOwner: string,
+  repoName: string,
+): Promise<OpenPRSummary | null> {
+  const pulls = await githubAPI<OpenPRSummary[]>(
+    `/repos/${repoOwner}/${repoName}/pulls?state=open&per_page=100`,
+    accessToken,
+  )
+  if (!Array.isArray(pulls)) return null
+  for (const pr of pulls) {
+    if (pr?.head?.ref === 'gravel/draft') return pr
+  }
+  return null
 }
 
 export async function createPullRequest(args: CreatePullRequestArgs): Promise<CreatePullRequestResult> {
@@ -75,6 +110,35 @@ export async function createPullRequest(args: CreatePullRequestArgs): Promise<Cr
   }
 
   const branchName = args.branchName ?? defaultBranchName(deFirstName)
+
+  // Amendment path: if a Gravel PR is already open, push commits to
+  // its branch and return without creating a new branch or PR.
+  const existingPr = await findOpenGravelPR(accessToken, repoOwner, repoName)
+  if (existingPr) {
+    await putFilesOnBranch({
+      accessToken,
+      repoOwner,
+      repoName,
+      changes,
+      branchName: existingPr.head.ref,
+    })
+    return {
+      prUrl: existingPr.html_url,
+      prNumber: existingPr.number,
+      branchName: existingPr.head.ref,
+      isAmendment: true,
+    }
+  }
+
+  // Fresh path: tear down a stale branch left behind by a closed /
+  // merged PR before re-creating off the default branch.
+  try {
+    await githubAPI(`/repos/${repoOwner}/${repoName}/git/refs/heads/${branchName}`, accessToken, {
+      method: 'DELETE',
+    })
+  } catch {
+    // Branch didn't exist (the common case for fresh installs).
+  }
 
   // 1. Get default branch + base SHA.
   const repo = await githubAPI<{ default_branch: string }>(
@@ -97,31 +161,8 @@ export async function createPullRequest(args: CreatePullRequestArgs): Promise<Cr
     }),
   })
 
-  // 3. Commit each file. Sequential — keeps the diff readable; PRs typically
-  //    have a handful of file changes.
-  for (const change of changes) {
-    let fileSha: string | undefined
-    try {
-      const existing = await githubAPI<{ sha: string }>(
-        `/repos/${repoOwner}/${repoName}/contents/${change.path}?ref=${branchName}`,
-        accessToken,
-      )
-      fileSha = existing.sha
-    } catch {
-      // File doesn't exist yet — create.
-    }
-
-    const encoded = base64Utf8(change.content)
-    await githubAPI(`/repos/${repoOwner}/${repoName}/contents/${change.path}`, accessToken, {
-      method: 'PUT',
-      body: JSON.stringify({
-        message: `Update ${change.path}`,
-        content: encoded,
-        branch: branchName,
-        ...(fileSha ? { sha: fileSha } : {}),
-      }),
-    })
-  }
+  // 3. Commit each file.
+  await putFilesOnBranch({ accessToken, repoOwner, repoName, changes, branchName })
 
   // 4. Open PR.
   const pr = await githubAPI<{ html_url: string; number: number }>(
@@ -146,7 +187,46 @@ export async function createPullRequest(args: CreatePullRequestArgs): Promise<Cr
     },
   )
 
-  return { prUrl: pr.html_url, prNumber: pr.number, branchName }
+  return { prUrl: pr.html_url, prNumber: pr.number, branchName, isAmendment: false }
+}
+
+/** PUT each change as a file on `branchName`. Sequential keeps the
+ *  diff readable; PRs typically have a handful of file changes. Used
+ *  by both the fresh-PR and amendment paths. */
+async function putFilesOnBranch(opts: {
+  accessToken: string
+  repoOwner: string
+  repoName: string
+  changes: PromptChange[]
+  branchName: string
+}): Promise<void> {
+  for (const change of opts.changes) {
+    let fileSha: string | undefined
+    try {
+      const existing = await githubAPI<{ sha: string }>(
+        `/repos/${opts.repoOwner}/${opts.repoName}/contents/${change.path}?ref=${opts.branchName}`,
+        opts.accessToken,
+      )
+      fileSha = existing.sha
+    } catch {
+      // File doesn't exist yet on the branch; create.
+    }
+
+    const encoded = base64Utf8(change.content)
+    await githubAPI(
+      `/repos/${opts.repoOwner}/${opts.repoName}/contents/${change.path}`,
+      opts.accessToken,
+      {
+        method: 'PUT',
+        body: JSON.stringify({
+          message: `Update ${change.path}`,
+          content: encoded,
+          branch: opts.branchName,
+          ...(fileSha ? { sha: fileSha } : {}),
+        }),
+      },
+    )
+  }
 }
 
 function defaultBranchName(deFirstName?: string): string {

@@ -47,11 +47,13 @@ export interface DraftInput {
   newText: string
 }
 
-/** Compute the draft branch name for a given user. Idempotent within a day. */
-export function draftBranchFor(userId: string, now: Date = new Date()): string {
-  const date = now.toISOString().slice(0, 10) // YYYY-MM-DD
-  const sanitized = userId.replace(/[^A-Za-z0-9._-]/g, '-')
-  return `gravel/draft-${date}-${sanitized}`
+/** Stable branch name for Gravel draft PRs. Always `gravel/draft`,
+ *  regardless of user or date: the single-open-PR model means
+ *  subsequent submissions amend the existing branch (and the open
+ *  PR auto-updates) instead of fanning out into multiple PRs.
+ *  Signature retained for backward compat; arguments ignored. */
+export function draftBranchFor(_userId: string, _now: Date = new Date()): string {
+  return 'gravel/draft'
 }
 
 export interface SubmitArgs {

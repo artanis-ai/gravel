@@ -108,6 +108,10 @@ export interface SubmitPrResult {
     prUrl: string
     prNumber: number
     branchName: string
+    /** True when the submission was added to an already-open Gravel
+     *  PR rather than opening a new one. v0.9.x single-open-PR
+     *  model. Backend may omit on old SDKs; treat undefined as false. */
+    isAmendment?: boolean
   }
 }
 

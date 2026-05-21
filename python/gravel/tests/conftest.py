@@ -45,21 +45,42 @@ class FakeGithub:
         base_sha: str = "base-sha-000",
         pr_number: int = 42,
         pr_url: str = "https://github.com/acme/app/pull/42",
+        existing_open_pr: dict | None = None,
     ):
         self.file_contents = dict(file_contents or {})
         self.default_branch = default_branch
         self.base_sha = base_sha
         self.pr_number = pr_number
         self.pr_url = pr_url
+        # Seed an open gravel PR when the test wants to exercise the
+        # amendment path. Pass `existing_open_pr={"head":{"ref":
+        # "gravel/draft"}, "html_url": "...", "number": 7}` to make
+        # `find_open_gravel_pr` return it.
+        self.existing_open_pr = existing_open_pr
         # Capture per call type so tests can pin shapes.
         self.calls: list[dict] = []  # {endpoint, method, body}
         self.put_changes: list[tuple[str, str]] = []  # (path, content)
         self.created_refs: list[dict] = []
+        self.deleted_refs: list[str] = []
         self.opened_prs: list[dict] = []
 
     def github_api(self, endpoint: str, access_token: str, *, method: str = "GET", body=None):
         """Drop-in for `_github_api.github_api`."""
         self.calls.append({"endpoint": endpoint, "method": method, "body": body})
+
+        # GET /repos/{o}/{r}/pulls?state=open... — used by
+        # find_open_gravel_pr to decide between fresh-PR and
+        # amendment paths.
+        if method == "GET" and "/pulls?" in endpoint:
+            return [self.existing_open_pr] if self.existing_open_pr else []
+
+        # DELETE /repos/{o}/{r}/git/refs/heads/{branch} — fresh-PR
+        # path uses this to clear stale branches left over from
+        # closed/merged PRs.
+        if method == "DELETE" and "/git/refs/heads/" in endpoint:
+            branch = endpoint.split("/git/refs/heads/", 1)[1]
+            self.deleted_refs.append(branch)
+            return {}
 
         # GET /repos/{o}/{r}
         if method == "GET" and endpoint.startswith("/repos/") and "/git/" not in endpoint and "/contents/" not in endpoint and "/pulls" not in endpoint:
@@ -112,17 +133,25 @@ class FakeGithub:
             self.put_changes.append((change.path, change.content))
         from artanis_gravel._github_api import CreatePullRequestResult
 
-        self.opened_prs.append(
-            {
-                "title": kwargs["title"],
-                "head": kwargs.get("branch_name"),
-                "body": kwargs.get("description"),
-            }
-        )
+        is_amendment = self.existing_open_pr is not None
+        if is_amendment:
+            pr_url = self.existing_open_pr.get("html_url", self.pr_url)
+            pr_number = self.existing_open_pr.get("number", self.pr_number)
+        else:
+            self.opened_prs.append(
+                {
+                    "title": kwargs["title"],
+                    "head": kwargs.get("branch_name"),
+                    "body": kwargs.get("description"),
+                }
+            )
+            pr_url = self.pr_url
+            pr_number = self.pr_number
         return CreatePullRequestResult(
-            pr_url=self.pr_url,
-            pr_number=self.pr_number,
-            branch_name=kwargs.get("branch_name", "gravel/draft-test"),
+            pr_url=pr_url,
+            pr_number=pr_number,
+            branch_name=kwargs.get("branch_name", "gravel/draft"),
+            is_amendment=is_amendment,
         )
 
     def assert_committed(self, path: str, expected_content: str) -> None:

@@ -532,6 +532,7 @@ def _prompts_submit(ctx: Context) -> HandlerResponse:
                     "prUrl": result.pr_url,
                     "prNumber": result.pr_number,
                     "branchName": result.branch_name,
+                    "isAmendment": result.is_amendment,
                 },
             }
         )

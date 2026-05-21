@@ -202,7 +202,8 @@ describe('prompt routes', () => {
         accessToken: 'ghs_minted',
       })
       expect(args.drafts).toEqual([{ promptId: 'p_aaa1bbb2', newText: 'NEW' }])
-      expect(args.draftBranch).toMatch(/^gravel\/draft-\d{4}-\d{2}-\d{2}-u1$/)
+      // v0.9.x single-open-PR: branch is stable, no per-user / per-date suffix.
+      expect(args.draftBranch).toBe('gravel/draft')
     })
 
     it('502 if token mint fails (e.g. customer uninstalled the App)', async () => {

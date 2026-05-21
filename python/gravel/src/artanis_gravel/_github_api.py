@@ -90,6 +90,12 @@ class CreatePullRequestResult:
     pr_url: str
     pr_number: int
     branch_name: str
+    # True when the call landed on an already-open PR (commits added
+    # to the existing branch, no new PR opened). False when a fresh
+    # PR was created. Surfaced to the dashboard so the success copy
+    # can read "added to your existing pull request" instead of
+    # "opened a new pull request". See UX 8 in STATUS.md.
+    is_amendment: bool = False
 
 
 _REPO_RE = re.compile(r"^[\w.-]+$")
@@ -97,6 +103,39 @@ _REPO_RE = re.compile(r"^[\w.-]+$")
 
 def _base64_utf8(s: str) -> str:
     return base64.b64encode(s.encode("utf-8")).decode("ascii")
+
+
+def find_open_gravel_pr(
+    *,
+    access_token: str,
+    repo_owner: str,
+    repo_name: str,
+) -> dict[str, Any] | None:
+    """Return the open PR raised by Gravel for this repo, if any.
+
+    Matches by `head.ref == "gravel/draft"` (the canonical stable
+    branch — see `_prompts_submit.draft_branch_for`). One open PR per
+    project at a time is the v0.9.x model: subsequent submissions
+    push commits to the existing branch and the open PR auto-updates.
+    Returns None when no Gravel PR is open (next submit opens a fresh
+    one).
+    """
+    pulls = github_api(
+        f"/repos/{repo_owner}/{repo_name}/pulls?state=open&per_page=100",
+        access_token,
+    )
+    if not isinstance(pulls, list):
+        return None
+    for pr in pulls:
+        if not isinstance(pr, dict):
+            continue
+        head = pr.get("head")
+        if not isinstance(head, dict):
+            continue
+        ref = head.get("ref")
+        if isinstance(ref, str) and ref == "gravel/draft":
+            return pr
+    return None
 
 
 def create_pull_request(
@@ -111,19 +150,64 @@ def create_pull_request(
     branch_name: str,
     manifest_diff: list[Any] | None = None,
 ) -> CreatePullRequestResult:
-    """Open a PR with `changes` against the repo's default branch.
+    """Open or amend a PR with `changes` against the repo's default
+    branch.
 
-    Steps mirror packages/sdk-ts/src/github/create-pr.ts:
-      1. read default-branch SHA
-      2. create branch_name pointing at that SHA
-      3. PUT each file via /contents/<path> (with the previous SHA if
-         the file already exists on the branch)
-      4. POST a PR
+    Two paths, single entry point so callers don't have to know which
+    branch they're hitting:
+
+    1. Amendment path (an open Gravel PR exists): skip branch + PR
+       create, PUT each file on top of the existing `gravel/draft`
+       branch (the open PR auto-updates), return `is_amendment=True`
+       with the existing PR's url + number.
+
+    2. Fresh path (no open Gravel PR): if a stale `gravel/draft`
+       branch lingers from a closed/merged PR, delete it. Then create
+       the branch off the default branch, PUT each file, POST a new
+       PR, return `is_amendment=False`.
+
+    Mirrors `packages/sdk-ts/src/github/create-pr.ts:createPullRequest`.
     """
     if not repo_owner or not repo_name or not changes:
         raise ValueError("repo_owner, repo_name, and at least one change are required")
     if not _REPO_RE.fullmatch(repo_owner) or not _REPO_RE.fullmatch(repo_name):
         raise ValueError("Invalid repo owner or name")
+
+    # Try the amendment path first.
+    existing_pr = find_open_gravel_pr(
+        access_token=access_token, repo_owner=repo_owner, repo_name=repo_name
+    )
+    if existing_pr is not None:
+        existing_branch = existing_pr["head"]["ref"]
+        _put_files_on_branch(
+            access_token=access_token,
+            repo_owner=repo_owner,
+            repo_name=repo_name,
+            changes=changes,
+            branch_name=existing_branch,
+        )
+        html_url = existing_pr.get("html_url")
+        number = existing_pr.get("number")
+        if not isinstance(html_url, str) or not isinstance(number, int):
+            raise GitHubAPIError("open PR returned an unexpected shape", 0)
+        return CreatePullRequestResult(
+            pr_url=html_url,
+            pr_number=number,
+            branch_name=existing_branch,
+            is_amendment=True,
+        )
+
+    # Fresh-PR path. Tear down a stale branch (closed/merged PR) first
+    # so the POST /git/refs below doesn't 422.
+    try:
+        github_api(
+            f"/repos/{repo_owner}/{repo_name}/git/refs/heads/{branch_name}",
+            access_token,
+            method="DELETE",
+        )
+    except GitHubAPIError:
+        # Branch didn't exist (the common case for fresh installs).
+        pass
 
     repo = github_api(f"/repos/{repo_owner}/{repo_name}", access_token)
     default_branch = repo.get("default_branch")
@@ -144,33 +228,13 @@ def create_pull_request(
         body={"ref": f"refs/heads/{branch_name}", "sha": base_sha},
     )
 
-    for change in changes:
-        file_sha: str | None = None
-        try:
-            existing = github_api(
-                f"/repos/{repo_owner}/{repo_name}/contents/{change.path}?ref={branch_name}",
-                access_token,
-            )
-            sha = existing.get("sha") if isinstance(existing, dict) else None
-            if isinstance(sha, str):
-                file_sha = sha
-        except GitHubAPIError:
-            # File doesn't exist on the branch yet — create.
-            pass
-
-        put_body: dict[str, Any] = {
-            "message": f"Update {change.path}",
-            "content": _base64_utf8(change.content),
-            "branch": branch_name,
-        }
-        if file_sha:
-            put_body["sha"] = file_sha
-        github_api(
-            f"/repos/{repo_owner}/{repo_name}/contents/{change.path}",
-            access_token,
-            method="PUT",
-            body=put_body,
-        )
+    _put_files_on_branch(
+        access_token=access_token,
+        repo_owner=repo_owner,
+        repo_name=repo_name,
+        changes=changes,
+        branch_name=branch_name,
+    )
 
     # Import here to dodge the cycle (`_pr_body` references the
     # PromptChange dataclass defined in this module).
@@ -199,4 +263,48 @@ def create_pull_request(
     number = pr.get("number")
     if not isinstance(html_url, str) or not isinstance(number, int):
         raise GitHubAPIError("PR creation returned an unexpected body shape", 0)
-    return CreatePullRequestResult(pr_url=html_url, pr_number=number, branch_name=branch_name)
+    return CreatePullRequestResult(
+        pr_url=html_url,
+        pr_number=number,
+        branch_name=branch_name,
+        is_amendment=False,
+    )
+
+
+def _put_files_on_branch(
+    *,
+    access_token: str,
+    repo_owner: str,
+    repo_name: str,
+    changes: list[PromptChange],
+    branch_name: str,
+) -> None:
+    """PUT each change as a file on `branch_name`. Used by both the
+    fresh-PR and amendment paths."""
+    for change in changes:
+        file_sha: str | None = None
+        try:
+            existing = github_api(
+                f"/repos/{repo_owner}/{repo_name}/contents/{change.path}?ref={branch_name}",
+                access_token,
+            )
+            sha = existing.get("sha") if isinstance(existing, dict) else None
+            if isinstance(sha, str):
+                file_sha = sha
+        except GitHubAPIError:
+            # File doesn't exist on the branch yet — create.
+            pass
+
+        put_body: dict[str, Any] = {
+            "message": f"Update {change.path}",
+            "content": _base64_utf8(change.content),
+            "branch": branch_name,
+        }
+        if file_sha:
+            put_body["sha"] = file_sha
+        github_api(
+            f"/repos/{repo_owner}/{repo_name}/contents/{change.path}",
+            access_token,
+            method="PUT",
+            body=put_body,
+        )

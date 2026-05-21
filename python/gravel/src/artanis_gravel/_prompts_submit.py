@@ -56,11 +56,17 @@ class SubmitError(Exception):
 
 
 def draft_branch_for(user_id: str, *, today: _date | None = None) -> str:
-    """Idempotent within a day: same user + same date → same branch
-    so re-submits update the existing PR instead of opening a new one."""
-    d = today or _date.today()
-    sanitized = re.sub(r"[^A-Za-z0-9._-]", "-", user_id)
-    return f"gravel/draft-{d.isoformat()}-{sanitized}"
+    """Stable branch name for Gravel draft PRs. Always `gravel/draft`,
+    regardless of user or date: the single-open-PR model means
+    subsequent submissions amend the existing branch (and the open
+    PR auto-updates) instead of fanning out into multiple PRs.
+
+    Signature kept (user_id + today) for backward compat with callers
+    + tests pinning the old per-user-per-day shape; arguments are
+    intentionally ignored.
+    """
+    del user_id, today
+    return "gravel/draft"
 
 
 @dataclass

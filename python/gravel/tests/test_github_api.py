@@ -229,15 +229,20 @@ def test_create_pull_request_happy_path_returns_pr_metadata(fake_github):
 
 
 def test_create_pull_request_endpoint_sequence(fake_github):
-    """The PR-creation flow hits a specific endpoint order:
-      1. GET /repos/{o}/{r}                (default_branch)
-      2. GET /repos/{o}/{r}/git/ref/heads/{default_branch}
-      3. POST /repos/{o}/{r}/git/refs       (create branch)
-      4. for each change: GET + PUT /contents/{path}
-      5. POST /repos/{o}/{r}/pulls          (open PR)
+    """Fresh-PR path hits a specific endpoint order:
+      1. GET  /repos/{o}/{r}/pulls?state=open  (amendment probe)
+      2. DELETE /repos/{o}/{r}/git/refs/heads/{branch}  (clear stale)
+      3. GET  /repos/{o}/{r}                   (default_branch)
+      4. GET  /repos/{o}/{r}/git/ref/heads/{default_branch}
+      5. POST /repos/{o}/{r}/git/refs          (create branch)
+      6. for each change: GET + PUT /contents/{path}
+      7. POST /repos/{o}/{r}/pulls             (open PR)
 
-    Sequence is critical — getting it wrong (e.g., creating the PR
-    before committing) silently opens an empty PR."""
+    Sequence is critical: getting it wrong (e.g., creating the PR
+    before committing) silently opens an empty PR. The amendment
+    probe at step 1 is what makes "single open PR" work; the DELETE
+    at step 2 makes the fresh path tolerate a stale branch left from
+    a previously-merged PR."""
     fake_github.file_contents = {"a.md": "1", "b.md": "2"}
     import artanis_gravel._github_api as gh
 
@@ -261,6 +266,8 @@ def test_create_pull_request_endpoint_sequence(fake_github):
         gh.github_api = orig
     seq = [(c["method"], c["endpoint"].split("?", 1)[0]) for c in fake_github.calls]
     assert seq == [
+        ("GET", "/repos/acme/app/pulls"),
+        ("DELETE", "/repos/acme/app/git/refs/heads/b"),
         ("GET", "/repos/acme/app"),
         ("GET", "/repos/acme/app/git/ref/heads/main"),
         ("POST", "/repos/acme/app/git/refs"),
@@ -351,6 +358,52 @@ def test_create_pull_request_new_file_omits_sha(fake_github):
         gh.github_api = orig
     put = next(c for c in fake_github.calls if c["method"] == "PUT")
     assert "sha" not in put["body"], put["body"]
+
+
+def test_create_pull_request_amends_when_open_pr_exists(fake_github):
+    """When find_open_gravel_pr returns a hit, create_pull_request:
+      - does NOT create a new branch
+      - does NOT open a new PR
+      - DOES put files on the existing branch (with prior shas)
+      - returns is_amendment=True + existing PR url/number"""
+    fake_github.existing_open_pr = {
+        "head": {"ref": "gravel/draft"},
+        "html_url": "https://github.com/acme/app/pull/7",
+        "number": 7,
+    }
+    # Pre-existing file on the branch so the GET /contents path
+    # returns a sha (existing-file replace, not first-create).
+    fake_github.file_contents = {"prompts/x.md": "prior content on branch"}
+    import artanis_gravel._github_api as gh
+
+    orig = gh.github_api
+    gh.github_api = fake_github.github_api  # type: ignore[assignment]
+    try:
+        result = create_pull_request(
+            access_token="t",
+            repo_owner="acme",
+            repo_name="app",
+            changes=[PromptChange("prompts/x.md", "amendment content")],
+            title="Bulk",
+            description=None,
+            de_first_name=None,
+            branch_name="gravel/draft",
+        )
+    finally:
+        gh.github_api = orig
+
+    assert result.is_amendment is True
+    assert result.pr_url == "https://github.com/acme/app/pull/7"
+    assert result.pr_number == 7
+    assert result.branch_name == "gravel/draft"
+    # No new branch, no new PR.
+    assert fake_github.created_refs == []
+    assert fake_github.opened_prs == []
+    # File DID land on the existing branch.
+    assert fake_github.put_changes == [("prompts/x.md", "amendment content")]
+    # PUT included the prior sha (file already existed on the branch).
+    put = next(c for c in fake_github.calls if c["method"] == "PUT")
+    assert put["body"]["sha"] == "sha-prompts/x.md"
 
 
 def test_create_pull_request_pr_body_credits_first_name(fake_github):
