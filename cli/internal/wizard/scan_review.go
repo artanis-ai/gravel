@@ -128,7 +128,13 @@ func RunScanAndVerify(
 	if err := manifest.Write(cwd, m); err != nil {
 		return nil, err
 	}
-	Bullet(fmt.Sprintf("Manifest written: %d prompt(s) (%s)", len(m.Prompts), manifest.Path), BulletOK)
+	// "Scan complete", not "Manifest written" — downstream filters
+	// (--skip-folder, hand-edits via the cobra layer) may rewrite the
+	// manifest before the run ends. Pre-v0.10.3 we said "Manifest
+	// written: N" here AND the cobra layer said "Manifest written: M"
+	// after the skip filter ran, producing Yousef's contradictory
+	// double-summary on 2026-05-21.
+	Bullet(fmt.Sprintf("Scan complete: %d prompt(s) found", len(m.Prompts)), BulletOK)
 	return &m, nil
 }
 

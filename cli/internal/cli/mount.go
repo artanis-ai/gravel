@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/artanis-ai/gravel/cli/internal/wizard"
 	"github.com/spf13/cobra"
@@ -56,6 +57,22 @@ mutually exclusive; default (neither) is equivalent to --apply.`,
 				return emitJSON(cmd, wizard.PlanMount(context.Background(), opts))
 			}
 			res, err := wizard.ApplyMount(context.Background(), opts)
+			if res.SDKInstall.Kind == wizard.SDKBlockedByConstraint {
+				// Specific error path. The SDK install hit a project-level
+				// constraint (e.g. `[tool.uv] exclude-newer`) blocking the
+				// version the wizard needs. NEVER silently install an
+				// older SDK. Surface the hint + the raw stderr so agents
+				// and humans both know what to fix.
+				fmt.Fprintln(cmd.ErrOrStderr())
+				fmt.Fprintln(cmd.ErrOrStderr(), res.SDKInstall.ConstraintHint)
+				fmt.Fprintln(cmd.ErrOrStderr())
+				if s := strings.TrimSpace(res.SDKInstall.Stderr); s != "" {
+					fmt.Fprintln(cmd.ErrOrStderr(), "Resolver output:")
+					fmt.Fprintln(cmd.ErrOrStderr(), s)
+					fmt.Fprintln(cmd.ErrOrStderr())
+				}
+				return fmt.Errorf("mount aborted: SDK install blocked by project constraint — fix and re-run")
+			}
 			if err != nil {
 				return err
 			}

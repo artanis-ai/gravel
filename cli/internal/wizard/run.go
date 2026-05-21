@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -128,6 +130,31 @@ func Run(ctx context.Context, opts RunOptions, _ io.Writer) (RunResult, error) {
 				SDKInstall: sdkResult,
 				State:      state,
 			}, fmt.Errorf("SDK install failed: %s", sdkResult.Command)
+		case SDKBlockedByConstraint:
+			// Resolver said no — typically `[tool.uv] exclude-newer` in
+			// pyproject.toml cutting off the version we need. Never
+			// silently install an older SDK; print the specific hint +
+			// the raw stderr so the user (or agent) knows exactly what
+			// to fix, then abort. Yousef's de-platform install
+			// (2026-05-21): a `7 days` window excluded the just-published
+			// SDK; pre-v0.10.3 the wizard silently fell through with
+			// SDKFailed surfaced (or worse, didn't run at all in
+			// step-subcommand paths) and FastAPI crashed at boot.
+			sp.Fail(fmt.Sprintf("Install blocked: %s", Bold(sdkResult.Command)))
+			Say("")
+			Say(sdkResult.ConstraintHint)
+			if strings.TrimSpace(sdkResult.Stderr) != "" {
+				Say("")
+				Say(Dim("Resolver output:"))
+				Say(Dim(strings.TrimRight(sdkResult.Stderr, "\n")))
+			}
+			Say("")
+			Say("Fix the project constraint and re-run. Don't downgrade — installing an older SDK against this wizard breaks features at boot.")
+			return RunResult{
+				Detection:  d,
+				SDKInstall: sdkResult,
+				State:      state,
+			}, fmt.Errorf("SDK install blocked by project constraint: %s", sdkResult.ConstraintHint)
 		}
 	}
 
@@ -543,7 +570,111 @@ func Run(ctx context.Context, opts RunOptions, _ io.Writer) (RunResult, error) {
 		}
 	}
 
+	// "What next?" menu. Interactive runs only — agents driving via
+	// --yes / DefaultsPrompter never see it. The main pillars are
+	// done; we offer the natural follow-ups Yousef called out
+	// (2026-05-21 feedback): wire real auth, send install feedback,
+	// or stop. Loops so the user can chain (e.g. wire auth → then
+	// send feedback). llms.txt has the equivalent narration step for
+	// agent-driven runs.
+	if interactive {
+		nextStepsMenu(d, mountPath, configFilenameFor(d), opts.Prompter)
+	}
+
 	return result, nil
+}
+
+// nextStepsMenu shows a short multiple-choice menu after the wizard's
+// main pillars complete. Three options for v0.10.3 (Yousef's request):
+//
+//  1. Wire real auth — point at the `getUser` stub in gravel.config.{ts,py}
+//     and explain how to replace it with the detected auth integration.
+//  2. Send install feedback — print the feedback URL (and best-effort
+//     `xdg-open`/`open` it).
+//  3. Stop here — exit.
+//
+// Loops so picking 1 then 2 works without re-running `gravel init`.
+// Defaults to option 3 so an unhanded Enter exits cleanly.
+//
+// Per Yousef's framing (2026-05-21): "extras" land here, NOT scattered
+// inline mid-install. Keeps the main flow uncluttered for the common
+// "I'm done, ship me" path.
+func nextStepsMenu(d Detection, mountPath, configFilename string, prompter Prompter) {
+	options := []string{
+		"Wire your auth handler — replace the getUser stub in " + configFilename,
+		"Send install feedback to the Gravel team",
+		"Stop here",
+	}
+	for {
+		Say("")
+		idx, err := prompter.Select("What's next?", options, 2)
+		if err != nil {
+			return
+		}
+		switch idx {
+		case 0:
+			showWireAuthHint(d, configFilename)
+		case 1:
+			showFeedbackHint()
+		case 2:
+			return
+		default:
+			return
+		}
+	}
+}
+
+// showWireAuthHint prints a brief pointer at the getUser stub and the
+// detected-auth integration snippet. Doesn't auto-modify the config —
+// auth wiring is the one piece the user really has to read + understand
+// before pasting, otherwise the dashboard would silently authorise the
+// wrong identity.
+func showWireAuthHint(d Detection, configFilename string) {
+	Say("")
+	Say("Open " + Bold(configFilename) + " and replace the " + Bold("getUser") + " stub with your auth integration.")
+	switch d.Auth {
+	case AuthClerk:
+		Say("Detected auth: " + Bold("Clerk") + ". The Clerk template is in the config already; just remove the TODO + the stub return.")
+	case AuthNextAuth:
+		Say("Detected auth: " + Bold("NextAuth") + ". Import " + Bold("auth") + " from " + Bold("@/auth") + " and return `{ id: session.user.id }` when present.")
+	case AuthDjango:
+		Say("Detected auth: " + Bold("Django") + ". Read " + Bold("request.user") + " and return `{ id: str(request.user.pk) }` when authenticated.")
+	case AuthFastAPIUsers:
+		Say("Detected auth: " + Bold("fastapi-users") + ". Use the dependency-injected user from the FastAPI router and return its id.")
+	default:
+		Say("No auth library detected. Wire whatever you use (NextAuth / Clerk / Lucia / your own JWT) and return `{ id: '<user-id>' }`.")
+	}
+	Say("Once wired, redeploy and the dashboard will identify users by your real session.")
+}
+
+// showFeedbackHint prints the feedback URL + best-effort opens it in
+// the user's browser. The /feedback page is dev-targeted (three
+// explicit-action buttons rather than auto-mailto — v0.10.0 redesign).
+func showFeedbackHint() {
+	url := "https://gravel.artanis.ai/feedback"
+	Say("")
+	Say("Open " + Cyan(url) + " to drop the Gravel team a note about this install.")
+	_ = tryOpenBrowser(url)
+}
+
+// tryOpenBrowser fires xdg-open / open / start best-effort. Silent
+// failures are fine — the user already has the URL printed above.
+func tryOpenBrowser(url string) error {
+	var cmd string
+	switch runtime.GOOS {
+	case "linux":
+		cmd = "xdg-open"
+	case "darwin":
+		cmd = "open"
+	case "windows":
+		cmd = "rundll32"
+	default:
+		return nil
+	}
+	if cmd == "rundll32" {
+		return exec.Command(cmd, "url.dll,FileProtocolHandler", url).Start()
+	}
+	return exec.Command(cmd, url).Start()
 }
 
 // tryMigrateURL runs `gravel migrate` against an already-probed URL.

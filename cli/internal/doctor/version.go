@@ -24,6 +24,8 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -67,6 +69,32 @@ type VersionInfo struct {
 	Language       stack.Language       `json:"language"`
 	PackageManager stack.PackageManager `json:"packageManager"`
 	InstallHint    string               `json:"installHint"`
+	// SDK reports the version of the SDK package (`artanis-gravel` /
+	// `@artanis-ai/gravel`) actually resolved into the user's
+	// project, as opposed to `Current` which is the version of the
+	// running CLI binary. They can legitimately diverge for any repo
+	// with frozen lockfiles, `[tool.uv] exclude-newer`, or pinned
+	// constraints. The dashboard's UpdateBanner catches the SDK skew
+	// post-install, but install-TIME catching is doctor's job.
+	// Pre-v0.10.3 doctor only knew about the binary; Yousef's
+	// de-platform install (2026-05-21) hit `current=0.10.1,
+	// hasUpdate=false` while the SDK had silently resolved to 0.6.0
+	// because of an exclude-newer="7 days" window. Omitted from JSON
+	// (`omitempty`) when we couldn't read the SDK from the project.
+	SDK *SDKVersionInfo `json:"sdk,omitempty"`
+}
+
+// SDKVersionInfo carries the SDK-side current/latest/hasUpdate split
+// so JSON consumers can render skew without re-deriving it.
+type SDKVersionInfo struct {
+	Current   string  `json:"current"`
+	Latest    *string `json:"latest"`
+	HasUpdate bool    `json:"hasUpdate"`
+	// Source records where we read the SDK version from, so the
+	// agent can surface the remediation when reporting skew. One of:
+	// "uv.lock", "site-packages", "node_modules", "package.json",
+	// "pyproject.toml".
+	Source string `json:"source"`
 }
 
 // Fetcher abstracts the registry HTTP call so tests can drive the
@@ -175,8 +203,17 @@ func maxInt(a, b int) int {
 }
 
 // GetVersionInfo composes the running version + the latest release tag
-// + the detected host stack into the wire shape.
+// + the detected host stack into the wire shape. `cwd` is the project
+// root used to read the resolved SDK version; pass "" to skip the SDK
+// probe (tests, agents that only care about the CLI).
 func GetVersionInfo(ctx context.Context, s stack.Stack, current string, fetch Fetcher) VersionInfo {
+	return GetVersionInfoFromCwd(ctx, s, current, "", fetch)
+}
+
+// GetVersionInfoFromCwd is the cwd-aware variant. Existing callers go
+// through GetVersionInfo (cwd=""); the cobra doctor command passes
+// os.Getwd() so the SDK probe can read uv.lock / node_modules.
+func GetVersionInfoFromCwd(ctx context.Context, s stack.Stack, current, cwd string, fetch Fetcher) VersionInfo {
 	latestRaw, _ := fetch(ctx)
 	var latest *string
 	if latestRaw != "" {
@@ -190,6 +227,25 @@ func GetVersionInfo(ctx context.Context, s stack.Stack, current string, fetch Fe
 		latest = &l
 	}
 	hasUpdate := latest != nil && IsNewer(current, *latest)
+	var sdkInfo *SDKVersionInfo
+	if cwd != "" {
+		if sv, src := readInstalledSDKVersion(cwd, s.Language); sv != "" {
+			sdkHasUpdate := latest != nil && IsNewer(sv, *latest)
+			sdkInfo = &SDKVersionInfo{
+				Current:   sv,
+				Latest:    latest,
+				HasUpdate: sdkHasUpdate,
+				Source:    src,
+			}
+			// If the SDK is behind, top-level hasUpdate must reflect
+			// that — agents checking only the top field still see the
+			// skew and prompt the user to upgrade. The CLI-vs-SDK split
+			// in InstallHint surfaces which one to upgrade.
+			if sdkHasUpdate {
+				hasUpdate = true
+			}
+		}
+	}
 	return VersionInfo{
 		Current:        current,
 		Latest:         latest,
@@ -197,7 +253,108 @@ func GetVersionInfo(ctx context.Context, s stack.Stack, current string, fetch Fe
 		Language:       s.Language,
 		PackageManager: s.PackageManager,
 		InstallHint:    InstallHint(s, latest),
+		SDK:            sdkInfo,
 	}
+}
+
+// readInstalledSDKVersion probes the project for the resolved SDK
+// version. Returns ("", "") when the project doesn't have one
+// installed (or we couldn't find a way to read it; doctor is tolerant).
+//
+// Python: try `uv.lock` first (canonical for uv-managed projects),
+// fall back to walking `.venv/lib/python*/site-packages/artanis_gravel-*.dist-info/METADATA`.
+// TypeScript: read `node_modules/@artanis-ai/gravel/package.json`'s
+// `version` field. No subprocess; just file reads — keeps doctor fast.
+func readInstalledSDKVersion(cwd string, language stack.Language) (string, string) {
+	if language == stack.LanguagePython {
+		if v := readUvLockVersion(cwd); v != "" {
+			return v, "uv.lock"
+		}
+		if v := readVenvDistInfoVersion(cwd); v != "" {
+			return v, "site-packages"
+		}
+		return "", ""
+	}
+	if language == stack.LanguageTS {
+		if v := readNodeModulesVersion(cwd); v != "" {
+			return v, "node_modules"
+		}
+		return "", ""
+	}
+	return "", ""
+}
+
+// readUvLockVersion scans `uv.lock` for the `artanis-gravel` package
+// block and extracts its version. uv.lock is TOML; we don't pull in
+// a full parser — the shape is stable enough for a regex.
+//
+// Example block:
+//
+//	[[package]]
+//	name = "artanis-gravel"
+//	version = "0.6.0"
+//	source = { registry = "https://pypi.org/simple" }
+func readUvLockVersion(cwd string) string {
+	body, err := os.ReadFile(filepath.Join(cwd, "uv.lock"))
+	if err != nil {
+		return ""
+	}
+	re := regexp.MustCompile(`(?m)^\s*name\s*=\s*"artanis-gravel"\s*$\s*version\s*=\s*"([^"]+)"`)
+	m := re.FindSubmatch(body)
+	if len(m) < 2 {
+		return ""
+	}
+	return string(m[1])
+}
+
+// readVenvDistInfoVersion walks `.venv/lib/python*/site-packages/`
+// looking for `artanis_gravel-<version>.dist-info/`. The version is in
+// the directory name (PEP 376). Skips if no .venv exists.
+func readVenvDistInfoVersion(cwd string) string {
+	for _, venv := range []string{".venv", "venv"} {
+		libDir := filepath.Join(cwd, venv, "lib")
+		entries, err := os.ReadDir(libDir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if !e.IsDir() || !strings.HasPrefix(e.Name(), "python") {
+				continue
+			}
+			sitePkg := filepath.Join(libDir, e.Name(), "site-packages")
+			pkgEntries, err := os.ReadDir(sitePkg)
+			if err != nil {
+				continue
+			}
+			for _, p := range pkgEntries {
+				name := p.Name()
+				if !strings.HasPrefix(name, "artanis_gravel-") || !strings.HasSuffix(name, ".dist-info") {
+					continue
+				}
+				trimmed := strings.TrimPrefix(name, "artanis_gravel-")
+				trimmed = strings.TrimSuffix(trimmed, ".dist-info")
+				return trimmed
+			}
+		}
+	}
+	return ""
+}
+
+// readNodeModulesVersion reads
+// `node_modules/@artanis-ai/gravel/package.json`'s `version` field.
+// Standard pnpm/npm/yarn layout; returns "" if any link is broken.
+func readNodeModulesVersion(cwd string) string {
+	body, err := os.ReadFile(filepath.Join(cwd, "node_modules", "@artanis-ai", "gravel", "package.json"))
+	if err != nil {
+		return ""
+	}
+	var pkg struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(body, &pkg); err != nil {
+		return ""
+	}
+	return pkg.Version
 }
 
 // InstallHint returns the package-manager-specific upgrade command the

@@ -33,7 +33,7 @@ Honors GRAVEL_VERSION_CHECK_DISABLED=1 for offline / privacy-conscious envs.`,
 				return fmt.Errorf("getwd: %w", err)
 			}
 			s := detect.HostStack(cwd)
-			info := doctor.GetVersionInfo(context.Background(), s, version.Version, doctor.FetchLatest)
+			info := doctor.GetVersionInfoFromCwd(context.Background(), s, version.Version, cwd, doctor.FetchLatest)
 			if asJSON {
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")

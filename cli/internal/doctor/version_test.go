@@ -2,6 +2,8 @@ package doctor
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -144,6 +146,87 @@ func TestGetVersionInfo_IncludesInstallHint(t *testing.T) {
 	}
 	if !info.HasUpdate {
 		t.Errorf("expected HasUpdate=true for 0.8.4 → 0.9.0")
+	}
+}
+
+// SDK skew detection: when the project's resolved SDK version is
+// older than the latest published version (e.g. because `[tool.uv]
+// exclude-newer` constrained the install), doctor reports `sdk:
+// {current, latest, hasUpdate=true}` AND flips top-level
+// `hasUpdate` so agents-checking-only-the-top-field still notice.
+// Yousef's de-platform install (2026-05-21) was the canonical case.
+func TestGetVersionInfo_SDKSkewFlagsTopLevelHasUpdate(t *testing.T) {
+	// Project layout: uv.lock pins artanis-gravel at 0.6.0, but the
+	// CLI binary is current AND the latest release is 0.10.2 — so
+	// the binary is on the latest, only the SDK is behind.
+	dir := t.TempDir()
+	uvLock := `version = 1
+requires-python = ">=3.10"
+
+[[package]]
+name = "artanis-gravel"
+version = "0.6.0"
+source = { registry = "https://pypi.org/simple" }
+`
+	if err := os.WriteFile(filepath.Join(dir, "uv.lock"), []byte(uvLock), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fetcher := func(context.Context) (string, error) { return "v0.10.2", nil }
+	info := GetVersionInfoFromCwd(context.Background(),
+		stack.Stack{Language: stack.LanguagePython, PackageManager: stack.PackageManagerUV},
+		"0.10.2", dir, fetcher)
+	if info.SDK == nil {
+		t.Fatalf("expected SDK block populated; got nil. info: %+v", info)
+	}
+	if info.SDK.Current != "0.6.0" {
+		t.Errorf("SDK.Current = %q, want 0.6.0", info.SDK.Current)
+	}
+	if info.SDK.Source != "uv.lock" {
+		t.Errorf("SDK.Source = %q, want uv.lock", info.SDK.Source)
+	}
+	if !info.SDK.HasUpdate {
+		t.Errorf("expected SDK.HasUpdate=true (0.6.0 → 0.10.2)")
+	}
+	if !info.HasUpdate {
+		t.Errorf("expected top-level HasUpdate=true when SDK is behind (CLI is current)")
+	}
+}
+
+func TestGetVersionInfo_TSNodeModulesReadsVersion(t *testing.T) {
+	dir := t.TempDir()
+	pkgDir := filepath.Join(dir, "node_modules", "@artanis-ai", "gravel")
+	if err := os.MkdirAll(pkgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"name":"@artanis-ai/gravel","version":"0.8.0"}`
+	if err := os.WriteFile(filepath.Join(pkgDir, "package.json"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fetcher := func(context.Context) (string, error) { return "0.10.2", nil }
+	info := GetVersionInfoFromCwd(context.Background(),
+		stack.Stack{Language: stack.LanguageTS, PackageManager: stack.PackageManagerPNPM},
+		"0.10.2", dir, fetcher)
+	if info.SDK == nil || info.SDK.Current != "0.8.0" {
+		t.Fatalf("expected SDK.Current=0.8.0, got %+v", info.SDK)
+	}
+	if info.SDK.Source != "node_modules" {
+		t.Errorf("SDK.Source = %q, want node_modules", info.SDK.Source)
+	}
+	if !info.SDK.HasUpdate {
+		t.Errorf("expected SDK.HasUpdate=true (0.8.0 → 0.10.2)")
+	}
+}
+
+func TestGetVersionInfo_NoSDKWhenProjectHasNone(t *testing.T) {
+	// Empty cwd: no uv.lock, no node_modules. SDK block must be nil
+	// (NOT empty struct) so JSON consumers omit it via omitempty.
+	dir := t.TempDir()
+	fetcher := func(context.Context) (string, error) { return "0.10.2", nil }
+	info := GetVersionInfoFromCwd(context.Background(),
+		stack.Stack{Language: stack.LanguagePython, PackageManager: stack.PackageManagerUV},
+		"0.10.2", dir, fetcher)
+	if info.SDK != nil {
+		t.Errorf("expected SDK=nil when no lockfile/node_modules; got %+v", info.SDK)
 	}
 }
 

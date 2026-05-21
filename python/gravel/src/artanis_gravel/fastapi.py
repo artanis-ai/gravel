@@ -77,19 +77,51 @@ def create_gravel_router(config: GravelConfig, *, engine: Any = None) -> APIRout
 
     async def _bridge(request: Request, sub_path: str) -> Response:
         """Single FastAPI handler that all routes delegate to. Sub_path
-        is whatever lives under the mount point (FastAPI strips the
-        APIRouter prefix before our wildcard captures the rest)."""
+        is whatever lives under the mount point.
+
+        Two routing modes that both have to work:
+
+        * **Mounted with ``prefix=mount_path``** (what the wizard emits
+          and what we recommend): FastAPI strips the prefix before the
+          wildcard captures, so ``sub_path`` is already mount-relative
+          (``"_assets/index.js"`` for a request to
+          ``/admin/ai/_assets/index.js``). Build ``"/" + sub_path``,
+          dispatch.
+        * **Mounted without ``prefix=``** (Yousef's de-platform install
+          2026-05-21 — a prior wizard run double-patched and left a
+          bare ``app.include_router(gravel_router)`` in addition to
+          the prefixed one). FastAPI does NOT strip anything;
+          ``sub_path`` is the FULL path (``"admin/ai/_assets/index.js"``).
+          We have to strip ``mount_path`` ourselves before the
+          dispatcher sees it, otherwise the asset-MIME path-match
+          (``path.startswith("/_assets/")`` in ``_handler.dispatch_request``)
+          misses and we serve ``text/html`` for every ``.js`` request.
+          Modern browsers refuse to execute a ``<script type="module">``
+          with ``text/html``; the page goes silently blank.
+
+        Mirrors what ``asgi.py`` already does via ``root_path``. The
+        belt-and-suspenders approach: wizard always emits the prefix
+        (Bug 2 fix), adapter strips defensively (this fix). Either
+        alone is enough; both together make the failure unreachable.
+        """
         body = await request.body()
         url = str(request.url)
         scheme = request.url.scheme or "http"
         # FastAPI's Request.headers is a Starlette Headers which is a
         # mapping-of-str. Coerce to plain dict for the handler.
         headers = {k: v for k, v in request.headers.items()}
-        # `sub_path` from the catch-all already lacks a leading slash;
-        # the dispatcher normalises and adds it.
+        # Defensive mount-path strip — see the docstring for the
+        # "mounted without prefix" case. ``ctx_proto.mount_path`` is
+        # already normalised (rstrip of '/'), e.g. ``/admin/ai``.
+        path = "/" + sub_path
+        mp = ctx_proto.mount_path
+        if mp and path.startswith(mp + "/"):
+            path = path[len(mp):]
+        elif mp and path == mp:
+            path = "/"
         hreq = build_request_from_components(
             method=request.method,
-            path="/" + sub_path,
+            path=path,
             query_string=request.url.query or "",
             headers=headers,
             body=body,

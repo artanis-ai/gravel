@@ -178,10 +178,22 @@ func tryPatchFastAPIEntry(cwd, rel, mountPath string) (MountResult, bool) {
 	entryDir := filepath.Dir(entryPath)
 	inPackage := pathExists(filepath.Join(entryDir, "__init__.py"))
 
-	// Idempotent: if the entry already imports gravel_router, leave
-	// it alone. Either the relative or absolute import form counts.
-	if strings.Contains(src, "from gravel_route import router as gravel_router") ||
-		strings.Contains(src, "from .gravel_route import router as gravel_router") {
+	// Idempotent: if the entry already mounts gravel_router in ANY
+	// shape (import line OR include_router call, current OR prior-
+	// version template), leave it alone. Pre-v0.10.3 we only matched
+	// the import line — Yousef's de-platform install (2026-05-21)
+	// surfaced a double-patch where the file had:
+	//   - line 21: from .gravel_route import router as gravel_router  (current run)
+	//   - line 50: from gravel_route import router as gravel_router   (prior run, absolute)
+	//   - app.include_router(gravel_router)                            (prior run, no prefix)
+	//   - app.include_router(gravel_router, prefix='/admin/ai')        (current run)
+	// The "absolute import" substring check should have triggered
+	// idempotency, but a prior wizard's include_router line snuck in
+	// without a matching import, which suggests the file had been
+	// hand-edited between runs. Tighten the check to match the
+	// include_router presence too — any reference to gravel_router as
+	// a mounted router means "already wired"; refuse to add more.
+	if isFastAPIAlreadyMounted(src) {
 		return MountResult{Path: entryPath, Mode: MountUpdated}, true
 	}
 	// Must contain a top-level `<name> = FastAPI(` binding. An
@@ -368,9 +380,32 @@ func importInsertAtBlockEnd(source, importLine string) string {
 	return before + "\n" + importLine + after
 }
 
+// isFastAPIAlreadyMounted returns true when the source contains any
+// recognisable trace of the gravel router being wired up — the import
+// line (absolute or relative), OR an `app.include_router(gravel_router`
+// call (with or without `prefix=`). Used by the idempotency checks at
+// both tryPatchFastAPIEntry (caller-side) and patchFastAPIMain
+// (patcher-side) so the patcher can't be tricked into adding a second
+// import + include_router pair by a partially-patched file.
+//
+// Regex'd rather than substring-matched so whitespace / quoting drift
+// (single vs double quotes, intervening blanks) doesn't bypass it.
+var alreadyMountedREs = []*regexp.Regexp{
+	regexp.MustCompile(`(?m)^\s*from\s+\.?gravel_route\s+import\s+router\s+as\s+gravel_router\s*$`),
+	regexp.MustCompile(`\.include_router\s*\(\s*gravel_router\s*[,)]`),
+}
+
+func isFastAPIAlreadyMounted(src string) bool {
+	for _, re := range alreadyMountedREs {
+		if re.MatchString(src) {
+			return true
+		}
+	}
+	return false
+}
+
 func patchFastAPIMain(source, mountPath string, inPackage bool) string {
-	if strings.Contains(source, "from gravel_route import router as gravel_router") ||
-		strings.Contains(source, "from .gravel_route import router as gravel_router") {
+	if isFastAPIAlreadyMounted(source) {
 		return source
 	}
 	importLine := "from gravel_route import router as gravel_router\n"

@@ -33,6 +33,58 @@ export const githubRoutes: RouteTable = {
       repoName: state?.repoName ?? null,
     })
   },
+  /**
+   * Pre-flight: "is the gravel-bot GitHub App already installed on
+   * this checkout's repo?" The dashboard's dev-box uses this to show
+   * developer-targeted guidance when the local `.env.local` lacks
+   * the GRAVEL_GH_INSTALL_* vars but the CP already has a row for
+   * the repo (a colleague installed it earlier).
+   *
+   * Returns `{installed: false}` when we can't determine the repo
+   * locally (no git remote) OR when the CP says no row OR when the
+   * CP call fails. Dashboard falls through to normal Install button
+   * behaviour in all those cases.
+   *
+   * Owner+repo comes from `git remote get-url origin`. Secret never
+   * leaves the CP; we only return `{installed, installationId,
+   * installedAt}` — the install_secret stays in the original
+   * installer's .env.local. Trust model unchanged.
+   */
+  'GET /api/github/already-installed-on-repo': async ({ authed, request }) => {
+    if (!authed) return json({ error: 'unauthorized' }, 401)
+    const { detectLocalGithubRepo } = await import('../../github/repo-detect.js')
+    const repo = detectLocalGithubRepo()
+    if (!repo) {
+      return json({ installed: false, reason: 'no-local-repo' })
+    }
+    const cpUrl = process.env.GRAVEL_CONTROL_PLANE_URL ?? 'https://gravel.artanis.ai'
+    const cp = new URL('/api/cli/github/check-installation', cpUrl)
+    cp.searchParams.set('owner', repo.owner)
+    cp.searchParams.set('repo', repo.name)
+    try {
+      const resp = await fetch(cp.toString(), { method: 'GET' })
+      if (!resp.ok) {
+        return json({ installed: false, reason: `cp-${resp.status}` })
+      }
+      const body = (await resp.json()) as {
+        installed: boolean
+        installationId?: number
+        installedAt?: string
+      }
+      // Pass through the CP shape + tack on the local repo info so
+      // the dev box can render the (owner/repo) pair without a
+      // second round-trip.
+      return json({
+        installed: body.installed,
+        installationId: body.installationId ?? null,
+        installedAt: body.installedAt ?? null,
+        repoOwner: repo.owner,
+        repoName: repo.name,
+      })
+    } catch (err) {
+      return json({ installed: false, reason: 'cp-unreachable' })
+    }
+  },
   'GET /api/github/install': async ({ request, config }) => {
     const requestUrl = new URL(request.url)
     // Pin the install-initiating origin into the callback URL so the

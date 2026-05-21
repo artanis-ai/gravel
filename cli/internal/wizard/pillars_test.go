@@ -305,3 +305,59 @@ func writeTestFile(t *testing.T, path, body string) {
 		t.Fatalf("writeTestFile(%s): %v", path, err)
 	}
 }
+
+// ApplyPrompts must filter --skip-folder entries AND rewrite the
+// manifest on disk so on-disk count matches the cobra layer's
+// "Manifest written: N" summary. Yousef's de-platform install
+// 2026-05-21: 16 prompts written first, then ApplyPrompts filtered
+// the in-memory copy to 5 without rewriting; cobra said 5 but the
+// manifest on disk had 16.
+func TestApplyPrompts_SkipFolderRewritesManifest(t *testing.T) {
+	dir := t.TempDir()
+	// Layout: 4 prompts across 3 folders.
+	must := func(rel, body string) {
+		path := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	must("prompts/system.md", "# System prompt")
+	must("prompts/router.md", "# Router prompt")
+	must("data/demo/HIQ/sample.md", "# HIQ sample")
+	must("data/demo/hospice-iq/lib.md", "# hospice-iq lib prompt")
+
+	opts := PromptsPillarOptions{
+		Detection: Detection{
+			CWD:            dir,
+			Language:       stack.LanguagePython,
+			PackageManager: stack.PackageManagerUV,
+		},
+		SkipDeepScan: true,
+		Prompter:     DefaultsPrompter{},
+		SkipFolders:  []string{"data/demo/HIQ", "data/demo/hospice-iq"},
+	}
+	res, err := ApplyPrompts(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("ApplyPrompts: %v", err)
+	}
+	// In-memory count post-filter.
+	if res.ManifestCount != 2 {
+		t.Errorf("ManifestCount = %d, want 2 (4 - 2 skipped folders)", res.ManifestCount)
+	}
+	// On-disk count must MATCH the in-memory count. Pre-v0.10.3 the
+	// disk had all 4 and ManifestCount said 2 — Yousef's contradictory
+	// "16 prompt(s)" + "5 prompts" symptom.
+	body, err := os.ReadFile(filepath.Join(dir, ".gravel/manifest.json"))
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	if strings.Contains(string(body), "HIQ") || strings.Contains(string(body), "hospice-iq") {
+		t.Errorf("manifest still contains skipped-folder entries:\n%s", body)
+	}
+	if !strings.Contains(string(body), "system.md") || !strings.Contains(string(body), "router.md") {
+		t.Errorf("manifest is missing unskipped entries:\n%s", body)
+	}
+}

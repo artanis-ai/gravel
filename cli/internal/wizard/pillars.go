@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/artanis-ai/gravel/cli/internal/manifest"
 	"github.com/artanis-ai/gravel/cli/internal/migrate"
@@ -90,6 +91,11 @@ type MountPillarOptions struct {
 	// ignored (the SDK doesn't read API keys without a project id).
 	APIKey    string
 	ProjectID string
+	// SkipSDKInstall skips the EnsureSDKInstalled step at the top of
+	// ApplyMount. Tests + advanced users (`--skip-sdk-install` flag on
+	// the cobra layer) flip this; defaults to false so `gravel mount
+	// --apply` adds the SDK to deps automatically.
+	SkipSDKInstall bool
 }
 
 // PlanMount returns the action document for the mount pillar.
@@ -155,6 +161,11 @@ type MountApplyResult struct {
 	Mount         MountResult
 	AdminPassword string
 	AdminPwIsNew  bool
+	// SDKInstall captures what EnsureSDKInstalled did (added /
+	// already-present / blocked-by-constraint / failed). The cobra
+	// layer (`gravel mount --apply`) reads this when an error is
+	// returned so it can render the specific remediation.
+	SDKInstall SDKInstallResult
 }
 
 // ApplyMount writes the mount-pillar files. Idempotent on re-runs:
@@ -175,6 +186,37 @@ func ApplyMount(ctx context.Context, opts MountPillarOptions) (MountApplyResult,
 			ConfigPath: configFilenameFor(d),
 			Mount:      MountResult{Mode: MountSkipped},
 		}, nil
+	}
+
+	// SDK auto-install. Pre-v0.10.3, ApplyMount skipped this entirely
+	// — only `gravel init`'s top-level run called EnsureSDKInstalled.
+	// Agents running the step subcommand path (`gravel mount --apply`)
+	// finished without the SDK in pyproject.toml; the app then crashed
+	// at boot with `ModuleNotFoundError: artanis_gravel`. Yousef's
+	// de-platform install (2026-05-21) was the canonical case.
+	if !opts.SkipSDKInstall {
+		sdk := EnsureSDKInstalled(ctx, d)
+		switch sdk.Kind {
+		case SDKAdded, SDKAlreadyPresent:
+			// Happy paths; nothing to do.
+		case SDKSkippedNoManifest:
+			// No package.json / pyproject.toml. The mount-wiring step
+			// below will hit its own framework check; surface as a
+			// MountApplyResult.SDKInstall so the caller can render the
+			// remediation alongside the mount summary.
+		case SDKBlockedByConstraint:
+			// Resolver said no — typically `[tool.uv] exclude-newer`
+			// cutting off the version we need. NEVER silently install
+			// an older SDK; surface loud + abort. Caller (cobra layer
+			// or `gravel init` orchestrator) renders sdk.ConstraintHint.
+			return MountApplyResult{SDKInstall: sdk}, fmt.Errorf(
+				"SDK install blocked by project constraint: %s — fix and re-run", sdk.ConstraintHint,
+			)
+		case SDKFailed:
+			return MountApplyResult{SDKInstall: sdk}, fmt.Errorf(
+				"SDK install failed (`%s`): %s", sdk.Command, strings.TrimSpace(sdk.Stderr),
+			)
+		}
 	}
 
 	pw, isNew, err := EnsureAdminPassword(d.CWD)
@@ -379,10 +421,28 @@ func ApplyPrompts(ctx context.Context, opts PromptsPillarOptions) (PromptsApplyR
 	}
 	// Apply folder skips after scan + verify. Agents reading the plan's
 	// folders[] array ask the human user "skip docs/?" and pass any
-	// yesses back via --skip-folder; the filter drops matching prompts
-	// before manifest write.
+	// yesses back via --skip-folder; the filter drops matching prompts.
+	//
+	// RunScanAndVerify writes the FULL set of accepted prompts to disk
+	// at the end of its loop, BEFORE we get a chance to apply skips.
+	// So if we filter here and stop, the on-disk manifest has all the
+	// pre-filter prompts and the cobra summary says fewer — Yousef's
+	// 2026-05-21 contradiction ("16 prompt(s)" + "5 prompts" in the
+	// same run). Fix: filter in-memory, then re-write the manifest so
+	// the disk state matches the reported count.
 	if m != nil && len(opts.SkipFolders) > 0 {
-		m.Prompts = filterPromptsBySkipFolders(m.Prompts, opts.SkipFolders)
+		filtered := filterPromptsBySkipFolders(m.Prompts, opts.SkipFolders)
+		if len(filtered) != len(m.Prompts) {
+			m.Prompts = filtered
+			if err := manifest.Write(d.CWD, *m); err != nil {
+				return PromptsApplyResult{}, fmt.Errorf("rewrite manifest after skip: %w", err)
+			}
+			Bullet(
+				fmt.Sprintf("Applied %d --skip-folder filter(s): manifest now has %d prompt(s)",
+					len(opts.SkipFolders), len(m.Prompts)),
+				BulletOK,
+			)
+		}
 	}
 	result := PromptsApplyResult{}
 	if m != nil {

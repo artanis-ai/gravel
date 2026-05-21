@@ -124,6 +124,16 @@ function PromptsList() {
 
   const hasDrafts = (draftsQ.data?.length ?? 0) > 0
   const ghConnected = ghQ.data?.connected === true
+  // After the install callback redirects back with `?gh=installed`,
+  // the four GRAVEL_GH_* env vars are in .env.local but the developer
+  // still has to propagate them to their hosting platform (Vercel /
+  // Doppler / Railway / etc) the same way they did for
+  // GRAVEL_ADMIN_PASSWORD. Surface the reminder once via the
+  // ?gh=installed query param so a fresh-install user sees it
+  // automatically.
+  const justInstalled =
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('gh') === 'installed'
 
   return (
     <div className="space-y-6">
@@ -133,6 +143,31 @@ function PromptsList() {
           <CopyableCode>{gravelCommand('manifest --update')}</CopyableCode>
           .
         </p>
+        {justInstalled && ghConnected && (
+          <div className="mt-3 border-t border-accent/40 pt-3">
+            <p className="font-medium">✓ gravel-bot installed locally.</p>
+            <p className="mt-1">
+              Don't forget: copy these four env vars to your production hosting
+              env (Vercel / Doppler / Railway / etc) — same as{' '}
+              <code className="text-xs">GRAVEL_ADMIN_PASSWORD</code>. PR
+              submission won't work in prod without them:
+            </p>
+            <ul className="ml-5 mt-1 list-disc space-y-0.5 text-xs">
+              <li>
+                <code>GRAVEL_GH_INSTALL_ID</code>
+              </li>
+              <li>
+                <code>GRAVEL_GH_INSTALL_SECRET</code>
+              </li>
+              <li>
+                <code>GRAVEL_GH_REPO_OWNER</code>
+              </li>
+              <li>
+                <code>GRAVEL_GH_REPO_NAME</code>
+              </li>
+            </ul>
+          </div>
+        )}
         {ghQ.data && !ghConnected && (
           <div className="mt-3 border-t border-accent/40 pt-3">
             <GithubBanner />
@@ -344,17 +379,101 @@ function SearchField({
   )
 }
 
+interface AlreadyInstalledResponse {
+  installed: boolean
+  installationId: number | null
+  installedAt: string | null
+  repoOwner: string | null
+  repoName: string | null
+  reason?: string
+}
+
 function GithubBanner() {
+  // Pre-flight: ask the CP whether gravel-bot is already installed on
+  // this checkout's repo. If yes, the user's local `.env.local` is
+  // missing the GRAVEL_GH_INSTALL_* vars but the install itself is
+  // live at the org level — clicking "Install" would dead-end the
+  // user at GitHub's org settings page (GH's behaviour for repeat
+  // installs). Surface guidance instead. Yousef's de-platform install
+  // 2026-05-21 was the canonical case.
+  //
+  // Failures fall through to the normal Install button — if the CP
+  // is unreachable or doesn't know about the repo, we still want the
+  // user to be able to attempt a fresh install.
+  const preflightQ = useQuery<AlreadyInstalledResponse>({
+    queryKey: ['github', 'already-installed-on-repo'],
+    queryFn: () =>
+      api.get<AlreadyInstalledResponse>('/api/github/already-installed-on-repo'),
+    staleTime: 60_000,
+  })
   const install = useMutation<{ redirectUrl: string }, Error, void>({
     mutationFn: () => api.get<{ redirectUrl: string }>('/api/github/install'),
     onSuccess: (data) => {
       window.location.href = data.redirectUrl
     },
   })
-  // `isPending` covers both the API call and the period AFTER success
-  // when the browser is still navigating to GitHub — keep the spinner
-  // up the whole time so a second click can't happen in the gap.
   const busy = install.isPending || install.isSuccess
+
+  // Already-installed branch: show the env-var copy guidance + the
+  // manage URL, hide the Install button. The CP install/start route
+  // also intercepts if the user pastes the install URL directly —
+  // belt-and-suspenders.
+  if (preflightQ.data?.installed) {
+    const d = preflightQ.data
+    const manageUrl =
+      d.repoOwner && d.installationId
+        ? `https://github.com/organizations/${encodeURIComponent(d.repoOwner)}/settings/installations/${d.installationId}`
+        : null
+    return (
+      <div className="space-y-2">
+        <p className="font-medium">
+          gravel-bot is already installed on{' '}
+          <code className="text-xs">
+            {d.repoOwner}/{d.repoName}
+          </code>{' '}
+          (installation #{d.installationId}).
+        </p>
+        <p>
+          To use it from this checkout, ask the engineer who installed it for
+          these four env vars from their <code className="text-xs">.env.local</code>{' '}
+          and paste them into yours:
+        </p>
+        <ul className="ml-5 list-disc space-y-0.5 text-xs">
+          <li>
+            <code>GRAVEL_GH_INSTALL_ID</code>
+          </li>
+          <li>
+            <code>GRAVEL_GH_INSTALL_SECRET</code>
+          </li>
+          <li>
+            <code>GRAVEL_GH_REPO_OWNER</code>
+          </li>
+          <li>
+            <code>GRAVEL_GH_REPO_NAME</code>
+          </li>
+        </ul>
+        <p className="text-xs text-text-muted">
+          Same four vars also need to land in your production env (Vercel /
+          Doppler / etc) the same way <code>GRAVEL_ADMIN_PASSWORD</code> does —
+          PR submission won't work in prod without them.
+        </p>
+        {manageUrl && (
+          <p className="text-xs">
+            <a
+              href={manageUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="cursor-pointer text-primary underline"
+            >
+              Manage gravel-bot on GitHub
+            </a>{' '}
+            — uninstall there if you want to reinstall as yourself.
+          </p>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-3">

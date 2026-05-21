@@ -282,3 +282,62 @@ func TestEnsureSDKInstalled_FailedWhenPMUnavailable(t *testing.T) {
 		t.Errorf("Command shape unexpected: %q", got.Command)
 	}
 }
+
+func TestDetectConstraintBlocker(t *testing.T) {
+	cases := []struct {
+		name    string
+		stderr  string
+		lang    stack.Language
+		wantHit bool
+		wantSub string // substring expected in the hint
+	}{
+		{
+			name:    "uv exclude-newer phrase",
+			stderr:  "× No solution found when resolving dependencies:\n  ╰─▶ Because the requested package was published after exclude-newer (2026-05-14), it's excluded.",
+			lang:    stack.LanguagePython,
+			wantHit: true,
+			wantSub: "exclude-newer",
+		},
+		{
+			name:    "no solution found generic",
+			stderr:  "error: no solution found when resolving dependencies",
+			lang:    stack.LanguagePython,
+			wantHit: true,
+			wantSub: "resolver couldn't satisfy",
+		},
+		{
+			name:    "pip's could-not-find phrase",
+			stderr:  "ERROR: Could not find a version that satisfies the requirement artanis-gravel>=0.10.3",
+			lang:    stack.LanguagePython,
+			wantHit: true,
+			wantSub: "couldn't find a published version",
+		},
+		{
+			name:    "generic network error — must NOT trigger constraint path",
+			stderr:  "error: connection refused on https://pypi.org/simple/",
+			lang:    stack.LanguagePython,
+			wantHit: false,
+		},
+		{
+			name:    "TS generic pnpm error",
+			stderr:  "ERR_PNPM_FETCH_404",
+			lang:    stack.LanguageTS,
+			wantHit: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := Detection{Language: tc.lang}
+			hint := detectConstraintBlocker(tc.stderr, d)
+			if tc.wantHit && hint == "" {
+				t.Errorf("expected constraint blocker detected; got empty hint")
+			}
+			if !tc.wantHit && hint != "" {
+				t.Errorf("expected NO constraint detected; got %q", hint)
+			}
+			if tc.wantSub != "" && !strings.Contains(hint, tc.wantSub) {
+				t.Errorf("hint missing substring %q. Got: %q", tc.wantSub, hint)
+			}
+		})
+	}
+}

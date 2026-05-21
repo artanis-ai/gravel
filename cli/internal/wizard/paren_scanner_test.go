@@ -228,3 +228,75 @@ app = FastAPI()
 		t.Errorf("shebang line lost:\n%s", patched)
 	}
 }
+
+// REGRESSION: idempotency must catch any prior-version include_router
+// shape, not just the import line. Yousef's de-platform install
+// (2026-05-21) had this file shape after `gravel mount --apply` ran
+// on a file that already carried an include_router from an earlier
+// patcher run: TWO imports + TWO include_routers (one prefixed, one
+// not). Pre-v0.10.3 the idempotency only matched the import substring,
+// not the include_router call itself, so a file with `app.include_router(
+// gravel_router)` (no prefix, from an older template OR a hand-paste)
+// could get re-patched.
+//
+// The new isFastAPIAlreadyMounted regex matches the include_router
+// call too. Test: a file already carrying ANY include_router on
+// gravel_router must not be patched again.
+func TestPatchFastAPIMain_AlreadyHasIncludeRouter_RefusesToPatch(t *testing.T) {
+	src := `from fastapi import FastAPI
+from gravel_route import router as gravel_router
+
+app = FastAPI()
+app.include_router(gravel_router)
+`
+	patched := patchFastAPIMain(src, "/admin/ai", false)
+	if patched != src {
+		t.Errorf("input with existing include_router was re-patched.\nbefore:\n%s\nafter:\n%s", src, patched)
+	}
+}
+
+func TestPatchFastAPIMain_AlreadyHasIncludeRouter_WithPrefix_RefusesToPatch(t *testing.T) {
+	src := `from fastapi import FastAPI
+from .gravel_route import router as gravel_router
+
+app = FastAPI()
+app.include_router(gravel_router, prefix='/admin/ai')
+`
+	patched := patchFastAPIMain(src, "/admin/ai", true)
+	if patched != src {
+		t.Errorf("input with prefixed include_router was re-patched.\nbefore:\n%s\nafter:\n%s", src, patched)
+	}
+}
+
+// REGRESSION: a file with ONLY an include_router call (no import)
+// must still be detected as "already mounted" so we don't add a
+// second import + include_router. This is the de-platform scenario
+// where a partial prior patch left only the include_router behind.
+func TestPatchFastAPIMain_OnlyIncludeRouter_RefusesToPatch(t *testing.T) {
+	src := `from fastapi import FastAPI
+
+app = FastAPI()
+# someone hand-removed the import but left the include_router below
+app.include_router(gravel_router)
+`
+	patched := patchFastAPIMain(src, "/admin/ai", false)
+	if patched != src {
+		t.Errorf("partial-prior-patch input was re-patched (would add a second include_router).\nafter:\n%s", patched)
+	}
+}
+
+// REGRESSION: when the patcher DOES run on a clean file, the emitted
+// include_router MUST carry the prefix= argument. Yousef's bug #3:
+// without prefix= the FastAPI adapter falls through to the SPA shell
+// and serves text/html for /_assets/*.js. Pinning this so a future
+// template edit can't silently drop the prefix.
+func TestPatchFastAPIMain_AlwaysEmitsPrefix(t *testing.T) {
+	src := `from fastapi import FastAPI
+
+app = FastAPI()
+`
+	patched := patchFastAPIMain(src, "/admin/ai", false)
+	if !strings.Contains(patched, "include_router(gravel_router, prefix='/admin/ai')") {
+		t.Errorf("emitted include_router missing prefix=.\ngot:\n%s", patched)
+	}
+}

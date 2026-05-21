@@ -222,4 +222,85 @@ describe('alignWhitespace (paragraph-vs-list separator drift)', () => {
     expect(alignWhitespace('content', '')).toBe('')
     expect(alignWhitespace('', 'content')).toBe('content')
   })
+
+  // Line-aware alignment (v0.10.3): when the user edits ONE line, the
+  // OTHER lines must keep the source-file's whitespace. The token-level
+  // fast path falls through (one token changed), but per-line matching
+  // still restores tabs / leading whitespace on unedited lines.
+  // Yousef's de-platform dogfooding 2026-05-21 surfaced this — tab-
+  // indented bullets in the source file came back as 2-space indents
+  // after a single-line edit anywhere in the document.
+
+  it('line-aware: tab-indented bullets keep their tabs when an UNRELATED line is edited', () => {
+    const orig =
+      'edits: A list of PER-LINE edits. Each element has:\n' +
+      '\n' +
+      '\t- line: the 1-indexed line number being edited\n' +
+      '\t- ops: a list of fine-grained operations\n' +
+      '\n' +
+      'Each op is one of:\n' +
+      '\n' +
+      '\t- {{type: "replace", "find": "<x>", "replacement": "<y>"}}\n' +
+      '\t- {{type: "delete", "find": "<x>"}}\n'
+    // Candidate: serializer normalised tabs → 2-space indents AND the
+    // user edited one bullet (final "delete" → "remove"). Per-line
+    // alignment must restore tabs on every line whose trimmed content
+    // matches the source.
+    const candidate =
+      'edits: A list of PER-LINE edits. Each element has:\n' +
+      '\n' +
+      '  - line: the 1-indexed line number being edited\n' +
+      '  - ops: a list of fine-grained operations\n' +
+      '\n' +
+      'Each op is one of:\n' +
+      '\n' +
+      '  - {{type: "replace", "find": "<x>", "replacement": "<y>"}}\n' +
+      '  - {{type: "remove", "find": "<x>"}}\n'
+    const result = alignWhitespace(orig, candidate)
+    // Unedited tab-indented bullets must keep their tabs.
+    expect(result).toContain('\t- line: the 1-indexed line number being edited')
+    expect(result).toContain('\t- ops: a list of fine-grained operations')
+    expect(result).toContain('\t- {{type: "replace"')
+    // Edited line keeps its NEW content (with whatever whitespace).
+    expect(result).toContain('"remove"')
+    // No phantom 2-space-indented unedited lines.
+    expect(result).not.toContain('  - line: the 1-indexed line number being edited')
+    expect(result).not.toContain('  - ops: a list of fine-grained')
+  })
+
+  it('line-aware: per-line whitespace alignment falls through gracefully when no match found', () => {
+    // Lines that don't appear in source (entirely new) keep candidate whitespace.
+    const orig = 'Line A\nLine B\n'
+    const candidate = 'Line A\nLine B\n  Line C inserted indented\n'
+    const result = alignWhitespace(orig, candidate)
+    // Original lines preserved as-is from source; new line keeps candidate ws.
+    expect(result).toContain('Line A\n')
+    expect(result).toContain('Line B\n')
+    expect(result).toContain('  Line C inserted indented')
+  })
+
+  it('line-aware: ambiguous matches (duplicate trimmed content) pick the nearest by position', () => {
+    // Two identical empty lines in source, both at different positions;
+    // candidate has them too. Each candidate empty line should map to
+    // the source empty line at the closest index.
+    const orig = 'header\n\nmiddle\n\nfooter\n'
+    const candidate = 'header\n  \nmiddle\n  \nfooter' // serialiser added trailing spaces
+    const result = alignWhitespace(orig, candidate)
+    // Source's bare-newline empty lines should win for both empties.
+    expect(result).not.toContain('  \n') // no trailing-spaces lines leaked through
+  })
+
+  it('line-aware: leading whitespace inside a paragraph (code block start) preserved', () => {
+    // Indented code spans (CommonMark §4.4): 4+ spaces. Source uses tab.
+    // After roundtrip, candidate has 4 spaces. Source must win on the
+    // unedited code line; edited line elsewhere doesn't affect it.
+    const orig = 'Example:\n\n\tprint("hello")\n\nDone.\n'
+    const candidate = 'Examples:\n\n    print("hello")\n\nDone.\n' // "Example" → "Examples"
+    const result = alignWhitespace(orig, candidate)
+    // Edited heading-like line keeps its candidate content.
+    expect(result).toContain('Examples:')
+    // Unedited code line keeps source's tab indent.
+    expect(result).toContain('\tprint("hello")')
+    expect(result).not.toContain('    print("hello")')
+  })
 })

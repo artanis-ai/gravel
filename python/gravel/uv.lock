@@ -89,7 +89,7 @@ wheels = [
 
 [[package]]
 name = "artanis-gravel"
-version = "0.10.1"
+version = "0.10.2"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },

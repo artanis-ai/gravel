@@ -43,6 +43,16 @@ const (
 	// SDKFailed: package manager exited non-zero. We surface the
 	// stderr so the user can see why.
 	SDKFailed SDKInstallKind = "failed"
+	// SDKBlockedByConstraint: the resolver refused because the project
+	// has a pin/window/lockfile constraint that excludes the SDK
+	// version we asked for (e.g. uv's `[tool.uv] exclude-newer = "7
+	// days"` excludes a freshly-published `>=0.10.3`). We surface a
+	// SPECIFIC remediation instead of silently downgrading — installing
+	// an older SDK against a newer wizard breaks features at boot.
+	// Yousef's de-platform install (2026-05-21) was the canonical case:
+	// the wizard had no error path for this, the install completed with
+	// the SDK absent, FastAPI crashed at startup.
+	SDKBlockedByConstraint SDKInstallKind = "blocked-by-constraint"
 )
 
 // SDKInstallResult describes what EnsureSDKInstalled actually did, so
@@ -51,7 +61,13 @@ type SDKInstallResult struct {
 	Kind    SDKInstallKind
 	Package string // "@artanis-ai/gravel" or "artanis-gravel"
 	Command string // The exact command we ran (or would have run for skipped/failed). For user copy-paste.
-	Stderr  string // Populated when Kind == SDKFailed.
+	Stderr  string // Populated when Kind == SDKFailed or SDKBlockedByConstraint.
+	// ConstraintHint is set when Kind == SDKBlockedByConstraint. A
+	// one-line human-readable explanation of what's blocking the
+	// install (e.g. "[tool.uv] exclude-newer = "7 days" in your
+	// pyproject.toml excludes artanis-gravel 0.10.3"). The cobra layer
+	// surfaces it as a Bullet/Note above the raw stderr.
+	ConstraintHint string
 }
 
 // gravelPackageName picks the right registry name based on host language.
@@ -70,7 +86,7 @@ func gravelPackageName(lang stack.Language) string {
 // PyPI version get a broken install with no useful error.
 //
 // Update in lockstep with python/gravel/pyproject.toml `version`.
-const minSDKVersion = "0.10.2"
+const minSDKVersion = "0.10.3"
 
 // gravelInstallSpec returns the dependency spec we hand to the
 // package manager. For Python we pin `>=minSDKVersion` so `uv add`
@@ -139,12 +155,66 @@ func EnsureSDKInstalled(ctx context.Context, d Detection) SDKInstallResult {
 	var stderrBuf strings.Builder
 	cmd.Stderr = &stderrBuf
 	if err := cmd.Run(); err != nil {
+		stderr := stderrBuf.String()
+		if hint := detectConstraintBlocker(stderr, d); hint != "" {
+			result.Kind = SDKBlockedByConstraint
+			result.Stderr = stderr
+			result.ConstraintHint = hint
+			return result
+		}
 		result.Kind = SDKFailed
-		result.Stderr = stderrBuf.String()
+		result.Stderr = stderr
 		return result
 	}
 	result.Kind = SDKAdded
 	return result
+}
+
+// detectConstraintBlocker scans the package-manager stderr for resolver
+// signals that mean "the user's lockfile / pin / window is blocking us
+// from installing the version we asked for". Returns a one-line
+// human-readable explanation, or "" when the failure looks generic.
+//
+// Patterns we recognise today (extend as we see more in the wild):
+//
+//   - uv's `exclude-newer`: phrase "exclude-newer" appears in the
+//     resolver error message. Specific to `[tool.uv]
+//     exclude-newer = "<duration>"` in pyproject.toml. Common in
+//     repos that pin their dependency window to avoid lockfile churn.
+//   - uv's "no solution found": resolver couldn't satisfy the
+//     constraints. Generic; we can't be more specific without
+//     parsing the dep tree.
+//   - pip / poetry: "Could not find a version that satisfies the
+//     requirement" — typically means the pin floor is above the
+//     latest published version.
+//
+// Cross-stack note: we do NOT auto-modify the user's lockfile or
+// constraints. The remediation is always "user / agent fixes the
+// constraint, re-runs". Installing a silently-downgraded SDK against
+// a wizard built for the latest is worse than failing loud — features
+// move between versions and minSDKVersion is the floor.
+func detectConstraintBlocker(stderr string, d Detection) string {
+	s := strings.ToLower(stderr)
+	pkg := gravelPackageName(d.Language)
+	if strings.Contains(s, "exclude-newer") {
+		return fmt.Sprintf(
+			"Your pyproject.toml's `[tool.uv] exclude-newer = \"...\"` is blocking the install of %s — the window cuts off before the version the wizard needs. Either bump the window (e.g. to \"30 days\") or remove the constraint, then re-run.",
+			pkg,
+		)
+	}
+	if strings.Contains(s, "no solution found") || strings.Contains(s, "resolver") && strings.Contains(s, "conflict") {
+		return fmt.Sprintf(
+			"The resolver couldn't satisfy %s against your project's existing dependency constraints. The full error is below — usually fixed by relaxing a pinned dependency in pyproject.toml or removing a stale lockfile.",
+			pkg,
+		)
+	}
+	if strings.Contains(s, "could not find a version that satisfies") {
+		return fmt.Sprintf(
+			"The package manager couldn't find a published version of %s satisfying your project's constraints. Check your pin floor in pyproject.toml.",
+			pkg,
+		)
+	}
+	return ""
 }
 
 func manifestPathFor(d Detection) string {
