@@ -3,98 +3,14 @@
 @tailwind utilities;
 
 /*
- * `gravel-prose` — minimal markdown-render styles for the WYSIWYG
- * prompt editor. Mirrors the "rendered markdown" look (heading sizes,
- * list indentation, code block tinting, blockquote rule) without
- * pulling in @tailwindcss/typography. The selectors are scoped under
- * `.gravel-prose` so they only affect the editor surface, never the
- * dashboard's own chrome.
+ * Suggestion-diff overlay decorations applied by `SuggestionDiff.ts`
+ * to highlight inserted / deleted runs inside the WYSIWYG editor.
+ * The rest of the prompt-editor prose styling lives inline as
+ * Tailwind utilities on `SuggestionEditor` itself; only these
+ * Tiptap-side decorations need bespoke CSS because Tiptap applies
+ * them as decoration classes outside React's render tree.
  */
-.gravel-prose {
-  color: #2D1810;
-  font-size: 15px;
-  line-height: 1.6;
-}
-.gravel-prose > * + * {
-  margin-top: 0.65em;
-}
-.gravel-prose h1 {
-  font-size: 1.6em;
-  font-weight: 700;
-  line-height: 1.2;
-  margin-top: 0.4em;
-}
-.gravel-prose h2 {
-  font-size: 1.3em;
-  font-weight: 700;
-  line-height: 1.25;
-  margin-top: 0.5em;
-}
-.gravel-prose h3 {
-  font-size: 1.12em;
-  font-weight: 600;
-  line-height: 1.3;
-  margin-top: 0.6em;
-}
-.gravel-prose strong {
-  font-weight: 700;
-}
-.gravel-prose em {
-  font-style: italic;
-}
-.gravel-prose code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
-  font-size: 0.9em;
-  background: rgba(107, 87, 68, 0.1);
-  padding: 0.1em 0.35em;
-  border-radius: 4px;
-}
-.gravel-prose pre {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
-  font-size: 0.9em;
-  background: rgba(107, 87, 68, 0.08);
-  padding: 0.75em 1em;
-  border-radius: 8px;
-  overflow-x: auto;
-}
-.gravel-prose pre code {
-  background: transparent;
-  padding: 0;
-}
-.gravel-prose ul,
-.gravel-prose ol {
-  padding-left: 1.6em;
-}
-.gravel-prose ul {
-  list-style: disc;
-}
-.gravel-prose ol {
-  list-style: decimal;
-}
-.gravel-prose li {
-  margin-top: 0.2em;
-}
-.gravel-prose li > p {
-  margin: 0;
-}
-.gravel-prose blockquote {
-  border-left: 3px solid rgba(107, 87, 68, 0.3);
-  padding: 0.1em 0 0.1em 0.9em;
-  color: #6B5744;
-  font-style: italic;
-}
-.gravel-prose a {
-  color: #B5532A;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-.gravel-prose hr {
-  border: 0;
-  border-top: 1px solid rgba(107, 87, 68, 0.18);
-  margin: 1.2em 0;
-}
-/* Suggestion-diff overlay (decorations from SuggestionDiff plugin). */
-.gravel-prose .gravel-suggestion-insertion {
+.gravel-suggestion-insertion {
   background-color: rgba(74, 124, 89, 0.15);
   color: #2f5b3a;
   text-decoration: underline;
@@ -103,7 +19,7 @@
   border-radius: 2px;
   padding: 0 1px;
 }
-.gravel-prose .gravel-suggestion-deletion {
+.gravel-suggestion-deletion {
   color: #9B4340;
   background-color: rgba(155, 67, 64, 0.08);
   text-decoration: line-through;
@@ -116,7 +32,7 @@
 
 /* Tiptap places `data-placeholder` on the editor's empty top-level
    paragraph; show it as ghost text instead of a blank box. */
-.gravel-prose p.is-editor-empty:first-child::before {
+.tiptap.ProseMirror p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   float: left;
   color: rgba(107, 87, 68, 0.55);
@@ -126,8 +42,7 @@
 /* The Tiptap React wrapper renders a `.tiptap` div around the
    contenteditable. Make it fill the scroll container so the editor's
    click target covers the whole pane, not just the typed lines. */
-.tiptap.ProseMirror,
-.gravel-prose.ProseMirror {
+.tiptap.ProseMirror {
   min-height: 100%;
 }
 

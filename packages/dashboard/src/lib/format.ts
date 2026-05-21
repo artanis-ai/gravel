@@ -46,12 +46,3 @@ export function truncate(s: string | null | undefined, max = 80): string {
   return s.slice(0, max - 1) + '…'
 }
 
-export function asString(value: unknown, max = 80): string {
-  if (value == null) return ''
-  if (typeof value === 'string') return truncate(value, max)
-  try {
-    return truncate(JSON.stringify(value), max)
-  } catch {
-    return ''
-  }
-}

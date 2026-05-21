@@ -4,7 +4,7 @@
  * The api client is mocked at module level (per `_skill: thorough_tests`).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen, within, waitFor } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 vi.mock('../lib/api', () => {
@@ -110,7 +110,7 @@ describe('Samples list', () => {
   })
 })
 
-describe('Sample detail', () => {
+describe('Sample deep-link', () => {
   function makeDetail(): SampleDetailResponse {
     return {
       sample: {
@@ -137,32 +137,22 @@ describe('Sample detail', () => {
     }
   }
 
-  it('renders input + output and submits feedback', async () => {
+  it('opens the canonical SampleReviewDialog (Approve / Reject / Skip), not the legacy inline page', async () => {
+    // v0.9.5 deletes the parallel "Thumbs up / Thumbs down / Save
+    // feedback" inline body that used to render here. /samples/:id
+    // now opens the same SampleReviewDialog as a list-row click.
     mockedGet.mockImplementation(async (path: string) => withDefaults(makeDetail())(path))
-    mockedPost.mockResolvedValue({ ok: true })
 
-    const user = userEvent.setup()
     renderRoute(<SamplesPage sampleId="sample_abc" />)
 
-    // Input + Output payloads are rendered as JSON sections.
-    expect(await screen.findByText('Input')).toBeInTheDocument()
-    expect(screen.getByText('Output')).toBeInTheDocument()
-    expect(screen.getByText(/hello!/)).toBeInTheDocument()
+    // Modal renders the canonical feedback buttons.
+    expect(await screen.findByRole('button', { name: /approve/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /reject/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /skip/i })).toBeInTheDocument()
 
-    // try submitting without thumbs first → inline error
-    const form = screen.getByRole('form', { name: /add feedback/i })
-    await user.click(within(form).getByRole('button', { name: /save feedback/i }))
-    expect(within(form).getByText(/thumbs up or thumbs down/i)).toBeInTheDocument()
-    expect(mockedPost).not.toHaveBeenCalled()
-
-    await user.click(within(form).getByRole('button', { name: /thumbs down/i }))
-    await user.type(within(form).getByLabelText(/comment/i), 'wrong tone')
-    await user.type(within(form).getByLabelText(/correction/i), 'should be friendlier')
-    await user.click(within(form).getByRole('button', { name: /save feedback/i }))
-
-    await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(1))
-    const [path, body] = mockedPost.mock.calls[0] as [string, Record<string, unknown>]
-    expect(path).toBe('/api/samples/sample_abc/feedback')
-    expect(body).toEqual({ thumbs: 'down', comment: 'wrong tone', correction: 'should be friendlier' })
+    // The deleted inline UI must not render.
+    expect(screen.queryByRole('button', { name: /thumbs up/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /thumbs down/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /save feedback/i })).not.toBeInTheDocument()
   })
 })

@@ -5,12 +5,11 @@
  *
  * Calls `GET /api/samples`, `GET /api/samples/:id`, `POST /api/samples/:id/feedback`.
  */
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Link } from 'wouter'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useMemo, useState } from 'react'
+import { useLocation } from 'wouter'
+import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import {
-  type FeedbackItem,
   type SampleDetailResponse,
   type SampleListItem,
   type SampleStatus,
@@ -19,7 +18,6 @@ import {
 import { EmptyState } from '../components/EmptyState'
 import { DeveloperNote } from '../components/DeveloperNote'
 import { CopyableCode } from '../components/CopyableCode'
-import { PayloadShape } from '../components/PayloadShape'
 import { SkeletonTable, SkeletonText } from '../components/Skeleton'
 import { Badge } from '../components/Badge'
 import { SampleReviewDialog } from '../components/samples/SampleReviewDialog'
@@ -59,8 +57,57 @@ function buildTracesQueryString(f: SampleFilters): string {
 }
 
 export function SamplesPage({ sampleId }: { sampleId?: string } = {}) {
-  if (sampleId) return <SampleDetail sampleId={sampleId} />
+  // Deep-link path (`/samples/:id`): open the canonical
+  // SampleReviewDialog with this sample as the only item. The
+  // previous inline detail body had its own Thumbs-up/down form +
+  // raw JSON payload viewer (no ReviewSurface, no PDF rendering, no
+  // toast feedback flow) and was effectively a parallel UI; deleted
+  // in v0.9.5.
+  if (sampleId) return <DeepLinkedSample sampleId={sampleId} />
   return <SamplesList />
+}
+
+/** Renders SampleReviewDialog as a full-page modal targeting a
+ *  single sample. Used for /samples/:id direct nav so deep links +
+ *  browser back work without forking the UX. */
+function DeepLinkedSample({ sampleId }: { sampleId: string }) {
+  const [, navigate] = useLocation()
+  const { data, isLoading, isError, error } = useQuery<SampleDetailResponse>({
+    queryKey: ['sample', sampleId],
+    queryFn: () => api.get<SampleDetailResponse>(`/api/samples/${sampleId}`),
+  })
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        <SkeletonText lines={2} />
+        <div className="rounded-lg border border-warm bg-cream p-4">
+          <SkeletonText lines={6} />
+        </div>
+      </div>
+    )
+  }
+  if (isError || !data) {
+    return (
+      <ErrorBox
+        message={(error as Error)?.message ?? 'Sample not found.'}
+        onRetry={() => window.location.reload()}
+      />
+    )
+  }
+  // `SampleDetailResponse.sample` is a superset of `SampleListItem`;
+  // safe to hand to the dialog as a one-element list.
+  const samples = [data.sample]
+  return (
+    <SampleReviewDialog
+      samples={samples}
+      index={0}
+      onIndexChange={() => {
+        /* no prev/next on a single-sample deep link */
+      }}
+      onClose={() => navigate('/samples')}
+    />
+  )
 }
 
 // ---------- List ----------
@@ -597,289 +644,4 @@ function ErrorBox({ message, onRetry }: { message: string; onRetry: () => void }
   )
 }
 
-// ---------- Detail ----------
-
-/**
- * Full-page trace detail (`/samples/:id`). Used for direct links / new
- * tab opens. The Outputs list opens the same content in a side sheet
- * via SampleDetailBody so the DE doesn't lose context.
- */
-function SampleDetail({ sampleId }: { sampleId: string }) {
-  return (
-    <div className="space-y-6">
-      <Link href="/samples" className="cursor-pointer text-xs text-text-mid hover:text-text-dark">
-        ← Back to outputs
-      </Link>
-      <SampleDetailBody sampleId={sampleId} showTitle />
-    </div>
-  )
-}
-
-function SampleDetailBody({ sampleId, showTitle = false }: { sampleId: string; showTitle?: boolean }) {
-  const path = `/api/samples/${sampleId}`
-  const { data, isLoading, isError, error } = useQuery<SampleDetailResponse>({
-    queryKey: ['sample', sampleId],
-    queryFn: () => api.get<SampleDetailResponse>(path),
-  })
-
-  if (isLoading) {
-    return (
-      <div className="space-y-4">
-        <SkeletonText lines={2} />
-        <div className="rounded-lg border border-warm bg-cream p-4">
-          <SkeletonText lines={6} />
-        </div>
-      </div>
-    )
-  }
-  if (isError || !data) {
-    return (
-      <ErrorBox
-        message={(error as Error)?.message ?? 'Sample not found.'}
-        onRetry={() => window.location.reload()}
-      />
-    )
-  }
-
-  const { sample, feedback, related } = data
-
-  return (
-    <div className="space-y-5">
-      {showTitle && (
-        <div className="flex items-baseline justify-between gap-4">
-          <h1 className="font-display text-2xl font-semibold text-text-dark">
-            {sample.name}{' '}
-            <span className="font-mono text-sm font-normal text-text-muted">{sample.id}</span>
-          </h1>
-        </div>
-      )}
-      <div className="grid grid-cols-2 gap-3 text-xs text-text-mid sm:grid-cols-4">
-        <Stat label="Started" value={formatRelative(sample.started_at)} />
-        <Stat label="Duration" value={formatDuration(sample.duration_ms)} />
-        <Stat label="Model" value={sample.model ?? '—'} mono />
-        <Stat label="Status" value={<StatusBadge status={sample.status} />} />
-      </div>
-
-      <PayloadView label="Input" value={sample.input} />
-      <PayloadView label="Output" value={sample.output} />
-      {sample.metadata && Object.keys(sample.metadata).length > 0 && (
-        <PayloadView label="Metadata" value={sample.metadata} />
-      )}
-
-      {related.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="font-display text-sm font-semibold text-text-dark">
-            Other steps in this trace
-            <span className="ml-2 font-normal text-text-muted">{related.length}</span>
-          </h2>
-          <ul className="divide-y divide-warm rounded-xl border border-warm bg-cream">
-            {related.map((s) => (
-              <li key={s.id} className="px-3 py-2 text-sm">
-                <Link
-                  href={`/samples/${s.id}`}
-                  className="cursor-pointer font-mono text-xs text-text-dark hover:underline"
-                >
-                  {s.name}
-                </Link>
-                <span className="ml-2 text-xs text-text-muted">
-                  {formatRelative(s.started_at)} · {formatDuration(s.duration_ms)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      <FeedbackPanel sampleId={sample.id} feedback={feedback} />
-    </div>
-  )
-}
-
-/**
- * Render a JSON-ish payload (input / output / metadata). Pretty-prints
- * objects, falls back to raw text otherwise. Collapsed-by-default for
- * very long values.
- */
-function PayloadView({ label, value }: { label: string; value: unknown }) {
-  const json = useMemo(() => safeJsonString(value), [value])
-  const big = json.length > 4000
-  const [showRaw, setShowRaw] = useState(false)
-  const [open, setOpen] = useState(!big)
-  if (value == null || (typeof value === 'object' && Object.keys(value as object).length === 0)) {
-    return null
-  }
-  return (
-    <section className="space-y-2">
-      <div className="flex items-baseline justify-between">
-        <h2 className="font-display text-sm font-semibold text-text-dark">{label}</h2>
-        <div className="flex items-center gap-3 text-xs">
-          <button
-            type="button"
-            onClick={() => setShowRaw((s) => !s)}
-            className="cursor-pointer text-text-mid hover:text-text-dark"
-          >
-            {showRaw ? 'Pretty' : 'Raw JSON'}
-          </button>
-          {big && showRaw && (
-            <button
-              type="button"
-              onClick={() => setOpen((o) => !o)}
-              className="cursor-pointer text-text-mid hover:text-text-dark"
-            >
-              {open ? 'Collapse' : 'Expand'}
-            </button>
-          )}
-        </div>
-      </div>
-      {showRaw ? (
-        <pre className="max-h-96 overflow-auto rounded-xl border border-warm bg-cream px-4 py-3 font-mono text-xs text-text-dark">
-          {open ? json : json.slice(0, 800) + '\n…'}
-        </pre>
-      ) : (
-        <PayloadShape value={value} />
-      )}
-    </section>
-  )
-}
-
-function Stat({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
-  return (
-    <div>
-      <div className="text-text-muted">{label}</div>
-      <div className={cx('mt-0.5 text-text-dark', mono && 'font-mono')}>{value}</div>
-    </div>
-  )
-}
-
-function safeJsonString(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2)
-  } catch {
-    return String(value)
-  }
-}
-
-function FeedbackPanel({ sampleId, feedback }: { sampleId: string; feedback: FeedbackItem[] }) {
-  const queryClient = useQueryClient()
-  const [thumbs, setThumbs] = useState<'up' | 'down' | null>(null)
-  const [comment, setComment] = useState('')
-  const [correction, setCorrection] = useState('')
-  const [formError, setFormError] = useState<string | null>(null)
-
-  const submit = useMutation<unknown, Error, void>({
-    mutationFn: () =>
-      api.post(`/api/samples/${sampleId}/feedback`, {
-        thumbs,
-        comment: comment || null,
-        correction: correction || null,
-      }),
-    onSuccess: () => {
-      setThumbs(null)
-      setComment('')
-      setCorrection('')
-      setFormError(null)
-      queryClient.invalidateQueries({ queryKey: ['sample', sampleId] })
-    },
-    onError: (err) => setFormError(err.message),
-  })
-
-  function onSubmit(e: FormEvent) {
-    e.preventDefault()
-    if (!thumbs) {
-      setFormError('Pick thumbs up or thumbs down first.')
-      return
-    }
-    submit.mutate()
-  }
-
-  return (
-    <section className="space-y-3">
-      <h2 className="font-display text-lg font-semibold text-text-dark">Feedback</h2>
-      {feedback.length === 0 ? (
-        <p className="text-sm text-text-mid">No feedback yet — be the first to label this one.</p>
-      ) : (
-        <ul className="space-y-2">
-          {feedback.map((f) => (
-            <li key={f.id} className="rounded-xl border border-warm bg-cream p-3 text-sm">
-              <div className="flex items-center gap-2 text-xs text-text-mid">
-                <Badge tone={f.score === 'positive' ? 'good' : f.score === 'negative' ? 'bad' : 'neutral'}>
-                  {f.score === 'positive' ? '↑ thumbs up' : f.score === 'negative' ? '↓ thumbs down' : 'neutral'}
-                </Badge>
-                <span>{formatRelative(f.created_at)}</span>
-              </div>
-              {f.comment && <p className="mt-2 text-text-dark">{f.comment}</p>}
-              {f.correction && (
-                <pre className="mt-2 whitespace-pre-wrap rounded-md bg-white p-2 font-mono text-xs text-text-dark">
-                  {f.correction}
-                </pre>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <form
-        onSubmit={onSubmit}
-        className="space-y-3 rounded-2xl border border-warm bg-cream p-4"
-        aria-label="Add feedback"
-      >
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            aria-pressed={thumbs === 'up'}
-            aria-label="Thumbs up"
-            className={cx(
-              'cursor-pointer rounded-lg border px-3 py-1.5 text-sm',
-              thumbs === 'up' ? 'border-forest bg-forest/15 text-forest' : 'border-warm hover:bg-warm',
-            )}
-            onClick={() => setThumbs('up')}
-          >
-            ↑ Thumbs up
-          </button>
-          <button
-            type="button"
-            aria-pressed={thumbs === 'down'}
-            aria-label="Thumbs down"
-            className={cx(
-              'cursor-pointer rounded-lg border px-3 py-1.5 text-sm',
-              thumbs === 'down' ? 'border-primary bg-primary/15 text-primary-dark' : 'border-warm hover:bg-warm',
-            )}
-            onClick={() => setThumbs('down')}
-          >
-            ↓ Thumbs down
-          </button>
-        </div>
-        <textarea
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-          placeholder="Why was this good or bad?"
-          aria-label="Comment"
-          className="w-full rounded-md border border-warm bg-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-          rows={2}
-        />
-        <textarea
-          value={correction}
-          onChange={(e) => setCorrection(e.target.value)}
-          placeholder="What should the output have been? (used as eval ground truth)"
-          aria-label="Correction"
-          className="w-full rounded-md border border-warm bg-white px-2 py-1 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
-          rows={3}
-        />
-        {formError && <p className="text-xs text-primary-dark">{formError}</p>}
-        <div className="flex justify-end">
-          <button
-            type="submit"
-            disabled={submit.isPending}
-            className={cx(
-              'rounded-lg px-3 py-1.5 text-sm font-medium text-white',
-              submit.isPending ? 'cursor-not-allowed bg-primary/60' : 'cursor-pointer bg-primary hover:bg-primary-dark',
-            )}
-          >
-            {submit.isPending ? 'Saving…' : 'Save feedback'}
-          </button>
-        </div>
-      </form>
-    </section>
-  )
-}
 

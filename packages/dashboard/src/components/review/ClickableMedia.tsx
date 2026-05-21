@@ -132,7 +132,7 @@ export function ClickablePdf({
       <iframe
         src={src}
         title={title}
-        className="min-h-[28rem] w-full flex-1 rounded-lg border border-warm bg-white"
+        className="h-[70vh] min-h-[20rem] w-full flex-1 rounded-lg border border-warm bg-white"
       />
       <PdfDialog open={open} onClose={() => setOpen(false)} src={src} title={title} />
     </div>
