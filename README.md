@@ -1,56 +1,120 @@
-# Gravel
+<p align="center">
+  <a href="https://artanis.ai/gravel">
+    <img src="https://artanis.ai/img/gravel-og.png" alt="Gravel" width="640">
+  </a>
+</p>
 
-> Open-source library that mounts an admin dashboard inside your AI app. Domain experts review output, manage prompts, and run evals, without ever touching your codebase.
+<h1 align="center">Gravel</h1>
 
-**Status: v0.10.x, live on npm + PyPI.** Wizard installs against the production `gravel.artanis.ai` control plane. Default-password auth, manifest-backed prompts (list + detail + submit-as-PR via the `gravel[bot]` GitHub App with atomic manifest rewrite), tracing auto-patches (OpenAI / Anthropic / Gemini incl. Vertex AI + Gemini Enterprise Agent Platform / LangChain / Vercel AI / generic `fetch`), the judge + eval runner, and the bundled React dashboard all ship. Six TypeScript framework integrations (Next.js App + Pages routers, Express, Hono, Fastify, generic Node) and five Python integrations (FastAPI, Django, Flask, raw ASGI, raw WSGI), all delegating to one shared dispatcher for byte-equal cross-stack behaviour. Polar billing is scaffolded; pricing wiring awaits validation. Datasets + Evals dashboard pillars are scaffolded as placeholder routes only; backend wiring is the next design pass. See [`STATUS.md`](STATUS.md).
+<p align="center">
+  Open-source library that mounts an admin dashboard inside your AI app.<br>
+  Your domain experts edit prompts (kept in your git) and review LLM output, without engineers in the loop.
+</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/@artanis-ai/gravel"><img src="https://img.shields.io/npm/v/@artanis-ai/gravel.svg?label=npm&color=cb3837" alt="npm"></a>
+  <a href="https://pypi.org/project/artanis-gravel/"><img src="https://img.shields.io/pypi/v/artanis-gravel.svg?label=pypi&color=3776ab" alt="PyPI"></a>
+  <a href="https://github.com/artanis-ai/gravel/actions/workflows/ci.yml"><img src="https://github.com/artanis-ai/gravel/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache_2.0-blue.svg" alt="License"></a>
+  <a href="https://artanis.ai/gravel"><img src="https://img.shields.io/badge/site-artanis.ai%2Fgravel-1f6feb" alt="Site"></a>
+</p>
+
+<p align="center">
+  <a href="#install">Install</a> ·
+  <a href="#what-you-get">What you get</a> ·
+  <a href="#why-this-not-langfuse--langsmith">Why this, not Langfuse / LangSmith</a> ·
+  <a href="https://artanis.ai/gravel">Site</a> ·
+  <a href="STATUS.md">Status</a>
+</p>
+
+---
+
+## Install
+
+One command. Picks up your stack from lockfiles, mounts the dashboard, writes a config, generates an admin password, and (optionally) wires the database for tracing. About a minute end-to-end.
 
 ```bash
-# TypeScript:
+# TypeScript (Next.js / Express / Hono / Fastify / generic Node):
 npx @artanis-ai/gravel init
 
-# Python:
+# Python (FastAPI / Django / Flask / raw ASGI / raw WSGI):
 uvx artanis-gravel init
 
-# Direct binary (Docker, CI, polyglot repos):
+# Direct CLI binary (Docker, CI, polyglot repos with no JS/Python):
 curl -fsSL https://raw.githubusercontent.com/artanis-ai/gravel/main/install.sh | sh && gravel init
 ```
 
-The wizard logic lives in a single Go binary cross-compiled per platform. The npm and PyPI SDK packages each ship a thin (~100-line) wrapper that lazy-downloads the matching binary from signed GitHub Release assets on first invocation, so installing the SDK gives you a working `gravel` command in one step. No bundled binary in the SDK tarballs. See [`cli/DESIGN.md`](cli/DESIGN.md).
+Driving the install via Claude Code / Codex / Cursor? Point the agent at:
 
-## What it is
+```
+https://artanis.ai/gravel/llms.txt
+```
 
-Gravel is a library you install into your existing AI engineering codebase (TypeScript or Python). Once installed, an admin dashboard mounts inside your app at `/admin/ai`. From there, your **domain experts** (clinicians, lawyers, teachers, recruiters, accountants, whoever) can:
+The wizard logic is a single Go binary, cross-compiled per platform. The npm and PyPI packages each ship a thin (~100-line) wrapper that downloads the matching binary from signed GitHub Release assets on first run, so installing the SDK gives you a working `gravel` command in one step.
 
-- See every prompt in the codebase, edit it, and submit a GitHub PR for the change.
-- Review LLM traces flowing through your pipeline, leave feedback and corrections.
-- Build datasets from labelled traces and run evals against them.
+## What you get
 
-Where Langfuse / LangSmith pitch dashboards to engineers, **Gravel ships a dashboard for the people whose job *isn't* engineering**: the ones who actually know what good looks like in your domain.
+Once `gravel init` finishes, your app has a dashboard mounted at `/admin/ai`. Sign in with the password the wizard wrote to `.env.local`. Three pillars ship today:
+
+- **Prompts.** Every prompt the scanner finds in your repo (`.md` / `.mdx` / template-literal hits / embedded strings) lands in a manifest. Domain experts open the dashboard, edit a prompt in a real WYSIWYG editor, and submit the change. Gravel opens a GitHub PR via the `gravel[bot]` App with the manifest rewritten atomically so multi-prompt edits stay consistent.
+- **Traces.** Auto-patches for OpenAI, Anthropic, Gemini (including Vertex AI and Gemini Enterprise Agent Platform), LangChain, the Vercel AI SDK, and a generic `fetch` fallback. Sample rows go into your own database (Postgres or SQLite) via two `gravel_*` tables; nothing leaves your infrastructure. The dashboard renders each provider with a proper view (content blocks, tool calls, multimodal, citations, safety ratings) so the people reviewing don't have to read JSON.
+- **Review + feedback.** Domain experts approve / reject / annotate traces. Feedback rows live next to the sample they're about. Once you have enough labelled data, the same dashboard runs evals against it.
+
+The wizard installs only the pillars you say yes to. Prompts-only is a valid install (no database needed). Traces-only is fine too.
+
+## Why this, not Langfuse / LangSmith
+
+Those are dashboards for engineers, hosted in their own apps. Gravel ships a dashboard for the people whose job is *not* engineering: the clinicians, lawyers, recruiters, teachers, accountants, underwriters, who actually know what good output looks like in your domain. It mounts inside your existing app, so they sign in with the auth they already have, see the data that already exists, and edit prompts that get reviewed in your normal PR process.
+
+In one line: **Langfuse / LangSmith for domain experts.**
+
+## How tracing wires up
+
+Add one import per stack. Auto-patches fire on import; no code changes anywhere your LLM call sites live.
+
+**TypeScript** (`gravel.config.ts` is generated by the wizard; this is what gets added to your server entry):
+
+```ts
+import '@artanis-ai/gravel/auto'
+```
+
+**Python** (mounted via the wizard-generated `gravel_route.py`; auto-tracing fires as a side effect of `create_gravel_router(config)`):
+
+```python
+from artanis_gravel.fastapi import create_gravel_router
+router = create_gravel_router(config=config)
+```
+
+A trace looks like this in your DB (`gravel_samples`): `{name: 'openai.chat.completions.create', input, output, model, status, tokens_input, tokens_output, started_at, completed_at, metadata}`. The dashboard reads the table directly; no extra service to deploy.
 
 ## What's open-source
 
-This repo is the embedded library. It's Apache 2.0. You can audit every line, fork it, run it.
+This repo is the embedded library. Apache 2.0. You can audit every line, fork it, run it. The wizard, the dashboard React app, the cross-stack handler, the tracing patches, the GitHub-App PR pipeline: all here.
 
-The judge service it talks to for paid evals is closed-source and lives elsewhere. That's the only thing not in this repo. Tracing data and prompts always stay in your own database; only rows being judged ever leave your infrastructure.
+The judge service the eval runner talks to for paid evals is closed-source and lives elsewhere. That's the only thing not in this repo. Your tracing data and prompts always stay in your own database; only rows being judged ever leave your infrastructure.
 
 ## Repo layout
 
 ```
 gravel/
-├── install.sh              # `curl | sh` install for the CLI binary (POSIX)
-├── install.ps1             # PowerShell equivalent for native Windows
-├── cli/                    # Go module: single source of truth for the `gravel` wizard
-├── packages/sdk-ts/        # @artanis-ai/gravel: SDK library + bin/gravel.js wrapper
-├── packages/dashboard/     # React app shipped inside the SDKs
-├── python/gravel/          # artanis-gravel: SDK library + artanis_gravel._cli wrapper
-├── examples/               # Next.js, FastAPI, Django integration examples (Express / Hono / Fastify / Flask exercised via gravel-test-fixtures)
-└── .github/workflows/      # CI: lint, test, schema-drift, cross-compile + release
+├── cli/                    Go module: the `gravel` wizard binary
+├── packages/sdk-ts/        @artanis-ai/gravel: TS SDK + bin/gravel.js wrapper
+├── packages/dashboard/     React app, bundled into both SDKs at build time
+├── python/gravel/          artanis-gravel: Python SDK + artanis_gravel._cli wrapper
+├── examples/               Next.js, FastAPI, Django integration examples
+├── install.sh              `curl | sh` install for the binary (POSIX)
+├── install.ps1             PowerShell equivalent (Windows)
+└── .github/workflows/      CI: lint, test, schema-drift, cross-compile, release
 ```
+
+Architecture is in [`ARCHITECTURE.md`](ARCHITECTURE.md). Rolling progress + recent release notes are in [`STATUS.md`](STATUS.md). Per-source rendering catalogue (what shapes the dashboard understands) is in [`packages/dashboard/SOURCES.md`](packages/dashboard/SOURCES.md).
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md). The architecture overview is in [`ARCHITECTURE.md`](ARCHITECTURE.md); rolling progress notes are in [`STATUS.md`](STATUS.md). The wizard is self-explanatory: run `gravel init` and it tells you what it's doing. The dashboard documents itself in its empty states and banners.
+PRs welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md). The fastest way to test a change end-to-end is `examples/` plus `tools/test-agent-install-fastapi.sh`, which drives a fresh `gravel init` against a synthetic FastAPI project under Claude Code.
+
+Bugs, questions, install transcripts that went sideways: [open an issue](https://github.com/artanis-ai/gravel/issues). Yousef reads install feedback personally and ships fixes within hours.
 
 ## License
 
-Apache 2.0. See [`LICENSE`](LICENSE).
+[Apache 2.0](LICENSE).
